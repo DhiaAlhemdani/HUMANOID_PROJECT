@@ -1,0 +1,68 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>legged_robot_mpc_controller</name>
+  <version>0.0.0</version>
+  <description>ROS 2 controller package for legged robot MPC using OCS2 and mujoco_ros2_control.</description>
+  <maintainer email="johnathancheng0125@gmail.com">wei-hsuan-cheng</maintainer>
+  <license>TODO: License declaration</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>ament_index_cpp</depend>
+  <depend>boost</depend>
+  <depend>builtin_interfaces</depend>
+  <depend>controller_interface</depend>
+  <depend>eigen</depend>
+  <depend>generate_parameter_library</depend>
+  <depend>geometry_msgs</depend>
+  <depend>hardware_interface</depend>
+  <depend>legged_robot_state_estimator</depend>
+  <depend>nav_msgs</depend>
+  <depend>ocs2_core</depend>
+  <depend>ocs2_mpc</depend>
+  <depend>ocs2_msgs</depend>
+  <depend>ocs2_oc</depend>
+  <depend>ocs2_pinocchio_interface</depend>
+  <depend>ocs2_robotic_tools</depend>
+  <depend>ocs2_ros_interfaces</depend>
+  <depend>ocs2_sqp</depend>
+  <depend>pinocchio</depend>
+  <depend>pluginlib</depend>
+  <depend>rclcpp</depend>
+  <depend>rclcpp_lifecycle</depend>
+  <depend>realtime_tools</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>tf2_msgs</depend>
+  <depend>tf2</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>urdf</depend>
+  <depend>visualization_msgs</depend>
+  <depend>yaml-cpp</depend>
+
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>controller_manager</exec_depend>
+  <exec_depend>controller_manager_msgs</exec_depend>
+  <exec_depend>joint_state_broadcaster</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>legged_robot_teleop</exec_depend>
+  <exec_depend>mujoco_ros2_control</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-tk</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <controller_interface plugin="${prefix}/legged_robot_mpc_controller_plugin.xml"/>
+  </export>
+</package>
