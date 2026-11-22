@@ -1,0 +1,11 @@
+<mujoco model="upkie_scene">
+  <!-- sim rate: effort_pd runs every physics step; 2 kHz with the 1 kHz controller -->
+  <option timestep="0.0005" />
+  <!-- background: H2 night style, with lights aimed at Upkie's base -->
+  <include file="../../common/backgrounds/background_night_upkie.xml" />
+  <!-- terrain/object: optional; keep flat ground for the current wheel-drive checkpoint -->
+  <!-- <include file="../../terrains/uneven_terrain.xml" /> -->
+  <!-- <include file="../../terrains/ramp.xml" /> -->
+  <!-- robot -->
+  <include file="upkie.xml" />
+</mujoco>

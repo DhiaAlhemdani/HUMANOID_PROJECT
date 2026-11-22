@@ -1,0 +1,151 @@
+#include "legged_robot_mpc_controller/common/config/config_builder_utils.hpp"
+
+#include <yaml-cpp/yaml.h>
+#include <cmath>
+
+namespace legged_robot_mpc_controller::common
+{
+
+namespace
+{
+/// Parses the shared `stairs:` geometry sub-schema (base_pos, yaw, start_offset,
+/// heights, depths, width) into the geometry fields of a StairClimbingConfig.
+void parseStairsGeometry(const YAML::Node& stairs, ocs2::humanoid::StairClimbingConfig& config, const std::string& file)
+{
+  if (!stairs || !stairs["base_pos"] || !stairs["heights"] || !stairs["depths"]) {
+    throw std::runtime_error("[config_builder] stairs geometry needs base_pos, heights and depths: " + file);
+  }
+  const auto basePos = stairs["base_pos"].as<std::vector<double>>();
+  if (basePos.size() != 3) {
+    throw std::runtime_error("[config_builder] stairs.base_pos must have 3 entries: " + file);
+  }
+  config.stairsBasePosition << basePos[0], basePos[1], basePos[2];
+  config.stairsYaw = stairs["yaw"].as<double>(0.0);
+  config.startOffset = stairs["start_offset"].as<double>(0.0);
+  config.stepHeights = stairs["heights"].as<std::vector<double>>();
+  config.stepDepths = stairs["depths"].as<std::vector<double>>();
+  config.stepWidth = stairs["width"].as<double>(config.stepWidth);
+}
+}  // namespace
+
+ocs2::humanoid::StairClimbingConfig loadStairClimbingConfig(const std::string& stairClimbingFile)
+{
+  const YAML::Node root = YAML::LoadFile(stairClimbingFile);
+  const YAML::Node node = root["stair_climbing"];
+  if (!node) {
+    throw std::runtime_error(
+      "[config_builder] stair climbing file has no 'stair_climbing' key: " + stairClimbingFile);
+  }
+
+  ocs2::humanoid::StairClimbingConfig config;
+  parseStairsGeometry(node["stairs"], config, stairClimbingFile);
+
+  if (const YAML::Node gait = node["gait"]) {
+    config.initialStanceDuration = gait["initial_stance_duration"].as<double>(config.initialStanceDuration);
+    config.swingDuration = gait["swing_duration"].as<double>(config.swingDuration);
+    config.stanceDuration = gait["stance_duration"].as<double>(config.stanceDuration);
+    config.finalStanceDuration = gait["final_stance_duration"].as<double>(config.finalStanceDuration);
+    config.leftFootFirst = gait["left_foot_first"].as<bool>(config.leftFootFirst);
+    config.bothFeetPerTread = gait["both_feet_per_tread"].as<bool>(config.bothFeetPerTread);
+  }
+
+  if (const YAML::Node footholds = node["footholds"]) {
+    config.lateralOffset = footholds["lateral_offset"].as<double>(config.lateralOffset);
+    config.treadInset = footholds["tread_inset"].as<double>(config.treadInset);
+    config.approachStride = footholds["approach_stride"].as<double>(config.approachStride);
+    config.approachStandoff = footholds["approach_standoff"].as<double>(config.approachStandoff);
+    config.footholdTrackingWeight = footholds["tracking_weight"].as<double>(config.footholdTrackingWeight);
+  }
+
+  if (const YAML::Node base = node["base"]) {
+    config.baseHeightAboveSupport = base["height_above_support"].as<double>(config.baseHeightAboveSupport);
+  }
+
+  return config;
+}
+
+ocs2::humanoid::StairClimbingConfig loadTerrainStairsGeometry(const std::string& terrainWalkingFile)
+{
+  const YAML::Node root = YAML::LoadFile(terrainWalkingFile);
+  const YAML::Node node = root["terrain_walk"];
+  if (!node || !node["stairs"]) {
+    throw std::runtime_error(
+      "[config_builder] terrain walking file has no 'terrain_walk.stairs' geometry: " + terrainWalkingFile);
+  }
+  ocs2::humanoid::StairClimbingConfig config;
+  parseStairsGeometry(node["stairs"], config, terrainWalkingFile);
+  return config;
+}
+
+ocs2::humanoid::GroundTruthTerrainModel loadTerrainModel(const std::string& file)
+{
+  const auto node = YAML::LoadFile(file)["terrain_walk"];
+  if (!node || !node["regions"]) {
+    return ocs2::humanoid::buildTerrainModelFromStairs(loadTerrainStairsGeometry(file));
+  }
+  ocs2::humanoid::GroundTruthTerrainModel model;
+  model.stairGeometry = false;
+  model.groundHeight = node["ground_height"].as<double>(0.0);
+  if (!std::isfinite(model.groundHeight)) {
+    throw std::runtime_error("[config_builder] non-finite terrain ground height: " + file);
+  }
+  for (const auto& value : node["regions"]) {
+    const auto center = value["center"].as<std::vector<double>>();
+    const auto extent = value["half_extents"].as<std::vector<double>>();
+    const auto normal = value["normal"].as<std::vector<double>>();
+    if (center.size() != 2 || extent.size() != 2 || normal.size() != 3) {
+      throw std::runtime_error("[config_builder] terrain region needs center[2], half_extents[2], normal[3]: " + file);
+    }
+    ocs2::humanoid::PlanarRegion region;
+    region.center << center[0], center[1];
+    region.halfLengthX = extent[0];
+    region.halfLengthY = extent[1];
+    region.height = value["height"].as<double>();
+    region.yaw = value["yaw"].as<double>(0.0);
+    region.normal << normal[0], normal[1], normal[2];
+    if (!region.center.allFinite() || !region.normal.allFinite() || !std::isfinite(region.height) ||
+        !std::isfinite(region.yaw) || !std::isfinite(extent[0]) || !std::isfinite(extent[1]) ||
+        extent[0] <= 0.0 || extent[1] <= 0.0 || region.normal.norm() < 1e-9) {
+      throw std::runtime_error("[config_builder] invalid terrain region: " + file);
+    }
+    region.normal.normalize();
+    if (region.normal(2) < 0.2) {
+      throw std::runtime_error("[config_builder] terrain normal must point upward with nz >= 0.2: " + file);
+    }
+    model.regions.push_back(region);
+  }
+  return model;
+}
+
+ocs2::humanoid::TerrainFootholdPlannerSettings loadTerrainFootholdPlannerSettings(const std::string& terrainWalkingFile)
+{
+  ocs2::humanoid::TerrainFootholdPlannerSettings settings;
+
+  const YAML::Node root = YAML::LoadFile(terrainWalkingFile);
+  const YAML::Node node = root["terrain_walk"];
+  if (!node) {
+    return settings;  // defaults
+  }
+
+  settings.hipLateralOffset = node["hip_lateral_offset"].as<double>(settings.hipLateralOffset);
+  settings.footMarginX = node["foot_margin_x"].as<double>(settings.footMarginX);
+  settings.footMarginY = node["foot_margin_y"].as<double>(settings.footMarginY);
+  settings.maxStepHeight = node["max_step_height"].as<double>(settings.maxStepHeight);
+  settings.capturePointFeedbackGain = node["capture_point_feedback_gain"].as<double>(settings.capturePointFeedbackGain);
+  settings.maxCapturePointOffset = node["max_capture_point_offset"].as<double>(settings.maxCapturePointOffset);
+  settings.maxBaseHeightAboveSupport = node["max_base_height_above_support"].as<double>(settings.maxBaseHeightAboveSupport);
+  settings.engageDistance = node["engage_distance"].as<double>(settings.engageDistance);
+  settings.maxBaseLead = node["max_base_lead"].as<double>(settings.maxBaseLead);
+  settings.footholdTrackingWeight = node["tracking_weight"].as<double>(settings.footholdTrackingWeight);
+  settings.swingReferenceArrivalFraction = node["swing_reference_arrival_fraction"].as<double>(settings.swingReferenceArrivalFraction);
+  settings.footholdCommitLeadTime = node["foothold_commit_lead_time"].as<double>(settings.footholdCommitLeadTime);
+  settings.maxStepReach = node["max_step_reach"].as<double>(settings.maxStepReach);
+  if (!std::isfinite(settings.maxStepReach) || settings.maxStepReach <= 0.0 ||
+      !std::isfinite(settings.maxStepHeight) || settings.maxStepHeight <= 0.0) {
+    throw std::runtime_error("[config_builder] terrain step reach and height must be finite and positive");
+  }
+
+  return settings;
+}
+
+}  // namespace legged_robot_mpc_controller::common
