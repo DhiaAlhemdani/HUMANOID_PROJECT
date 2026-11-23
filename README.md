@@ -99,6 +99,20 @@ Do not add a duplicate checkout of a package already in the workspace.
   vcs import < legged_robot_mpc_controller_dependencies/legged_robot_state_estimator/legged_robot_state_estimator.repos
   ```
 
+- Apply this package's MuJoCo full-reset integration patch before building. It adds a physics-thread-safe reset service and makes MuJoCo Backspace request a coordinated reset instead of teleporting the robot underneath active controllers:
+  ```bash
+  ./src/legged_robot_mpc_controller/scripts/apply_mujoco_reset_patch.sh \
+    ./src/legged_robot_mpc_controller_dependencies/mujoco_ros2_control
+  ```
+  Then rebuild both packages (and source the workspace):
+  ```bash
+  cd <workspace_dir>
+  colcon build --packages-select mujoco_ros2_control
+  colcon build --packages-up-to legged_robot_mpc_controller
+  source install/setup.bash
+  ```
+  The patch targets the `jazzy` dependency revision in `legged_robot_mpc_controller.repos`.
+
 - First install by `rosdep`
   ```bash
   # rosdep install
@@ -122,6 +136,31 @@ Do not add a duplicate checkout of a package already in the workspace.
     --cmake-args -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release && \
     . install/setup.bash
   ```
+
+### Updating an existing local workspace from this repository
+
+The current reset implementation is on `arena/8a5d7cf4-humanoid-project`. If your workspace was cloned from the upstream controller repository, add this repository as a remote once and check out the branch:
+
+```bash
+cd <workspace_dir>/src/legged_robot_mpc_controller
+git remote add arena https://github.com/DhiaAlhemdani/HUMANOID_PROJECT.git
+git fetch arena
+git switch --track -c arena/8a5d7cf4-humanoid-project arena/arena/8a5d7cf4-humanoid-project
+```
+
+For subsequent updates, preserve or stash any local edits, then fast-forward the checkout and rebuild:
+
+```bash
+cd <workspace_dir>/src/legged_robot_mpc_controller
+git switch arena/8a5d7cf4-humanoid-project
+git pull --ff-only arena arena/8a5d7cf4-humanoid-project
+cd <workspace_dir>
+colcon build --packages-select mujoco_ros2_control
+colcon build --packages-up-to legged_robot_mpc_controller
+source install/setup.bash
+```
+
+If the `mujoco_ros2_control` checkout was newly imported or recreated, reapply the reset patch using the command above before rebuilding. The patch helper safely reports when that same patch is already applied.
 
 
 ## Run MuJoCo Example
@@ -165,6 +204,7 @@ ros2 launch legged_robot_mpc_controller robot.launch.py \
 
 The first launch for each robot generates and compiles its CppAD libraries (several minutes); later launches load them from the cache.
 
+**Reset controls:** after applying the simulator patch above, press **Backspace** in the MuJoCo viewer or click **Reset Simulation** in the RViz panel. Both deactivate currently active controllers, reset the full MuJoCo state and simulation clock on the physics thread, then reactivate those controllers. The MuJoCo viewer's **R** key restores its initial camera; use RViz's standard **Reset** view toolbar action to restore its camera view. The shared ROS service is `/legged_robot_mpc_controller/reset_simulation`.
 
 **Useful launch args:**
 

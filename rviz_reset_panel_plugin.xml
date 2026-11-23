@@ -1,0 +1,8 @@
+<library path="simulation_reset_panel">
+  <class
+    name="legged_robot_mpc_controller/SimulationResetPanel"
+    type="legged_robot_mpc_controller::SimulationResetPanel"
+    base_class_type="rviz_common::Panel">
+    <description>Reset the MuJoCo world and reactivate the controllers that were running.</description>
+  </class>
+</library>
