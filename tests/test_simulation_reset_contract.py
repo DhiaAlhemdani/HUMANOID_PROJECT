@@ -43,6 +43,22 @@ class SimulationResetContractTest(unittest.TestCase):
         )
         self.assertIn("SIMULATOR_RESET = \"/mujoco_ros2_control/reset_simulation\"", source)
 
+    def test_stand_up_tilt_guard_holds_posture_instead_of_disabling_servo(self):
+        controller = (ROOT / "src/controller/controller.cpp").read_text()
+        start = controller.index("// During stand-up, a threshold crossing must stop the pose trajectory")
+        end = controller.index("if (sit_down_requested_.exchange(false)", start)
+        guard = controller[start:end]
+        self.assertIn("tilt > bu.tiltLimit", guard)
+        self.assertIn("stand_up_tilt_guard_active_ = true", guard)
+        self.assertIn("phase_start_time_ += 1.0 / std::max", guard)
+        self.assertIn("stand_up_tilt_guard_joints_ = q", guard)
+        self.assertIn("return hold_command(stand_up_tilt_guard_joints_, q, orientation)", guard)
+        self.assertIn("tilt_resume_limit", guard)
+        self.assertIn("bu.tiltLimit - 0.05", controller)
+        self.assertNotIn("servo_kp_override_ = vector_t::Zero", guard)
+        g1 = (ROOT / "config/g1/ros2_controllers.yaml").read_text()
+        self.assertIn("tiltLimit: 0.8", g1)
+
     def test_dependency_patch_and_camera_controls_are_documented(self):
         patch = ROOT / "patches/mujoco_ros2_control_reset.patch"
         self.assertTrue(patch.is_file())

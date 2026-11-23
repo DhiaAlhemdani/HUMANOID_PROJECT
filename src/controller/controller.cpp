@@ -445,6 +445,8 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
   at_rest_.store(false);
   phase_start_time_ = -1.0;
   settled_since_ = -1.0;
+  stand_up_tilt_guard_active_ = false;
+  stand_up_tilt_guard_joints_.resize(0);
   stand_up_requested_.store(false);
   start_requested_.store(false);
   sit_down_requested_.store(false);
@@ -964,10 +966,43 @@ HumanoidWholeBodyInverseDynamicsMpcController::run_bring_up(
   if (orientation && (bring_up_phase_ != BringUpPhase::Passive || stand_up_trajectory_) && bring_up_phase_ != BringUpPhase::Fault &&
       bring_up_phase_ != BringUpPhase::Fallen) {
     const double tilt = std::acos(std::clamp(orientation->toRotationMatrix()(2, 2), -1.0, 1.0));
-    if (tilt > bu.tiltLimit) {
+    const bool standing_up = bring_up_phase_ == BringUpPhase::StandUp;
+    const double tilt_resume_limit = std::max(0.0, bu.tiltLimit - 0.05);
+
+    // During stand-up, a threshold crossing must stop the pose trajectory, not remove
+    // the joint servo. Switching to Fallen immediately zeroed kp, which converted a
+    // 0.802/0.800 rad transient into a physically uncontrolled robot. Capture the pose
+    // at the crossing, hold it with the existing gains and gravity compensation until
+    // the trunk recovers, and freeze trajectory time so playback resumes from that point.
+    if (standing_up && tilt > bu.tiltLimit && !stand_up_tilt_guard_active_) {
+      stand_up_tilt_guard_active_ = true;
+      stand_up_tilt_guard_joints_ = q;
+      RCLCPP_WARN(
+        get_node()->get_logger(),
+        "%s stand-up paused: trunk tilt %.3f rad exceeds %.3f rad; holding the current pose",
+        kTag, tilt, bu.tiltLimit);
+    }
+    if (standing_up && stand_up_tilt_guard_active_) {
+      if (tilt > tilt_resume_limit) {
+        phase_start_time_ += 1.0 / std::max(1.0, static_cast<double>(get_update_rate()));
+        if (stand_up_trajectory_) {
+          servo_kp_override_ = stand_up_trajectory_->kp;
+          servo_kd_override_ = stand_up_trajectory_->kd;
+        }
+        RCLCPP_WARN_THROTTLE(
+          get_node()->get_logger(), *get_node()->get_clock(), 2000,
+          "%s stand-up held at trunk tilt %.3f rad; resume threshold %.3f rad",
+          kTag, tilt, tilt_resume_limit);
+        return hold_command(stand_up_tilt_guard_joints_, q, orientation);
+      }
+      stand_up_tilt_guard_active_ = false;
+      stand_up_tilt_guard_joints_.resize(0);
+      RCLCPP_INFO(get_node()->get_logger(), "%s stand-up tilt recovered; resuming the paused pose trajectory", kTag);
+    }
+
+    if (tilt > bu.tiltLimit && !standing_up) {
       RCLCPP_ERROR(get_node()->get_logger(),
-                   "%s bring-up FAULT: trunk tilt %.3f rad > %.3f in phase '%s'; damping. Deactivate and "
-                   "reactivate the controller to retry.",
+                   "%s bring-up FAULT: trunk tilt %.3f rad > %.3f in phase '%s'; entering fallen safety state.",
                    kTag, tilt, bu.tiltLimit, to_string(bring_up_phase_.load()));
       enter_bring_up_phase(BringUpPhase::Fallen, t);
     }
