@@ -99,7 +99,7 @@ Do not add a duplicate checkout of a package already in the workspace.
   vcs import < legged_robot_mpc_controller_dependencies/legged_robot_state_estimator/legged_robot_state_estimator.repos
   ```
 
-- Apply or update this package's MuJoCo full-reset integration patch before building. It adds a physics-thread-safe reset service and makes MuJoCo Backspace request a coordinated reset instead of teleporting the robot underneath active controllers. The patch also re-anchors MuJoCo's render-frame pacing when reset occurs mid-frame:
+- Apply or update this package's MuJoCo full-reset integration patch before building. It adds a physics-thread-safe reset service and makes MuJoCo Backspace request a coordinated reset instead of teleporting the robot underneath active controllers. The reset restores the launch-time spawn state (including `initialPoseFile` overrides), and the patch re-anchors MuJoCo's render-frame pacing when reset occurs mid-frame:
   ```bash
   ./src/legged_robot_mpc_controller/scripts/apply_mujoco_reset_patch.sh \
     ./src/legged_robot_mpc_controller_dependencies/mujoco_ros2_control
@@ -200,7 +200,7 @@ ros2 launch legged_robot_mpc_controller robot.launch.py \
 
 The first launch for each robot generates and compiles its CppAD libraries (several minutes); later launches load them from the cache.
 
-**Reset controls:** after applying the simulator patch above, press **Backspace** in the MuJoCo viewer or click **Reset Simulation** in the RViz panel. Both deactivate currently active controllers, reset the full MuJoCo state and simulation clock on the physics thread, then reactivate those controllers. The MuJoCo viewer's **R** key restores its initial camera; use RViz's standard **Reset** view toolbar action to restore its camera view. The shared ROS service is `/legged_robot_mpc_controller/reset_simulation`.
+**Reset controls:** after applying the simulator patch above, press **Backspace** in the MuJoCo viewer or click **Reset Simulation** in the RViz panel. Both deactivate currently active controllers, restore the full MuJoCo state to the configured launch-time spawn pose and reset the simulation clock on the physics thread, then reactivate broadcasters and estimators before the MPC controller. The MuJoCo viewer's **R** key restores its initial camera; use RViz's standard **Reset** view toolbar action to restore its camera view. The shared ROS service is `/legged_robot_mpc_controller/reset_simulation`.
 
 If launch reports `executable 'simulation_reset.py' not found`, rebuild the package from the workspace root and source that workspace's install overlay (not a different `install/setup.bash`):
 

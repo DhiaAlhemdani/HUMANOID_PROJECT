@@ -36,7 +36,7 @@ index d96179e..c9e3747 100644
 
    // Options for the rendering context and scene, all of these are hard coded to defaults.
 diff --git a/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp b/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp
-index 2dce53b..d4d52f9 100644
+index 2dce53b..e284ddb 100644
 --- a/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp
 +++ b/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp
 @@ -22,6 +22,7 @@
@@ -55,7 +55,7 @@ index 2dce53b..d4d52f9 100644
  #include "tf2_ros/transform_broadcaster.h"
 
  #include "mujoco/mujoco.h"
-@@ -100,6 +102,11 @@ private:
+@@ -100,12 +102,18 @@ private:
      const std::shared_ptr<diagnostic_msgs::srv::AddDiagnostics::Request> request,
      std::shared_ptr<diagnostic_msgs::srv::AddDiagnostics::Response> response);
    void apply_object_resets();
@@ -67,7 +67,14 @@ index 2dce53b..d4d52f9 100644
    void init_ground_truth();
    void publish_ground_truth(const rclcpp::Time &stamp);
    std::string get_robot_description();
-@@ -146,6 +153,13 @@ private:
+   rclcpp::Node::SharedPtr node_;
+   mjModel *mj_model_;
+   mjData *mj_data_;
++  mjData *initial_simulation_state_{nullptr};
+
+   rclcpp::Logger logger_;
+   std::shared_ptr<pluginlib::ClassLoader<MujocoSystemInterface>> robot_hw_sim_loader_;
+@@ -146,6 +154,14 @@ private:
    std::mutex object_reset_mutex_;
    std::vector<int> pending_object_resets_;
 
@@ -77,6 +84,7 @@ index 2dce53b..d4d52f9 100644
 +  std::condition_variable simulation_reset_cv_;
 +  bool simulation_reset_pending_{false};
 +  bool simulation_reset_complete_{false};
++  bool simulation_reset_success_{false};
 +
    bool gt_enabled_{false};
    bool gt_publish_tf_{false};
@@ -149,7 +157,7 @@ index c9e1dee..03b6d02 100644
 
    // 'F' key: toggle body frames on/off
 diff --git a/mujoco_ros2_control/src/mujoco_ros2_control.cpp b/mujoco_ros2_control/src/mujoco_ros2_control.cpp
-index 79d4083..5b86a9a 100644
+index 79d4083..fe1a740 100644
 --- a/mujoco_ros2_control/src/mujoco_ros2_control.cpp
 +++ b/mujoco_ros2_control/src/mujoco_ros2_control.cpp
 @@ -24,6 +24,7 @@
@@ -160,8 +168,27 @@ index 79d4083..5b86a9a 100644
  #include <cmath>
  #include <functional>
  #include <sstream>
-@@ -272,10 +273,12 @@ void MujocoRos2Control::init()
+@@ -87,6 +88,7 @@ MujocoRos2Control::~MujocoRos2Control()
+   if (cm_executor_) cm_executor_->cancel();
 
+   if (cm_thread_.joinable()) cm_thread_.join();
++  if (initial_simulation_state_) mj_deleteData(initial_simulation_state_);
+ }
+
+ std::string MujocoRos2Control::get_robot_description()
+@@ -270,12 +272,23 @@ void MujocoRos2Control::init()
+   };
+   cm_thread_ = std::thread(spin);
+
++  // Preserve the fully initialized spawn state (including config/initial_pose values).
++  // mj_resetData() alone returns to the raw MJCF qpos0 and loses those launch overrides.
++  initial_simulation_state_ = mj_makeData(mj_model_);
++  if (initial_simulation_state_) {
++    mj_copyData(initial_simulation_state_, mj_model_, mj_data_);
++  } else {
++    RCLCPP_ERROR(logger_, "Could not snapshot the initial MuJoCo state; full reset will be unavailable");
++  }
++
    init_ground_truth();
    init_object_reset();
 +  init_simulation_reset();
@@ -173,7 +200,7 @@ index 79d4083..5b86a9a 100644
    // Get the simulation time and period
    auto sim_time = mj_data_->time;
    int sim_time_sec = static_cast<int>(sim_time);
-@@ -329,6 +332,7 @@ void MujocoRos2Control::update()
+@@ -329,6 +342,7 @@ void MujocoRos2Control::update()
 
  void MujocoRos2Control::update_controller_manager()
  {
@@ -181,7 +208,7 @@ index 79d4083..5b86a9a 100644
    // The controller manager refuses a zero time until its clock has started, and with
    // use_sim_time the clock starts only on a non-zero /clock. Physics has not advanced, so
    // hold the time one nanosecond in and publish it.
-@@ -713,6 +717,68 @@ void MujocoRos2Control::apply_external_wrenches()
+@@ -713,6 +727,81 @@ void MujocoRos2Control::apply_external_wrenches()
    }
  }
 
@@ -206,6 +233,7 @@ index 79d4083..5b86a9a 100644
 +    return;
 +  }
 +  simulation_reset_complete_ = false;
++  simulation_reset_success_ = false;
 +  simulation_reset_pending_ = true;
 +  if (!simulation_reset_cv_.wait_for(lock, std::chrono::seconds(5), [this]() {
 +      return simulation_reset_complete_;
@@ -216,8 +244,10 @@ index 79d4083..5b86a9a 100644
 +    return;
 +  }
 +  simulation_reset_pending_ = false;
-+  response->success = true;
-+  response->message = "MuJoCo world reset to model initial state";
++  response->success = simulation_reset_success_;
++  response->message = simulation_reset_success_
++    ? "MuJoCo world reset to launch-time initial state"
++    : "Initial MuJoCo state snapshot is unavailable";
 +}
 +
 +// Called only by the simulation thread, including the paused-start controller-manager loop.
@@ -228,7 +258,16 @@ index 79d4083..5b86a9a 100644
 +    if (!simulation_reset_pending_) return;
 +  }
 +
-+  mj_resetData(mj_model_, mj_data_);
++  if (!initial_simulation_state_) {
++    {
++      std::lock_guard<std::mutex> lock(simulation_reset_mutex_);
++      simulation_reset_success_ = false;
++      simulation_reset_complete_ = true;
++    }
++    simulation_reset_cv_.notify_all();
++    return;
++  }
++  mj_copyData(mj_data_, mj_model_, initial_simulation_state_);
 +  mj_forward(mj_model_, mj_data_);
 +  active_external_wrenches_.clear();
 +  {
@@ -241,10 +280,11 @@ index 79d4083..5b86a9a 100644
 +
 +  {
 +    std::lock_guard<std::mutex> lock(simulation_reset_mutex_);
++    simulation_reset_success_ = true;
 +    simulation_reset_complete_ = true;
 +  }
 +  simulation_reset_cv_.notify_all();
-+  RCLCPP_INFO(logger_, "Reset MuJoCo simulation state and simulation clock");
++  RCLCPP_INFO(logger_, "Reset MuJoCo simulation state to launch-time initial state");
 +}
 +
  void MujocoRos2Control::init_object_reset()
@@ -297,7 +337,7 @@ index ca841bd..8224f88 100644
      RCLCPP_INFO_STREAM(node->get_logger(), "Mujoco rendering has been successfully initialized !");
 
      auto cameras = std::make_unique<mujoco_ros2_control::MujocoCameras>(node);
-@@ -175,9 +196,16 @@ int main(int argc, const char **argv)
+@@ -175,5 +196,12 @@ int main(int argc, const char **argv)
        while (mujoco_data->time - simstart < 1.0 / 60.0)
        {
          update_simulation();
@@ -310,7 +350,3 @@ index ca841bd..8224f88 100644
 +        }
        }
        rendering->update();
-
-       // Updating cameras at ~6 Hz
-       // TODO(eholum): Break control and rendering into separate processes
-       if (simstart - last_cam_update > 1.0 / 6.0)
