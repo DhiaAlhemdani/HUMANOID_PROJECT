@@ -183,7 +183,7 @@ ros2 launch legged_robot_mpc_controller robot.launch.py \
 
 cd /home/alhemdani/Documents/GitHub/humanoid_ws
 source /opt/ros/jazzy/setup.bash
-source /home/alhemdani/install/setup.bash
+source install/setup.bash
 
 ros2 launch legged_robot_mpc_controller robot.launch.py \
   robotName:=g1 \
@@ -201,6 +201,16 @@ ros2 launch legged_robot_mpc_controller robot.launch.py \
 The first launch for each robot generates and compiles its CppAD libraries (several minutes); later launches load them from the cache.
 
 **Reset controls:** after applying the simulator patch above, press **Backspace** in the MuJoCo viewer or click **Reset Simulation** in the RViz panel. Both deactivate currently active controllers, reset the full MuJoCo state and simulation clock on the physics thread, then reactivate those controllers. The MuJoCo viewer's **R** key restores its initial camera; use RViz's standard **Reset** view toolbar action to restore its camera view. The shared ROS service is `/legged_robot_mpc_controller/reset_simulation`.
+
+If launch reports `executable 'simulation_reset.py' not found`, rebuild the package from the workspace root and source that workspace's install overlay (not a different `install/setup.bash`):
+
+```bash
+cd /home/alhemdani/Documents/GitHub/humanoid_ws
+source /opt/ros/jazzy/setup.bash
+colcon build --packages-up-to legged_robot_mpc_controller --symlink-install
+source install/setup.bash
+ros2 pkg executables legged_robot_mpc_controller | grep simulation_reset
+```
 
 **Useful launch args:**
 
