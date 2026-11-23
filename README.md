@@ -173,7 +173,7 @@ ros2 launch legged_robot_mpc_controller robot.launch.py \
 
 The first launch for each robot generates and compiles its CppAD libraries (several minutes); later launches load them from the cache.
 
-**Reset:** press **Backspace** in the MuJoCo viewer or click **Reset Simulation** in the RViz panel. Both use the same ROS coordinator: active controllers are deactivated, MuJoCo `mj_resetData` resets the simulation data and clock (configured spawn coordinates are restored), then controllers reactivate in startup order. For camera-only reset, use MuJoCo **R** or RViz's standard view **Reset** action.
+**Reset:** press **Backspace** in the MuJoCo viewer or click **Reset Simulation** in the RViz panel. Both use the same ROS coordinator: active controllers are deactivated, MuJoCo `mj_resetData` resets the simulation data and clock (configured spawn coordinates are restored), physics stays paused while controllers reactivate in startup order, then resumes. For camera-only reset, use MuJoCo **R** or RViz's standard view **Reset** action.
 
 **Useful launch args:**
 

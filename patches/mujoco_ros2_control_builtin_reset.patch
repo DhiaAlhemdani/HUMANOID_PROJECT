@@ -24,33 +24,39 @@ index d96179e..6cb30f6 100644
 +  std::function<void()> reset_request_callback_;
  
 diff --git a/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp b/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp
-index 2dce53b..c677079 100644
+index 2dce53b..08c9e73 100644
 --- a/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp
 +++ b/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp
-@@ -24,2 +24,3 @@
+@@ -24,2 +24,4 @@
  #include <array>
++#include <atomic>
 +#include <condition_variable>
  #include <memory>
-@@ -39,2 +40,3 @@
+@@ -39,2 +41,3 @@
  #include "rosgraph_msgs/msg/clock.hpp"
 +#include "std_srvs/srv/trigger.hpp"
  #include "tf2_ros/transform_broadcaster.h"
-@@ -102,2 +104,7 @@ private:
+@@ -102,2 +105,10 @@ private:
    void apply_object_resets();
 +  void init_simulation_reset();
 +  void simulation_reset_callback(
 +    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
 +    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
++  void simulation_resume_callback(
++    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
++    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
 +  void apply_simulation_reset();
    void init_ground_truth();
-@@ -108,2 +115,3 @@ private:
+@@ -108,2 +119,3 @@ private:
    mjData *mj_data_;
 +  std::vector<mjtNum> initial_qpos_;
  
-@@ -148,2 +156,9 @@ private:
+@@ -148,2 +160,11 @@ private:
  
 +  // Simulation reset is requested by ROS/viewer but applied only by the physics thread.
 +  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_simulation_srv_;
++  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr resume_after_reset_srv_;
++  std::atomic_bool hold_physics_after_reset_{false};
 +  std::mutex simulation_reset_mutex_;
 +  std::condition_variable simulation_reset_cv_;
 +  bool simulation_reset_pending_{false};
@@ -114,7 +120,7 @@ index c9e1dee..7b981c7 100644
 +    reset_camera();
    }
 diff --git a/mujoco_ros2_control/src/mujoco_ros2_control.cpp b/mujoco_ros2_control/src/mujoco_ros2_control.cpp
-index 79d4083..d355430 100644
+index 79d4083..0684238 100644
 --- a/mujoco_ros2_control/src/mujoco_ros2_control.cpp
 +++ b/mujoco_ros2_control/src/mujoco_ros2_control.cpp
 @@ -25,2 +25,3 @@
@@ -132,11 +138,26 @@ index 79d4083..d355430 100644
    init_object_reset();
 +  init_simulation_reset();
  }
-@@ -278,2 +284,3 @@ void MujocoRos2Control::update()
+@@ -278,2 +284,8 @@ void MujocoRos2Control::update()
  {
 +  apply_simulation_reset();
++  if (hold_physics_after_reset_.load(std::memory_order_acquire)) {
++    // Keep controller-manager lifecycle switches progressing at frozen simulation time.
++    update_controller_manager();
++    return;
++  }
    // Get the simulation time and period
-@@ -715,2 +722,66 @@ void MujocoRos2Control::apply_external_wrenches()
+@@ -338,2 +350,9 @@ void MujocoRos2Control::update_controller_manager()
+   clock_publisher_->publish(sim_time_msg);
++  if (controller_time_from_sim_) {
++    rcl_set_ros_time_override(controller_manager_->get_clock()->get_clock_handle(), sim_time.nanoseconds());
++    std::lock_guard<std::mutex> lock(controller_clocks_mutex_);
++    for (const auto &clock : controller_clocks_) {
++      rcl_set_ros_time_override(clock->get_clock_handle(), sim_time.nanoseconds());
++    }
++  }
+   const rclcpp::Duration zero_period(0, 0);
+@@ -715,2 +734,85 @@ void MujocoRos2Control::apply_external_wrenches()
  
 +void MujocoRos2Control::init_simulation_reset()
 +{
@@ -145,7 +166,13 @@ index 79d4083..d355430 100644
 +    std::bind(
 +      &MujocoRos2Control::simulation_reset_callback, this, std::placeholders::_1,
 +      std::placeholders::_2));
-+  RCLCPP_INFO(logger_, "Built-in MuJoCo reset service ready on ~/reset_simulation");
++  resume_after_reset_srv_ = node_->create_service<std_srvs::srv::Trigger>(
++    "~/resume_after_reset",
++    std::bind(
++      &MujocoRos2Control::simulation_resume_callback, this, std::placeholders::_1,
++      std::placeholders::_2));
++  RCLCPP_INFO(
++    logger_, "Built-in MuJoCo reset services ready on ~/reset_simulation and ~/resume_after_reset");
 +}
 +
 +void MujocoRos2Control::simulation_reset_callback(
@@ -170,7 +197,17 @@ index 79d4083..d355430 100644
 +  }
 +  simulation_reset_pending_ = false;
 +  response->success = true;
-+  response->message = "MuJoCo mj_resetData applied; configured spawn pose restored";
++  response->message = "MuJoCo mj_resetData applied; configured spawn pose restored and physics paused";
++}
++
++void MujocoRos2Control::simulation_resume_callback(
++  const std::shared_ptr<std_srvs::srv::Trigger::Request> /*request*/,
++  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
++{
++  hold_physics_after_reset_.store(false, std::memory_order_release);
++  response->success = true;
++  response->message = "MuJoCo physics resumed after controller reactivation";
++  RCLCPP_INFO(logger_, "%s", response->message.c_str());
 +}
 +
 +void MujocoRos2Control::apply_simulation_reset()
@@ -185,6 +222,8 @@ index 79d4083..d355430 100644
 +  mj_resetData(mj_model_, mj_data_);
 +  std::copy(initial_qpos_.begin(), initial_qpos_.end(), mj_data_->qpos);
 +  mj_forward(mj_model_, mj_data_);
++  // Keep physics frozen until ros2_control has reactivated the controllers.
++  hold_physics_after_reset_.store(true, std::memory_order_release);
 +  active_external_wrenches_.clear();
 +  {
 +    std::lock_guard<std::mutex> lock(external_wrench_mutex_);
@@ -196,6 +235,7 @@ index 79d4083..d355430 100644
 +
 +  {
 +    std::lock_guard<std::mutex> lock(simulation_reset_mutex_);
++    simulation_reset_pending_ = false;
 +    simulation_reset_complete_ = true;
 +  }
 +  simulation_reset_cv_.notify_all();

@@ -22,9 +22,12 @@ class SimulationResetContractTest(unittest.TestCase):
         stop = source.index("stopped = await self._switch_client.call_async")
         reset = source.index("result = await self._sim_reset_client.call_async")
         activation = source.index("for name in self._activation_order(active)")
+        resume = source.index("resumed = await self._sim_resume_client.call_async")
         self.assertLess(stop, reset)
         self.assertLess(reset, activation)
+        self.assertLess(activation, resume)
         self.assertIn('SIMULATOR_RESET = "/mujoco_ros2_control/reset_simulation"', source)
+        self.assertIn('SIMULATOR_RESUME = "/mujoco_ros2_control/resume_after_reset"', source)
         self.assertIn("_switch_request(deactivate=active)", source)
         self.assertIn("_switch_request(activate=[name])", source)
 
@@ -33,6 +36,9 @@ class SimulationResetContractTest(unittest.TestCase):
         self.assertIn("mj_resetData(mj_model_, mj_data_)", patch)
         self.assertIn("initial_qpos_", patch)
         self.assertIn("std::copy(initial_qpos_.begin(), initial_qpos_.end(), mj_data_->qpos)", patch)
+        self.assertIn("hold_physics_after_reset_.store(true", patch)
+        self.assertIn("update_controller_manager();", patch)
+        self.assertIn("hold_physics_after_reset_.store(false", patch)
         self.assertIn("reset_request_callback_()", patch)
         self.assertNotIn("initial_simulation_state_", patch)
 
