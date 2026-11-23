@@ -139,10 +139,9 @@ Do not add a duplicate checkout of a package already in the workspace.
 
 ### Updating an existing local workspace from this repository
 
-The current reset implementation is on `arena/8a5d7cf4-humanoid-project`. To pull the latest commits, apply the simulator patch if needed, rebuild both packages, and source the updated workspace in one go, run this from a terminal. Stash or commit local edits first; the pull is fast-forward-only.
+The current reset implementation is on `arena/8a5d7cf4-humanoid-project`. Run the update command below **from the workspace root** (for example, `~/Documents/GitHub/humanoid_ws`); do not type angle-bracket placeholders such as `<workspace_dir>`. Before updating, check for and preserve local edits. If needed, stash them with `git -C src/legged_robot_mpc_controller stash push -u -m 'before Arena update'`; restore later with `git -C src/legged_robot_mpc_controller stash pop` and resolve any conflicts.
 
 ```bash
-cd <workspace_dir> && \
 { git -C src/legged_robot_mpc_controller remote get-url arena >/dev/null 2>&1 && \
     git -C src/legged_robot_mpc_controller remote set-url arena https://github.com/DhiaAlhemdani/HUMANOID_PROJECT.git || \
     git -C src/legged_robot_mpc_controller remote add arena https://github.com/DhiaAlhemdani/HUMANOID_PROJECT.git; } && \
