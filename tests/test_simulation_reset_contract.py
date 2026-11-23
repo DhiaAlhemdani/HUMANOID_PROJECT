@@ -21,7 +21,6 @@ class SimulationResetContractTest(unittest.TestCase):
         self.assertIn('executable="simulation_reset.py"', block)
         self.assertIn("condition=IfCondition(use_mujoco_sim)", block)
         self.assertIn("simulation_reset_coordinator,", launch)
-        self.assertIn('"mpc_controller_name": LaunchConfiguration("mpcControllerName")', block)
 
     def test_rviz_default_layout_exposes_shared_reset_service(self):
         rviz = (ROOT / "config/rviz/humanoid.rviz").read_text()
@@ -43,12 +42,6 @@ class SimulationResetContractTest(unittest.TestCase):
             source.index("result = await self._sim_reset_client.call_async(Trigger.Request())"),
         )
         self.assertIn("SIMULATOR_RESET = \"/mujoco_ros2_control/reset_simulation\"", source)
-        self.assertIn("hold_after_reset", source)
-        self.assertLess(
-            source.index("held = await self._hold_after_reset_client.call_async(Trigger.Request())"),
-            source.index("result = await self._sim_reset_client.call_async(Trigger.Request())"),
-        )
-        self.assertIn("passive and holding the reset pose", source)
 
     def test_stand_up_tilt_guard_holds_posture_instead_of_disabling_servo(self):
         controller = (ROOT / "src/controller/controller.cpp").read_text()
@@ -63,9 +56,6 @@ class SimulationResetContractTest(unittest.TestCase):
         self.assertIn("tilt_resume_limit", guard)
         self.assertIn("bu.tiltLimit - 0.05", controller)
         self.assertNotIn("servo_kp_override_ = vector_t::Zero", guard)
-        self.assertIn("hold_after_reset", controller)
-        self.assertIn("suppress_auto_start_next_activation_.exchange(false", controller)
-        self.assertIn("if (auto_start_pending_ || stand_up_requested_.load())", controller)
         g1 = (ROOT / "config/g1/ros2_controllers.yaml").read_text()
         self.assertIn("tiltLimit: 0.8", g1)
 

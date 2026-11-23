@@ -312,14 +312,6 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
         response->success = true;
         response->message = "standing up";
       });
-    hold_after_reset_service_ = get_node()->create_service<std_srvs::srv::Trigger>(
-      "~/hold_after_reset",
-      [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
-             std::shared_ptr<std_srvs::srv::Trigger::Response> response) {
-        suppress_auto_start_next_activation_.store(true, std::memory_order_release);
-        response->success = true;
-        response->message = "next activation will remain passive; call ~/stand_up when ready";
-      });
     start_locomotion_service_ = get_node()->create_service<std_srvs::srv::Trigger>(
       "~/start_locomotion",
       [this](const std::shared_ptr<std_srvs::srv::Trigger::Request>,
@@ -458,8 +450,7 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
   stand_up_requested_.store(false);
   start_requested_.store(false);
   sit_down_requested_.store(false);
-  auto_start_pending_ = parameters_.bringUp.autoStart &&
-    !suppress_auto_start_next_activation_.exchange(false, std::memory_order_acq_rel);
+  auto_start_pending_ = parameters_.bringUp.autoStart;
   solver_paused_.store(false);
   solver_observation_ready_.store(false);
   reset_mpc_warm_start_requested_.store(false);
@@ -1082,8 +1073,7 @@ HumanoidWholeBodyInverseDynamicsMpcController::run_bring_up(
         enter_bring_up_phase(BringUpPhase::StandUp, t);
         return hold;
       }
-      if (auto_start_pending_ || stand_up_requested_.load()) {
-        auto_start_pending_ = false;
+      if (bu.autoStart || stand_up_requested_.load()) {
         stand_up_start_joints_ = q;
         enter_bring_up_phase(BringUpPhase::StandUp, t);
       } else {

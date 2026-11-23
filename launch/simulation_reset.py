@@ -12,20 +12,12 @@ from std_srvs.srv import Trigger
 RESET_SERVICE = "/legged_robot_mpc_controller/reset_simulation"
 CONTROLLER_MANAGER = "/controller_manager"
 SIMULATOR_RESET = "/mujoco_ros2_control/reset_simulation"
-DEFAULT_MPC_CONTROLLER = "humanoid_whole_body_inverse_dynamics_mpc_controller"
 
 
 class SimulationResetCoordinator(Node):
     def __init__(self):
         super().__init__("simulation_reset_coordinator")
         self._busy = False
-        self.declare_parameter("mpc_controller_name", DEFAULT_MPC_CONTROLLER)
-        self._mpc_controller_name = self.get_parameter("mpc_controller_name").value.strip("/")
-        self._hold_after_reset_client = self.create_client(
-            Trigger,
-            f"/{self._mpc_controller_name}/hold_after_reset",
-            callback_group=ReentrantCallbackGroup(),
-        )
         self._callback_group = ReentrantCallbackGroup()
         self._list_client = self.create_client(
             ListControllers, f"{CONTROLLER_MANAGER}/list_controllers", callback_group=self._callback_group
@@ -94,13 +86,6 @@ class SimulationResetCoordinator(Node):
             listed = await self._list_client.call_async(ListControllers.Request())
             active_controllers = [c.name for c in listed.controller if c.state == "active"]
             self.get_logger().info(f"Active controllers before reset: {active_controllers or 'none'}")
-            mpc_was_active = self._mpc_controller_name in active_controllers
-            if mpc_was_active and not self._hold_after_reset_client.service_is_ready():
-                response.success = False
-                response.message = (
-                    f"Cannot safely reset: /{self._mpc_controller_name}/hold_after_reset is not ready"
-                )
-                return response
             if active_controllers:
                 request = self._switch_request(deactivate=active_controllers)
                 stopped = await self._switch_client.call_async(request)
@@ -109,16 +94,6 @@ class SimulationResetCoordinator(Node):
                     response.message = "Controller manager refused to deactivate active controllers"
                     return response
                 controllers_deactivated = True
-
-            if mpc_was_active:
-                held = await self._hold_after_reset_client.call_async(Trigger.Request())
-                if not held.success:
-                    response.success = False
-                    response.message = f"MPC could not be set to passive after reset: {held.message}"
-                    return response
-                self.get_logger().info(
-                    f"{self._mpc_controller_name} will reactivate in passive hold; stand-up will not auto-start"
-                )
 
             result = await self._sim_reset_client.call_async(Trigger.Request())
             reset_ok = result.success
@@ -149,11 +124,6 @@ class SimulationResetCoordinator(Node):
                 response.message = "Simulation reset; reactivated controllers: " + ", ".join(
                     self._activation_order(active_controllers)
                 )
-                if self._mpc_controller_name in active_controllers:
-                    response.message += (
-                        f"; {self._mpc_controller_name} is passive and holding the reset pose. "
-                        f"Call /{self._mpc_controller_name}/stand_up to stand."
-                    )
             else:
                 response.message = "Simulation reset; no controllers were active to restart"
             self.get_logger().info(response.message)
