@@ -146,7 +146,7 @@ ros2 launch legged_robot_mpc_controller robot.launch.py \
   baseCommandDevice:=gui
 
 
-cd /home/alhemdani
+cd /home/alhemdani/Documents/GitHub/humanoid_ws
 source /opt/ros/jazzy/setup.bash
 source /home/alhemdani/install/setup.bash
 
