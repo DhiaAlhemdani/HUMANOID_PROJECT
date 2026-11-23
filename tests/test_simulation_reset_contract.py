@@ -58,7 +58,9 @@ class SimulationResetContractTest(unittest.TestCase):
         helper = (ROOT / "scripts/apply_mujoco_reset_patch.sh").read_text()
         self.assertIn("--reverse --check", helper)
         self.assertIn("--check", helper)
-        self.assertIn("BUILTIN_RESET_PATCH", helper) if "BUILTIN_RESET_PATCH" in helper else self.assertIn("PATCH_FILE", helper)
+        self.assertIn("PATCH_FILE", helper)
+        self.assertIn("LEGACY_PATCHES", helper)
+        self.assertIn("mujoco_ros2_control_builtin_reset_v1.patch", helper)
 
 
 if __name__ == "__main__":

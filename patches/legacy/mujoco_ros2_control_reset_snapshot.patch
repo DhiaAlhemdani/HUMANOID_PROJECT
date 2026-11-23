@@ -1,0 +1,352 @@
+diff --git a/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_rendering.hpp b/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_rendering.hpp
+index d96179e..c9e3747 100644
+--- a/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_rendering.hpp
++++ b/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_rendering.hpp
+@@ -21,6 +21,7 @@
+ #ifndef MUJOCO_ROS2_CONTROL__MUJOCO_RENDERING_HPP_
+ #define MUJOCO_ROS2_CONTROL__MUJOCO_RENDERING_HPP_
+
++#include <functional>
+ #include <string>
+ #include <vector>
+
+@@ -42,6 +43,7 @@ public:
+   static MujocoRendering *get_instance();
+   void init(mjModel *mujoco_model, mjData *mujoco_data);
+   void configure_camera_from_ros_params(const rclcpp::Node::SharedPtr &node);
++  void set_reset_request_callback(std::function<void()> callback);
+   bool is_close_flag_raised();
+   void update();
+   void close();
+@@ -59,6 +61,7 @@ private:
+   void scroll_callback_impl(GLFWwindow *window, double xoffset, double yoffset);
+
+   void set_camera_by_id(int cam_id);
++  void reset_camera();
+
+   static MujocoRendering *instance_;
+
+@@ -68,6 +71,8 @@ private:
+   // Window and primary camera for the simulation's viewer
+   GLFWwindow *window_;
+   mjvCamera mjv_cam_;
++  mjvCamera initial_mjv_cam_;
++  std::function<void()> reset_request_callback_;
+   int current_cam_id_{-1};  // -1 = free, >=0 = mjModel camera id
+
+   // Options for the rendering context and scene, all of these are hard coded to defaults.
+diff --git a/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp b/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp
+index 2dce53b..e284ddb 100644
+--- a/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp
++++ b/mujoco_ros2_control/include/mujoco_ros2_control/mujoco_ros2_control.hpp
+@@ -22,6 +22,7 @@
+ #define MUJOCO_ROS2_CONTROL__MUJOCO_ROS2_CONTROL_HPP_
+
+ #include <array>
++#include <condition_variable>
+ #include <memory>
+ #include <mutex>
+ #include <string>
+@@ -37,6 +38,7 @@
+ #include "pluginlib/class_loader.hpp"
+ #include "rclcpp/rclcpp.hpp"
+ #include "rosgraph_msgs/msg/clock.hpp"
++#include "std_srvs/srv/trigger.hpp"
+ #include "tf2_ros/transform_broadcaster.h"
+
+ #include "mujoco/mujoco.h"
+@@ -100,12 +102,18 @@ private:
+     const std::shared_ptr<diagnostic_msgs::srv::AddDiagnostics::Request> request,
+     std::shared_ptr<diagnostic_msgs::srv::AddDiagnostics::Response> response);
+   void apply_object_resets();
++  void init_simulation_reset();
++  void simulation_reset_callback(
++    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
++    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
++  void apply_simulation_reset();
+   void init_ground_truth();
+   void publish_ground_truth(const rclcpp::Time &stamp);
+   std::string get_robot_description();
+   rclcpp::Node::SharedPtr node_;
+   mjModel *mj_model_;
+   mjData *mj_data_;
++  mjData *initial_simulation_state_{nullptr};
+
+   rclcpp::Logger logger_;
+   std::shared_ptr<pluginlib::ClassLoader<MujocoSystemInterface>> robot_hw_sim_loader_;
+@@ -146,6 +154,14 @@ private:
+   std::mutex object_reset_mutex_;
+   std::vector<int> pending_object_resets_;
+
++  // Full-world reset requests are applied on the physics thread; the service waits for ack.
++  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr reset_simulation_srv_;
++  std::mutex simulation_reset_mutex_;
++  std::condition_variable simulation_reset_cv_;
++  bool simulation_reset_pending_{false};
++  bool simulation_reset_complete_{false};
++  bool simulation_reset_success_{false};
++
+   bool gt_enabled_{false};
+   bool gt_publish_tf_{false};
+   double gt_pub_hz_{120.0};
+diff --git a/mujoco_ros2_control/src/mujoco_rendering.cpp b/mujoco_ros2_control/src/mujoco_rendering.cpp
+index c9e1dee..03b6d02 100644
+--- a/mujoco_ros2_control/src/mujoco_rendering.cpp
++++ b/mujoco_ros2_control/src/mujoco_rendering.cpp
+@@ -19,6 +19,7 @@
+ // THE SOFTWARE.
+
+ #include <cstdio>
++#include <utility>
+ #include "mujoco_ros2_control/mujoco_rendering.hpp"
+ #include "sensor_msgs/image_encodings.hpp"
+
+@@ -99,6 +100,7 @@ void MujocoRendering::init(mjModel *mujoco_model, mjData *mujoco_data)
+   mjv_cam_.lookat[1] = mj_model_->stat.center[1];
+   mjv_cam_.lookat[2] = mj_model_->stat.center[2];
+   mjv_cam_.distance = (mj_model_->stat.extent > 1e-9) ? (2.0 * mj_model_->stat.extent) : 5.0;
++  initial_mjv_cam_ = mjv_cam_;
+
+   // create scene and context
+   mjv_makeScene(mj_model_, &mjv_scn_, 2000);
+@@ -158,6 +160,7 @@ void MujocoRendering::configure_camera_from_ros_params(const rclcpp::Node::Share
+       if (id >= 0) cam_id = id;
+     }
+     set_camera_by_id(cam_id);
++    initial_mjv_cam_ = mjv_cam_;
+     return;
+   }
+
+@@ -173,6 +176,18 @@ void MujocoRendering::configure_camera_from_ros_params(const rclcpp::Node::Share
+     mjv_cam_.lookat[1] = lookat[1];
+     mjv_cam_.lookat[2] = lookat[2];
+   }
++  initial_mjv_cam_ = mjv_cam_;
++}
++
++void MujocoRendering::set_reset_request_callback(std::function<void()> callback)
++{
++  reset_request_callback_ = std::move(callback);
++}
++
++void MujocoRendering::reset_camera()
++{
++  mjv_cam_ = initial_mjv_cam_;
++  current_cam_id_ = (mjv_cam_.type == mjCAMERA_FIXED) ? mjv_cam_.fixedcamid : -1;
+ }
+
+ bool MujocoRendering::is_close_flag_raised() { return glfwWindowShouldClose(window_); }
+@@ -235,11 +250,16 @@ void MujocoRendering::scroll_callback(GLFWwindow *window, double xoffset, double
+ void MujocoRendering::keyboard_callback_impl(
+   GLFWwindow * /* window */, int key, int /* scancode */, int act, int /* mods */)
+ {
+-  // backspace: reset simulation
++  // Backspace requests a coordinated simulation/controller reset through the ROS service.
+   if (act == GLFW_PRESS && key == GLFW_KEY_BACKSPACE)
+   {
+-    mj_resetData(mj_model_, mj_data_);
+-    mj_forward(mj_model_, mj_data_);
++    if (reset_request_callback_) reset_request_callback_();
++  }
++
++  // R: restore the viewer's initial camera pose without changing simulation state.
++  if (act == GLFW_PRESS && key == GLFW_KEY_R)
++  {
++    reset_camera();
+   }
+
+   // 'F' key: toggle body frames on/off
+diff --git a/mujoco_ros2_control/src/mujoco_ros2_control.cpp b/mujoco_ros2_control/src/mujoco_ros2_control.cpp
+index 79d4083..fe1a740 100644
+--- a/mujoco_ros2_control/src/mujoco_ros2_control.cpp
++++ b/mujoco_ros2_control/src/mujoco_ros2_control.cpp
+@@ -24,6 +24,7 @@
+
+ #include <algorithm>
+ #include <cctype>
++#include <chrono>
+ #include <cmath>
+ #include <functional>
+ #include <sstream>
+@@ -87,6 +88,7 @@ MujocoRos2Control::~MujocoRos2Control()
+   if (cm_executor_) cm_executor_->cancel();
+
+   if (cm_thread_.joinable()) cm_thread_.join();
++  if (initial_simulation_state_) mj_deleteData(initial_simulation_state_);
+ }
+
+ std::string MujocoRos2Control::get_robot_description()
+@@ -270,12 +272,23 @@ void MujocoRos2Control::init()
+   };
+   cm_thread_ = std::thread(spin);
+
++  // Preserve the fully initialized spawn state (including config/initial_pose values).
++  // mj_resetData() alone returns to the raw MJCF qpos0 and loses those launch overrides.
++  initial_simulation_state_ = mj_makeData(mj_model_);
++  if (initial_simulation_state_) {
++    mj_copyData(initial_simulation_state_, mj_model_, mj_data_);
++  } else {
++    RCLCPP_ERROR(logger_, "Could not snapshot the initial MuJoCo state; full reset will be unavailable");
++  }
++
+   init_ground_truth();
+   init_object_reset();
++  init_simulation_reset();
+ }
+
+ void MujocoRos2Control::update()
+ {
++  apply_simulation_reset();
+   // Get the simulation time and period
+   auto sim_time = mj_data_->time;
+   int sim_time_sec = static_cast<int>(sim_time);
+@@ -329,6 +342,7 @@ void MujocoRos2Control::update()
+
+ void MujocoRos2Control::update_controller_manager()
+ {
++  apply_simulation_reset();
+   // The controller manager refuses a zero time until its clock has started, and with
+   // use_sim_time the clock starts only on a non-zero /clock. Physics has not advanced, so
+   // hold the time one nanosecond in and publish it.
+@@ -713,6 +727,81 @@ void MujocoRos2Control::apply_external_wrenches()
+   }
+ }
+
++void MujocoRos2Control::init_simulation_reset()
++{
++  reset_simulation_srv_ = node_->create_service<std_srvs::srv::Trigger>(
++    "~/reset_simulation",
++    std::bind(
++      &MujocoRos2Control::simulation_reset_callback, this, std::placeholders::_1,
++      std::placeholders::_2));
++  RCLCPP_INFO(logger_, "Full simulation reset service ready on ~/reset_simulation");
++}
++
++void MujocoRos2Control::simulation_reset_callback(
++  const std::shared_ptr<std_srvs::srv::Trigger::Request> /*request*/,
++  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
++{
++  std::unique_lock<std::mutex> lock(simulation_reset_mutex_);
++  if (simulation_reset_pending_) {
++    response->success = false;
++    response->message = "A simulation reset is already pending";
++    return;
++  }
++  simulation_reset_complete_ = false;
++  simulation_reset_success_ = false;
++  simulation_reset_pending_ = true;
++  if (!simulation_reset_cv_.wait_for(lock, std::chrono::seconds(5), [this]() {
++      return simulation_reset_complete_;
++    })) {
++    simulation_reset_pending_ = false;
++    response->success = false;
++    response->message = "Timed out waiting for the MuJoCo physics loop to apply reset";
++    return;
++  }
++  simulation_reset_pending_ = false;
++  response->success = simulation_reset_success_;
++  response->message = simulation_reset_success_
++    ? "MuJoCo world reset to launch-time initial state"
++    : "Initial MuJoCo state snapshot is unavailable";
++}
++
++// Called only by the simulation thread, including the paused-start controller-manager loop.
++void MujocoRos2Control::apply_simulation_reset()
++{
++  {
++    std::lock_guard<std::mutex> lock(simulation_reset_mutex_);
++    if (!simulation_reset_pending_) return;
++  }
++
++  if (!initial_simulation_state_) {
++    {
++      std::lock_guard<std::mutex> lock(simulation_reset_mutex_);
++      simulation_reset_success_ = false;
++      simulation_reset_complete_ = true;
++    }
++    simulation_reset_cv_.notify_all();
++    return;
++  }
++  mj_copyData(mj_data_, mj_model_, initial_simulation_state_);
++  mj_forward(mj_model_, mj_data_);
++  active_external_wrenches_.clear();
++  {
++    std::lock_guard<std::mutex> lock(external_wrench_mutex_);
++    pending_external_wrenches_.clear();
++  }
++  last_update_sim_time_ros_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
++  last_mujoco_publish_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
++  last_gt_pub_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
++
++  {
++    std::lock_guard<std::mutex> lock(simulation_reset_mutex_);
++    simulation_reset_success_ = true;
++    simulation_reset_complete_ = true;
++  }
++  simulation_reset_cv_.notify_all();
++  RCLCPP_INFO(logger_, "Reset MuJoCo simulation state to launch-time initial state");
++}
++
+ void MujocoRos2Control::init_object_reset()
+ {
+   reset_objects_srv_ = node_->create_service<diagnostic_msgs::srv::AddDiagnostics>(
+diff --git a/mujoco_ros2_control/src/mujoco_ros2_control_node.cpp b/mujoco_ros2_control/src/mujoco_ros2_control_node.cpp
+index ca841bd..8224f88 100644
+--- a/mujoco_ros2_control/src/mujoco_ros2_control_node.cpp
++++ b/mujoco_ros2_control/src/mujoco_ros2_control_node.cpp
+@@ -119,12 +119,24 @@ int main(int argc, const char **argv)
+
+   using SteadyClock = std::chrono::steady_clock;
+   constexpr double pacing_interval = 0.001;
+-  const auto wall_time_start = SteadyClock::now();
+-  const mjtNum simulation_time_start = mujoco_data->time;
++  auto wall_time_start = SteadyClock::now();
++  mjtNum simulation_time_start = mujoco_data->time;
++  mjtNum previous_simulation_time = mujoco_data->time;
+   mjtNum next_pacing_time = simulation_time_start + pacing_interval;
+
+   auto update_simulation = [&]() {
+     mujoco_control.update();
++    // A coordinated reset moves MuJoCo time back to zero. Re-anchor the wall clock too,
++    // otherwise the old pacing deadline makes the reset simulation run unpaced.
++    if (mujoco_data->time + 1e-12 < previous_simulation_time)
++    {
++      simulation_time_start = mujoco_data->time;
++      previous_simulation_time = mujoco_data->time;
++      wall_time_start = SteadyClock::now();
++      next_pacing_time = mujoco_data->time + pacing_interval;
++      return;
++    }
++    previous_simulation_time = mujoco_data->time;
+     if (mujoco_data->time < next_pacing_time)
+     {
+       return;
+@@ -161,6 +173,15 @@ int main(int argc, const char **argv)
+     auto rendering = mujoco_ros2_control::MujocoRendering::get_instance();
+     rendering->init(mujoco_model, mujoco_data);
+     rendering->configure_camera_from_ros_params(node);
++    auto reset_client = node->create_client<std_srvs::srv::Trigger>(
++      "/legged_robot_mpc_controller/reset_simulation");
++    rendering->set_reset_request_callback([node, reset_client]() {
++      if (!reset_client->service_is_ready()) {
++        RCLCPP_WARN(node->get_logger(), "Reset coordinator is unavailable; start robot.launch.py with reset support");
++        return;
++      }
++      reset_client->async_send_request(std::make_shared<std_srvs::srv::Trigger::Request>());
++    });
+     RCLCPP_INFO_STREAM(node->get_logger(), "Mujoco rendering has been successfully initialized !");
+
+     auto cameras = std::make_unique<mujoco_ros2_control::MujocoCameras>(node);
+@@ -175,5 +196,12 @@ int main(int argc, const char **argv)
+       while (mujoco_data->time - simstart < 1.0 / 60.0)
+       {
+         update_simulation();
++        // A reset may happen while this frame is being simulated. Re-anchor the frame
++        // interval to the reset time instead of integrating back up to the pre-reset time.
++        if (mujoco_data->time < simstart)
++        {
++          simstart = mujoco_data->time;
++          last_cam_update = simstart;
++        }
+       }
+       rendering->update();

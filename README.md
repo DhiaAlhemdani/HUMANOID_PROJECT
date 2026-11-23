@@ -99,7 +99,7 @@ Do not add a duplicate checkout of a package already in the workspace.
   vcs import < legged_robot_mpc_controller_dependencies/legged_robot_state_estimator/legged_robot_state_estimator.repos
   ```
 
-- Apply the thin MuJoCo integration patch so Backspace calls the same ROS reset coordinator as RViz. The simulator uses MuJoCo's built-in `mj_resetData`; the patch restores only configured spawn `qpos` after that reset. The ROS coordinator separately deactivates and reactivates active controllers.
+- Apply the thin MuJoCo integration patch so Backspace calls the same ROS reset coordinator as RViz. The simulator uses MuJoCo's built-in `mj_resetData`; the patch restores only configured spawn `qpos` after that reset. The ROS coordinator deactivates and reactivates active controllers while physics remains frozen. The helper also upgrades reset patches from earlier versions of this branch.
   ```bash
   ./src/legged_robot_mpc_controller/scripts/apply_mujoco_reset_patch.sh \
     ./src/legged_robot_mpc_controller_dependencies/mujoco_ros2_control
