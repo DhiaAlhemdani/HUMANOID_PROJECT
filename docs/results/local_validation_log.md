@@ -10,6 +10,7 @@ Keep raw output, bags, videos, and large replay files local unless a specific ar
 |---|---|---|---|---|---|---|---|
 | 001 | 2026-11-23 | Walking smoothness A/B | Baseline `e63dfb2`; quintic `9795811` | G1 MuJoCo, 0.25 m/s command, 25 s hold, three runs per variant | See [`walking_smoothness_ab_test.md`](walking_smoothness_ab_test.md) | All six run verdicts `SUCCESS`; measured comparison is mixed and confounded by actual MPC-rate mismatch | Summary metrics are in the linked report. Actual MPC median was 31.3 Hz cubic vs 60.8 Hz quintic; match solver rates before attributing changes to the spline. |
 | 002 | 2026-11-23 | Walking smoothness result analyzer | Baseline `e63dfb2`; quintic `9795811`; analyzer fix `54323a0` | Ubuntu host, separate Python venv | `analyze_gait_regularity.py` over `/tmp/cubic_{1..3}` and `/tmp/quintic_{1..3}` | Initially blocked by missing `mujoco`; then a false-fall filter caused `IndexError`; completed after the fix | Analyzer had hardcoded a 0.7 m fall-height cutoff, above valid G1 crouch heights (minimum 0.637-0.641 m). Updated to use the test's recorded fall threshold and rerun succeeded. |
+| 003 | 2026-11-23 | Rate-controlled walking smoothness A/B | Baseline `e63dfb2`; quintic `9795811`; analyzer fix `54323a0` | G1 MuJoCo, 30 Hz target, 0.25 m/s, 25 s hold, three runs per variant | `wb_id_walk_test.py --mpc-rate 30 --record-joints --record-tracking`; analyzer on `/tmp/cubic30_{1..3}` and `/tmp/quintic30_{1..3}` | All six `SUCCESS`; rates closely matched (28.9 vs 29.9 Hz); body pitch/roll slightly lower in quintic, but contact agreement worse and ~1% ankle saturation | Diagnostic 30 Hz only; report and interpretation in [`walking_smoothness_ab_test.md`](walking_smoothness_ab_test.md). Raw files remain in `/tmp`. |
 
 ## Detailed results
 
@@ -22,6 +23,14 @@ Keep raw output, bags, videos, and large replay files local unless a specific ar
 - **Interpretation:** the actual MPC-rate difference changes closed-loop timing, so the pitch/roll and contact metrics cannot isolate the spline's smoothness effect. Body pitch/roll decreased slightly, but step regularity and contact-mode agreement got slightly worse; pelvis-height variation was unchanged. No walking-smoothness improvement is claimed; a rate-controlled repeat or direct planned-foot-height comparison is needed.
 - **Analyzer issues:** the first Python environment lacked `mujoco`; after dependencies were installed, the analyzer's fixed 0.7 m cutoff incorrectly treated valid G1 crouch heights as a fall. Analyzer fix `54323a0` now uses the recorded test fall threshold. Re-analysis produced the summaries above.
 - **Raw artifacts:** retained locally under `/tmp/cubic_{1..3}` and `/tmp/quintic_{1..3}`; not checked into Git.
+
+### 2026-11-23 — G1 rate-controlled cubic vs quintic follow-up
+
+- **Conditions:** MuJoCo flat scene; G1; `--mpc-rate 30`; 0.25 m/s command; 25 s hold; three runs per version; joint and controller tracking recorded. This low rate was diagnostic only.
+- **Verdicts and rates:** all six runs reported `SUCCESS`. Median measured MPC rates were 28.9 Hz cubic and 29.9 Hz quintic.
+- **Medians:** measured speed 0.220 vs 0.219 m/s; pelvis height 0.748 ± 0.005 vs 0.746 ± 0.005 m; roll RMS 0.004 vs 0.003 rad; pitch +0.020 ± 0.002 vs +0.014 ± 0.006 rad; period CV 0.01 vs 0.01; step-length CV 0.02 vs 0.02; double-support fraction 0.378 vs 0.446; planned/replayed contact agreement 0.87 vs 0.80; ankle torque saturation 0 vs 0.010 median fraction.
+- **Interpretation:** matched rate reduces the timing confound. Quintic slightly reduces mean pitch and roll but increases pitch variability, double support, contact-mode disagreement, and small ankle saturation; whole-body smoothness improvement remains unproven. Review swing-clearance/contact plots before changing the trajectory again. The 30 Hz diagnostic result is not validated for the intended 100 Hz operating point.
+- **Raw artifacts:** `/tmp/cubic30_{1..3}` and `/tmp/quintic30_{1..3}` remain local; only the summarized measurements are committed.
 
 ## Project-end checklist
 
