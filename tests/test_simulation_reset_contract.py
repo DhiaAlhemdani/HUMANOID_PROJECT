@@ -1,6 +1,7 @@
 """Static contract checks for the coordinated MuJoCo/RViz reset path."""
 
 from pathlib import Path
+import stat
 import unittest
 
 
@@ -8,6 +9,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class SimulationResetContractTest(unittest.TestCase):
+    def test_reset_coordinator_is_installed_as_an_executable(self):
+        script = ROOT / "launch/simulation_reset.py"
+        self.assertTrue(script.stat().st_mode & stat.S_IXUSR)
+        self.assertIn("launch/simulation_reset.py", (ROOT / "CMakeLists.txt").read_text())
+
     def test_launch_starts_reset_coordinator_only_for_mujoco(self):
         launch = (ROOT / "launch/robot.launch.py").read_text()
         block = launch[launch.index("simulation_reset_coordinator = Node("):]
