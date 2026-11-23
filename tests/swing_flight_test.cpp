@@ -18,21 +18,33 @@ int main() {
   const ModeSchedule running({0.0, 0.3, 0.4, 0.7, 0.8, 1.1},
                              {STANCE, LF, FLY, RF, FLY, LF, STANCE});
   planner.update(running, 0.0);
-  const SplineCpg expected({0.3, 0.0, 0.05}, 0.1, {0.8, -0.001, 0.0});
+  const MinimumJerkSplineCpg expected({0.3, 0.0, 0.05, 0.0}, 0.1, {0.8, -0.001, 0.0, 0.0});
   for (double t : {0.31, 0.39, 0.41, 0.5, 0.69, 0.71, 0.79}) {
     assert(std::abs(planner.getZpositionConstraint(0, t) - expected.position(t)) < 1e-12);
     assert(std::abs(planner.getZvelocityConstraint(0, t) - expected.velocity(t)) < 1e-12);
     assert(std::abs(planner.getZaccelerationConstraint(0, t) - expected.acceleration(t)) < 1e-12);
   }
-  for (double t : {0.4, 0.7}) {
-    const double eps = 1e-8;
+  for (double t : {0.4, 0.55, 0.7}) {
+    const double eps = 1e-6;
     assert(std::abs(planner.getZpositionConstraint(0, t - eps) - planner.getZpositionConstraint(0, t + eps)) < 1e-6);
-    assert(std::abs(planner.getZvelocityConstraint(0, t - eps) - planner.getZvelocityConstraint(0, t + eps)) < 1e-6);
+    assert(std::abs(planner.getZvelocityConstraint(0, t - eps) - planner.getZvelocityConstraint(0, t + eps)) < 1e-5);
+    assert(std::abs(planner.getZaccelerationConstraint(0, t - eps) - planner.getZaccelerationConstraint(0, t + eps)) < 1e-3);
     assert(std::abs(planner.getImpactProximityFactor(0, t - eps) - planner.getImpactProximityFactor(0, t + eps)) < 1e-6);
   }
+  // The quintic swing starts/ends with configured velocities, zero endpoint acceleration,
+  // and has no acceleration jump at the apex.
+  assert(std::abs(planner.getZpositionConstraint(0, 0.3)) < 1e-12);
+  assert(std::abs(planner.getZvelocityConstraint(0, 0.3) - config.liftOffVelocity) < 1e-12);
+  assert(std::abs(planner.getZaccelerationConstraint(0, 0.3)) < 1e-10);
+  assert(std::abs(planner.getZpositionConstraint(0, 0.8) + 0.001) < 1e-12);
+  assert(std::abs(planner.getZvelocityConstraint(0, 0.8)) < 1e-12);
+  assert(std::abs(planner.getZaccelerationConstraint(0, 0.8)) < 1e-10);
+  assert(std::abs(planner.getZpositionConstraint(0, 0.55) - 0.1) < 1e-12);
+  assert(std::abs(planner.getZvelocityConstraint(0, 0.55)) < 1e-12);
+  assert(std::abs(planner.getZaccelerationConstraint(0, 0.55)) < 1e-10);
   // A gait change inside a swing must not select a different apex at an internal mode boundary.
   planner.update(running, 0.0, {-1.0, 0.15, 0.2, 0.3, 0.3, 0.3, -1.0});
-  const SplineCpg raised({0.3, 0.0, 0.05}, 0.2, {0.8, -0.001, 0.0});
+  const MinimumJerkSplineCpg raised({0.3, 0.0, 0.05, 0.0}, 0.2, {0.8, -0.001, 0.0, 0.0});
   for (double t : {0.31, 0.39, 0.41, 0.5, 0.69, 0.71, 0.79}) {
     assert(std::abs(planner.getZpositionConstraint(0, t) - raised.position(t)) < 1e-12);
     assert(std::abs(planner.getZvelocityConstraint(0, t) - raised.velocity(t)) < 1e-12);
