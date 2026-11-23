@@ -2,6 +2,7 @@
 
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <rviz_common/display_context.hpp>
 #include <rviz_common/panel.hpp>
 #include <pluginlib/class_list_macros.hpp>
 #include <rclcpp/rclcpp.hpp>
