@@ -16,8 +16,6 @@ Panels:
       - /Current View1
     Name: Views
     Splitter Ratio: 0.5
-  - Class: legged_robot_mpc_controller/SimulationResetPanel
-    Name: Simulation Reset
 Visualization Manager:
   Class: ""
   Displays:

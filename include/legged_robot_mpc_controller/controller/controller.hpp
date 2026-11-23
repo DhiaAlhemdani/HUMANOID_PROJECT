@@ -245,8 +245,6 @@ private:
   vector_t passive_hold_joints_;
   double phase_start_time_{-1.0};
   double settled_since_{-1.0};
-  bool stand_up_tilt_guard_active_{false};
-  vector_t stand_up_tilt_guard_joints_;
   Eigen::Vector3d rest_gyro_lpf_{Eigen::Vector3d::Zero()};
   Eigen::Vector3d rest_accel_lpf_{Eigen::Vector3d::Zero()};
   bool rest_filter_initialized_{false};

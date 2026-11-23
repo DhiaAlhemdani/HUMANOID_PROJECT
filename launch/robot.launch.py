@@ -436,13 +436,6 @@ def generate_launch_description():
         }.items(),
     )
 
-    simulation_reset_coordinator = Node(
-        package="legged_robot_mpc_controller",
-        executable="simulation_reset.py",
-        output="screen",
-        condition=IfCondition(use_mujoco_sim),
-    )
-
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -479,7 +472,6 @@ def generate_launch_description():
             environment_state_publisher_node,
             base_command_gui_node,
             base_command_teleop,
-            simulation_reset_coordinator,
             rviz_node,
         ]
     )
