@@ -138,13 +138,21 @@ def analyze(prefix, robot, plot=True, frames=None):
     rpy[:, 2] = np.unwrap(rpy[:, 2])
     contact = np.column_stack([debounce(low[:, i] <= CONTACT_Z, times) for i in range(2)])
 
-    # Samples after the fall begins (tilt > 20 deg or base below 0.7 m) are excluded everywhere below.
-    upset = (np.abs(rpy[:, :2]).max(axis=1) > 0.35) | (base[:, 2] < 0.7)
+    # Exclude samples after the same hard fall limits used by wb_id_walk_test.py.
+    # A fixed 0.7 m height cutoff incorrectly classifies G1's normal crouched gait
+    # (the user's successful runs reach about 0.64 m) as a fall before walking starts.
+    fall_height = float(result.get("minimum_height", config["ocs2"]["reference"].get("minBaseHeight", 0.7)))
+    upset = (np.abs(rpy[:, :2]).max(axis=1) > 0.8) | (base[:, 2] < fall_height)
     t_upset = times[np.argmax(upset)] if upset.any() else np.inf
     valid = times < t_upset
     hold &= valid
     if not hold.any():
         hold = valid & (phase == "ramp_in")
+    if not hold.any():
+        phases = ", ".join(f"{name}={count}" for name, count in zip(*np.unique(phase, return_counts=True)))
+        raise SystemExit(
+            f"{prefix}: no valid walk/ramp samples before fall cutoff "
+            f"(verdict={result.get('verdict')}, fall_height={fall_height:.3f} m, phases: {phases})")
     h0, h1 = times[hold][0], times[hold][-1]
     # Stance/swing bouts of the moving window; bouts cut by the window edges are dropped.
     m0 = times[(phase == "ramp_in") | (phase == "walk")][0]
