@@ -99,7 +99,7 @@ Do not add a duplicate checkout of a package already in the workspace.
   vcs import < legged_robot_mpc_controller_dependencies/legged_robot_state_estimator/legged_robot_state_estimator.repos
   ```
 
-- Apply this package's MuJoCo full-reset integration patch before building. It adds a physics-thread-safe reset service and makes MuJoCo Backspace request a coordinated reset instead of teleporting the robot underneath active controllers:
+- Apply or update this package's MuJoCo full-reset integration patch before building. It adds a physics-thread-safe reset service and makes MuJoCo Backspace request a coordinated reset instead of teleporting the robot underneath active controllers. The patch also re-anchors MuJoCo's render-frame pacing when reset occurs mid-frame:
   ```bash
   ./src/legged_robot_mpc_controller/scripts/apply_mujoco_reset_patch.sh \
     ./src/legged_robot_mpc_controller_dependencies/mujoco_ros2_control
@@ -156,7 +156,7 @@ colcon build --packages-up-to legged_robot_mpc_controller && \
 source install/setup.bash
 ```
 
-This also handles the first checkout of the branch and is safe to rerun: the patch helper detects when the patch is already applied. If the dependency checkout was recreated, the patch is applied again before rebuilding.
+This also handles the first checkout of the branch and is safe to rerun: the patch helper applies the patch on a fresh checkout, upgrades the earlier reset patch when needed, and skips it when current. If the dependency checkout was recreated, the patch is applied again before rebuilding.
 
 
 ## Run MuJoCo Example

@@ -251,7 +251,7 @@ index 79d4083..5b86a9a 100644
  {
    reset_objects_srv_ = node_->create_service<diagnostic_msgs::srv::AddDiagnostics>(
 diff --git a/mujoco_ros2_control/src/mujoco_ros2_control_node.cpp b/mujoco_ros2_control/src/mujoco_ros2_control_node.cpp
-index ca841bd..9aab7a8 100644
+index ca841bd..8224f88 100644
 --- a/mujoco_ros2_control/src/mujoco_ros2_control_node.cpp
 +++ b/mujoco_ros2_control/src/mujoco_ros2_control_node.cpp
 @@ -119,12 +119,24 @@ int main(int argc, const char **argv)
@@ -297,3 +297,20 @@ index ca841bd..9aab7a8 100644
      RCLCPP_INFO_STREAM(node->get_logger(), "Mujoco rendering has been successfully initialized !");
 
      auto cameras = std::make_unique<mujoco_ros2_control::MujocoCameras>(node);
+@@ -175,9 +196,16 @@ int main(int argc, const char **argv)
+       while (mujoco_data->time - simstart < 1.0 / 60.0)
+       {
+         update_simulation();
++        // A reset may happen while this frame is being simulated. Re-anchor the frame
++        // interval to the reset time instead of integrating back up to the pre-reset time.
++        if (mujoco_data->time < simstart)
++        {
++          simstart = mujoco_data->time;
++          last_cam_update = simstart;
++        }
+       }
+       rendering->update();
+
+       // Updating cameras at ~6 Hz
+       // TODO(eholum): Break control and rendering into separate processes
+       if (simstart - last_cam_update > 1.0 / 6.0)

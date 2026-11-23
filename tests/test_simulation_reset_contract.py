@@ -45,7 +45,13 @@ class SimulationResetContractTest(unittest.TestCase):
         patch = ROOT / "patches/mujoco_ros2_control_reset.patch"
         self.assertTrue(patch.is_file())
         self.assertGreater(patch.stat().st_size, 1000)
+        self.assertIn("pre-reset time", patch.read_text())
+        followup = ROOT / "patches/mujoco_ros2_control_reset_followup.patch"
+        self.assertTrue(followup.is_file())
+        self.assertIn("last_cam_update = simstart", followup.read_text())
         script = (ROOT / "scripts/apply_mujoco_reset_patch.sh").read_text()
+        self.assertIn("FOLLOWUP_PATCH", script)
+        self.assertIn("Upgraded coordinated reset support", script)
         self.assertIn("git -C \"${DEPENDENCY}\" apply --ignore-whitespace --check", script)
         readme = (ROOT / "README.md").read_text()
         for control in ("Backspace", "Reset Simulation", "MuJoCo viewer's **R** key", "RViz's standard **Reset**"):
