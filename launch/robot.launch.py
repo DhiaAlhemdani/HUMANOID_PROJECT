@@ -440,6 +440,7 @@ def generate_launch_description():
         package="legged_robot_mpc_controller",
         executable="simulation_reset.py",
         output="screen",
+        parameters=[{"mpc_controller_name": LaunchConfiguration("mpcControllerName")}],
         condition=IfCondition(use_mujoco_sim),
     )
 

@@ -270,6 +270,8 @@ private:
   rclcpp::Publisher<std_msgs::msg::String>::SharedPtr motion_state_publisher_;
   rclcpp::TimerBase::SharedPtr motion_state_timer_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr stand_up_service_;
+  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr hold_after_reset_service_;
+  std::atomic_bool suppress_auto_start_next_activation_{false};
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr start_locomotion_service_;
 
   ocs2::SystemObservation last_hardware_observation_;
