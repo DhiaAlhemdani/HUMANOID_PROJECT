@@ -2,6 +2,7 @@
 """Coordinate a full MuJoCo world reset with ros2_control controller lifecycle."""
 
 import rclpy
+from builtin_interfaces.msg import Duration
 from controller_manager_msgs.srv import ListControllers, SwitchController
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
@@ -32,6 +33,34 @@ class SimulationResetCoordinator(Node):
         )
         self.get_logger().info(f"Coordinated reset ready on {RESET_SERVICE}")
 
+    @staticmethod
+    def _activation_order(controller_names):
+        # Match launch/controller_sequence.py: state broadcasters and estimators
+        # must be active before the MPC claims their state interfaces.
+        def priority(name):
+            if name in ("joint_state_broadcaster", "robot_state_broadcaster"):
+                return 0
+            if name == "humanoid_whole_body_inverse_dynamics_mpc_controller":
+                return 2
+            return 1
+
+        return sorted(controller_names, key=priority)
+
+    @staticmethod
+    def _switch_request(activate=(), deactivate=()):
+        request = SwitchController.Request()
+        request.activate_controllers = list(activate)
+        request.deactivate_controllers = list(deactivate)
+        if activate:
+            request.strictness = getattr(SwitchController.Request, "BEST_EFFORT", 1)
+            if hasattr(request, "activate_asap"):
+                request.activate_asap = False
+        else:
+            request.strictness = SwitchController.Request.STRICT
+        if hasattr(request, "timeout"):
+            request.timeout = Duration(sec=30)
+        return request
+
     async def _reset(self, _request, response):
         if self._busy:
             response.success = False
@@ -56,10 +85,9 @@ class SimulationResetCoordinator(Node):
         try:
             listed = await self._list_client.call_async(ListControllers.Request())
             active_controllers = [c.name for c in listed.controller if c.state == "active"]
+            self.get_logger().info(f"Active controllers before reset: {active_controllers or 'none'}")
             if active_controllers:
-                request = SwitchController.Request()
-                request.deactivate_controllers = active_controllers
-                request.strictness = SwitchController.Request.STRICT
+                request = self._switch_request(deactivate=active_controllers)
                 stopped = await self._switch_client.call_async(request)
                 if not stopped.ok:
                     response.success = False
@@ -74,22 +102,30 @@ class SimulationResetCoordinator(Node):
             reset_message = f"Coordinated reset failed: {exc}"
         finally:
             if controllers_deactivated:
-                request = SwitchController.Request()
-                request.activate_controllers = active_controllers
-                request.strictness = SwitchController.Request.STRICT
-                try:
-                    activated = await self._switch_client.call_async(request)
-                    if not activated.ok:
+                for name in self._activation_order(active_controllers):
+                    try:
+                        request = self._switch_request(activate=[name])
+                        activated = await self._switch_client.call_async(request)
+                        if not activated.ok:
+                            reset_ok = False
+                            reset_message += f"; failed to reactivate controller {name}"
+                            self.get_logger().error(f"Failed to reactivate controller {name}")
+                            break
+                        self.get_logger().info(f"Reactivated controller {name}")
+                    except Exception as exc:
                         reset_ok = False
-                        reset_message += "; failed to reactivate controllers"
-                except Exception as exc:
-                    reset_ok = False
-                    reset_message += f"; controller reactivation failed: {exc}"
+                        reset_message += f"; controller {name} reactivation failed: {exc}"
+                        break
             self._busy = False
 
         if reset_ok:
             response.success = True
-            response.message = "Simulation and controller state reset; previously active controllers reactivated"
+            if active_controllers:
+                response.message = "Simulation reset; reactivated controllers: " + ", ".join(
+                    self._activation_order(active_controllers)
+                )
+            else:
+                response.message = "Simulation reset; no controllers were active to restart"
             self.get_logger().info(response.message)
         else:
             response.success = False

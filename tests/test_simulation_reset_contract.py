@@ -33,8 +33,10 @@ class SimulationResetContractTest(unittest.TestCase):
 
     def test_coordinator_deactivates_before_world_reset_and_reactivates(self):
         source = (ROOT / "launch/simulation_reset.py").read_text()
-        self.assertIn("request.deactivate_controllers = active_controllers", source)
-        self.assertIn("request.activate_controllers = active_controllers", source)
+        self.assertIn("_switch_request(deactivate=active_controllers)", source)
+        self.assertIn("for name in self._activation_order(active_controllers)", source)
+        self.assertIn("_switch_request(activate=[name])", source)
+        self.assertIn('name == "humanoid_whole_body_inverse_dynamics_mpc_controller"', source)
         self.assertLess(
             source.index("stopped = await self._switch_client.call_async(request)"),
             source.index("result = await self._sim_reset_client.call_async(Trigger.Request())"),
