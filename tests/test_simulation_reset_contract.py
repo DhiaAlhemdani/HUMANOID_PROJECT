@@ -44,6 +44,10 @@ class SimulationResetContractTest(unittest.TestCase):
         readme = (ROOT / "README.md").read_text()
         for control in ("Backspace", "Reset Simulation", "MuJoCo viewer's **R** key", "RViz's standard **Reset**"):
             self.assertIn(control, readme)
+        update_section = readme.split("### Updating an existing local workspace from this repository", 1)[1]
+        for command in ("fetch arena", "pull --ff-only arena", "colcon build --packages-select mujoco_ros2_control",
+                        "colcon build --packages-up-to legged_robot_mpc_controller", "source install/setup.bash"):
+            self.assertIn(command, update_section)
 
 
 if __name__ == "__main__":

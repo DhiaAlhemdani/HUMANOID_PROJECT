@@ -139,28 +139,25 @@ Do not add a duplicate checkout of a package already in the workspace.
 
 ### Updating an existing local workspace from this repository
 
-The current reset implementation is on `arena/8a5d7cf4-humanoid-project`. If your workspace was cloned from the upstream controller repository, add this repository as a remote once and check out the branch:
+The current reset implementation is on `arena/8a5d7cf4-humanoid-project`. To pull the latest commits, apply the simulator patch if needed, rebuild both packages, and source the updated workspace in one go, run this from a terminal. Stash or commit local edits first; the pull is fast-forward-only.
 
 ```bash
-cd <workspace_dir>/src/legged_robot_mpc_controller
-git remote add arena https://github.com/DhiaAlhemdani/HUMANOID_PROJECT.git
-git fetch arena
-git switch --track -c arena/8a5d7cf4-humanoid-project arena/arena/8a5d7cf4-humanoid-project
-```
-
-For subsequent updates, preserve or stash any local edits, then fast-forward the checkout and rebuild:
-
-```bash
-cd <workspace_dir>/src/legged_robot_mpc_controller
-git switch arena/8a5d7cf4-humanoid-project
-git pull --ff-only arena arena/8a5d7cf4-humanoid-project
-cd <workspace_dir>
-colcon build --packages-select mujoco_ros2_control
-colcon build --packages-up-to legged_robot_mpc_controller
+cd <workspace_dir> && \
+{ git -C src/legged_robot_mpc_controller remote get-url arena >/dev/null 2>&1 && \
+    git -C src/legged_robot_mpc_controller remote set-url arena https://github.com/DhiaAlhemdani/HUMANOID_PROJECT.git || \
+    git -C src/legged_robot_mpc_controller remote add arena https://github.com/DhiaAlhemdani/HUMANOID_PROJECT.git; } && \
+git -C src/legged_robot_mpc_controller fetch arena && \
+( git -C src/legged_robot_mpc_controller switch arena/8a5d7cf4-humanoid-project || \
+  git -C src/legged_robot_mpc_controller switch --track -c arena/8a5d7cf4-humanoid-project arena/arena/8a5d7cf4-humanoid-project ) && \
+git -C src/legged_robot_mpc_controller pull --ff-only arena arena/8a5d7cf4-humanoid-project && \
+./src/legged_robot_mpc_controller/scripts/apply_mujoco_reset_patch.sh \
+  ./src/legged_robot_mpc_controller_dependencies/mujoco_ros2_control && \
+colcon build --packages-select mujoco_ros2_control && \
+colcon build --packages-up-to legged_robot_mpc_controller && \
 source install/setup.bash
 ```
 
-If the `mujoco_ros2_control` checkout was newly imported or recreated, reapply the reset patch using the command above before rebuilding. The patch helper safely reports when that same patch is already applied.
+This also handles the first checkout of the branch and is safe to rerun: the patch helper detects when the patch is already applied. If the dependency checkout was recreated, the patch is applied again before rebuilding.
 
 
 ## Run MuJoCo Example
