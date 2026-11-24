@@ -15,7 +15,10 @@ MODULES = {"none": None, "stairs": "terrains/stairs.xml", "ramp": "terrains/ramp
            "split_height": None}
 
 
-def write_scene(output, robot="g1", terrain="none", package=ROOT, split_height=0.01):
+def write_scene(output, robot="g1", terrain="none", package=ROOT, split_height=0.01, robot_model=None):
+    """Compose a scene; `robot_model` (optional path) swaps the robot MJCF include for a
+    variant file (e.g. a tests/tuning/make_model.py output) while the compiler
+    directories still come from the shipped robot model."""
     scenes = (Path(package) / "description/mujoco").resolve()
     robot_dir = scenes / "robots" / robot
     root = ET.parse(robot_dir / "scene.xml").getroot()
@@ -29,6 +32,10 @@ def write_scene(output, robot="g1", terrain="none", package=ROOT, split_height=0
             continue
         if path.parent == robot_dir:
             robot_compiler = ET.parse(path).find("compiler")
+            if robot_model is not None:
+                path = Path(robot_model).resolve()
+                if not path.is_file():
+                    raise FileNotFoundError(f"robot model variant not found: {path}")
         if path.name.startswith("background_"):
             background = "background_night_upkie.xml" if robot == "upkie" else "background_night.xml"
             path = scenes / "common/backgrounds" / ("background_day.xml" if terrain == "none" else background)
@@ -70,5 +77,8 @@ if __name__ == "__main__":
     parser.add_argument("--terrain", choices=MODULES, default="none")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--split-height", type=float, default=0.01, help="Raised left-wheel strip [m]")
+    parser.add_argument("--robot-model", type=Path, default=None,
+                        help="Variant robot MJCF to include instead of the shipped one (tuning sweeps)")
     args = parser.parse_args()
-    print(write_scene(args.output, args.robot_name, args.terrain, split_height=args.split_height))
+    print(write_scene(args.output, args.robot_name, args.terrain, split_height=args.split_height,
+                      robot_model=args.robot_model))

@@ -5,7 +5,8 @@
 # usage: run_case.sh <tag> <controllers.yaml | default> [vx_mps]
 #   env: HEIGHT (commanded pelvis height, default 0.795), LAUNCH_ARGS (extra robot.launch.py args), OUT (results root, default
 #        <repo>/tuning_results), RVIZ=true SHOTS=1 (RViz screenshots during the walk),
-#        HOLD_SECONDS (constant-command duration, default 20)
+#        HOLD_SECONDS (constant-command duration, default 20),
+#        MODEL (variant robot MJCF from make_model.py; default = shipped g1_29dof.xml)
 # writes: $OUT/<tag>/{sim.log, data.npz, metrics.json, diag.json, *.png, config.yaml, summary.txt}
 # The streams are recorded by ros2 bag (a Python subscriber in this container drops most of the
 # 1 kHz data), converted to data.npz, and the bag is deleted.
@@ -19,7 +20,8 @@ TAG=$1; CFG=$2; VX=${3:-0.5}
 OUT=${OUT:-$REPO/tuning_results}; D=$OUT/$TAG; mkdir -p "$D"; rm -rf "${D:?}"/*
 [ "$CFG" = default ] && CFG=$REPO/config/g1/ros2_controllers.yaml
 cp "$CFG" "$D/config.yaml"
-python3 "$REPO/tests/mujoco_scene.py" --robot-name g1 --output "$D/scene.xml"
+[ -n "${MODEL:-}" ] && cp "$MODEL" "$D/robot_model.xml"
+python3 "$REPO/tests/mujoco_scene.py" --robot-name g1 --output "$D/scene.xml" ${MODEL:+--robot-model "$D/robot_model.xml"}
 pkill -9 -x mujoco_ros2_con 2>/dev/null; pkill -9 -x rviz2 2>/dev/null; sleep 2
 setsid nohup timeout 240 bash -c "cd $WS && $SRC && ros2 launch legged_robot_mpc_controller robot.launch.py robotName:=g1 \
   mpcControllerName:=humanoid_whole_body_inverse_dynamics_mpc_controller mujocoModelFile:=$D/scene.xml \

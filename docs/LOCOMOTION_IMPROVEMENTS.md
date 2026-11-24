@@ -150,11 +150,32 @@ then **also failed to move the peak and worsened D3** ([`load_share_cost.md`](re
   (`src/mpc/common/swing_foot_planner/`).
 
 ### 1.4 Foot / contact model realism (benchmark's #2)
-- MJCF sole = **four spheres spanning 6 cm** → CoP soft constraint sits at/over its limit
-  (cost ~5.5), which makes lateral/vertical force distribution brittle and noisy.
-- Replace with a **sole box** (or 2×2 spheres + explicit rectangle) matching
-  `model.contactGeometry.rectangle`, giving real CoP margin. This is a *model decision*
-  (ask before changing) but it likely improves both bounce and lateral tracking.
+- ~~MJCF sole = four spheres spanning 6 cm~~ **Recon correction (2026-11-24):** the G1 sole is
+  **four r = 5 mm spheres** per foot at x ∈ {−0.05, 0.12}, y ∈ {±0.025 heel, ±0.03 toe},
+  z −0.03 (ankle-roll frame; bottoms at −0.035). The MPC rectangle (`frameTranslation` x 0.035,
+  `rectangle [0.09, −0.09, 0.03, −0.03]`) spans x −0.055…0.125 / y ±0.03 — i.e. the planner's
+  CoP polygon is **5 mm larger than the physical footprint on every edge**, so the CoP soft
+  constraint can sit on the real tipping edge while the plan believes it has margin.
+  Also: the robot's `solref 0.001` is **inert** — the floor geom has `priority="1"` with no
+  solref, so MuJoCo's default 20 ms contact governs (the MJCF header comment overstates it).
+- Levers (both tested headlessly, same harness): **sole box** (shape change, one box per foot
+  at the same ground height; `tests/tuning/make_model.py`, hooked into `run_case.sh` via
+  `MODEL=`) and a **fitted CoP rectangle** `[0.085, −0.085, 0.025, −0.025]` (config-only, 5 mm
+  margin inside the sphere hull). Model variant = user-approved (asked; "4,5,then 6").
+
+**Sweep status (implement → test → document):**
+
+| step | status | artifact |
+| --- | --- | --- |
+| implement (model tool + scene hook + sweep + comparator) | ✅ done | `tests/tuning/make_model.py`, `mujoco_scene.py --robot-model`, `run_case.sh MODEL=`, `run_footcontact_sweep.sh` (cases `fc_rectfit`, `fc_box`, `fc_box_rectfit`, `fc_boxrect`), `compare_footcontact.py`; contract `tests/foot_contact_model_test.py` |
+| test (closed-loop sweep) | ⏳ pending | `tuning_results/footcontact_sweep_report.txt` |
+| document results | ⏳ pending | `docs/results/foot_contact_sweep.md` |
+
+Gates (any-of primaries — the roadmap expects *both* bounce and lateral gains and the D2 peak
+lives at this layer): `acc_hf` ≤ 0.92× **or** roll ≤ 0.85× **or** legs `pd_tau_p999` ≤ 0.90×;
+guards: survived, the non-improved primaries must not worsen (≤1.10× / ≤1.15×+0.05 / ≤1.05×),
+jump@switch ≤ 1.15×+0.02, leg PD HF ≤ 1.10×+0.1, track err ≤ 1.20×+0.05°, plan z sd / z-track
+≤ 1.10×+0.5 mm, arm swing ≤ 1.20×+1°, vx ≥ 0.90×, solve ≥ 0.90×.
 
 ### 1.5 Gait-transition smoothness
 - `phaseTransitionStanceTime: 0.0` on all robots — gait ladder switches splice with **no
