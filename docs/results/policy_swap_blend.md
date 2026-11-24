@@ -15,7 +15,7 @@ this file is the results of the test stage.
 | | Status | What it proves |
 | --- | --- | --- |
 | Mechanism micro-benchmark (this doc, below) | **Done, 18/18 gates** | The shipped `apply_policy_swap_blend()` removes the switch-tick step, has zero residual lag after the ramp, and improves the worst per-tick command change — across solve rates 58.8–200 Hz, jittered solves, and duration/solve-period overlap. |
-| Closed-loop MuJoCo A/B (`tests/tuning/run_blend_ab.sh`) | **Script ready — run pending** | The same walk with blend off vs on, gated on the real `cmd_tau_jump_at_switch` plus non-regression guards. Needs the `ros_jazzy` container. |
+| Closed-loop MuJoCo A/B (`tests/tuning/run_blend_ab.sh`) | **Done, 8/8 gates** (2026-11-24, native Jazzy) | The same walk with blend off vs on: legs `cmd_tau_jump_at_switch` 0.924 → 0.182 Nm (−80%), no regression in bounce, height tracking, touchdown peak, or solve rate; both runs survived. |
 | Real robot | Not done | — |
 
 The micro-benchmark is mechanism-level: it drives the *real compiled function* with a synthetic
@@ -101,12 +101,13 @@ calibration check (targets reproduced before any blend case is trusted), and the
 is small enough to audit.
 
 
-## Closed-loop A/B — how to run (pending)
+## Closed-loop A/B
 
-In the `ros_jazzy` container (workspace `/root/ocs2_ros2_ws`, repo checked out):
+Run in a ROS 2 Jazzy environment — the `ros_jazzy` container (workspace
+`/root/ocs2_ros2_ws`) or native Jazzy with `WS` set to the colcon workspace:
 
 ```bash
-tests/tuning/run_blend_ab.sh 0.5          # vx = 0.5 m/s, default OUT=<repo>/tuning_results
+WS=$HOME/Documents/GitHub/humanoid_ws tests/tuning/run_blend_ab.sh 0.5   # vx = 0.5 m/s
 ```
 
 It builds `legged_robot_mpc_controller`, runs the static contract test, generates
@@ -123,17 +124,45 @@ via `make_config.py`, runs `run_case.sh` for both, and gates the pair with
 | `solve_hz` | ≥ 0.90× baseline |
 | legs `cmd_tau_step_otherwise` (ramp redistribution) | ≤ 1.60× + 0.05 Nm |
 
-Report lands in `$OUT/blend_ab_report.txt`. **Paste the report here to complete this section.**
+### A/B results — 2026-11-24, **PASS (8/8 gates)**
 
-### A/B results
+G1, flat ground, vx = 0.5 m/s, tracking at 500 Hz, native ROS 2 Jazzy
+(`~/Documents/GitHub/humanoid_ws`), solve rate ≈ 68 Hz. Full report:
+`<repo>/tuning_results/blend_ab_report.txt`.
 
-_Pending — run `tests/tuning/run_blend_ab.sh` in the container._
+| gate | blend off | blend on | limit | result |
+| --- | --- | --- | --- | --- |
+| survived | yes | yes | — | PASS |
+| legs `cmd_tau_jump_at_switch` | 0.924 Nm | **0.182 Nm** | ≥ 40% drop | **PASS (−80%)** |
+| `base.plan_z_sd_mm` | 2.14 | 2.03 | ≤ 1.10× + 1 | PASS (slightly better) |
+| `base.z_track_err_mm` | 0.50 | 0.54 | ≤ 1.10× + 1 | PASS |
+| legs `pd_tau_p999` | 50.25 Nm | 50.25 Nm | ≤ 1.15× + 1 | PASS (identical) |
+| `solver.solve_hz` | 67.9 | 67.4 | ≥ 0.90× | PASS |
+| legs `cmd_tau_step_otherwise` | 0.295 Nm | 0.358 Nm | ≤ 1.60× + 0.05 | PASS (+21%) |
 
+Informational (not gated): arms jump 0.206 → 0.035 Nm (−83%); `policy_switch_hz`
+67.9 → 67.3; solver advance p95 16.94 → 17.05 ms.
+
+Reading the result:
+
+- **The closed loop confirms the mechanism.** The switch-tick torque step drops 80%
+  (0.924 → 0.182 Nm) — not to the micro-benchmark's exact zero because the tracking log
+  samples at 500 Hz: the logged pair straddles the solve tick, so what remains is one
+  small ramp step, not the full plan disagreement. The residual (0.182) is already below
+  the non-switch step it coexists with (0.358).
+- **Nothing regressed.** Bounce marginally improved (2.14 → 2.03 mm), height tracking
+  flat, touchdown PD peak byte-identical (the blend only acts at solve handover, not at
+  contact events), solve rate within noise (−0.5 Hz).
+- **The redistribution shows up exactly as predicted:** `step_otherwise` +0.063 Nm
+  (+21%), well inside the 1.60× guard — the jump was spread over the ramp ticks.
+- The baseline jump here (0.924 Nm at ≈ 68 Hz) is larger than the benchmark's documented
+  0.79 Nm at ≈ 90 Hz, consistent with slower solves letting adjacent plans disagree more;
+  the blend cuts it regardless of rate.
 
 ## Reproduce
 
 ```bash
 python3 tests/tuning/run_blend_microbench.py     # this doc's table + gates (any machine with g++)
-tests/tuning/run_blend_ab.sh 0.5                 # closed-loop A/B (ros_jazzy container)
+WS=<colcon-workspace> tests/tuning/run_blend_ab.sh 0.5   # closed-loop A/B (Jazzy, container or native)
 python3 -m pytest tests/wb_id_policy_blend_contract_test.py -q   # static contract
 ```

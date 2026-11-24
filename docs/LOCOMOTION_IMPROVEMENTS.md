@@ -38,11 +38,11 @@ These need no new architecture; most are config or small controller changes.
   | --- | --- | --- |
   | implement | ✅ done | `controller.cpp` / `parameters.yaml` / configs / contract test |
   | test (mechanism) | ✅ done, **18/18 gates** | `python3 tests/tuning/run_blend_microbench.py` → `tests/tuning/blend_microbench.json`; results in [`docs/results/policy_swap_blend.md`](results/policy_swap_blend.md) |
-  | test (closed-loop A/B) | ⏳ script ready, **run pending** | `tests/tuning/run_blend_ab.sh` in the `ros_jazzy` container → `$OUT/blend_ab_report.txt` (gates: jump ≥40% down, bounce/touchdown/solve-rate guards) |
-  | document results | ✅ done for micro-bench; A/B section awaiting paste | [`docs/results/policy_swap_blend.md`](results/policy_swap_blend.md) |
+  | test (closed-loop A/B) | ✅ done, **8/8 gates** (2026-11-24) | `tests/tuning/run_blend_ab.sh` → jump 0.924 → 0.182 Nm (−80%), no guard regressed; report in [`docs/results/policy_swap_blend.md`](results/policy_swap_blend.md) |
+  | document results | ✅ done | [`docs/results/policy_swap_blend.md`](results/policy_swap_blend.md) (micro-bench 18/18 + closed-loop A/B 8/8) |
 
-  Do not start 1.2+ until the A/B has run (or its run is explicitly waived) and its report is
-  pasted into the results doc.
+  Phase 1.1 measurement is complete (both test stages ran and are documented); 1.2+ is
+  unblocked under the implement → test → document methodology.
 - **Raise the effective MPC rate**: `f_thr6_120` reached 104 Hz with `sqpIteration: 1`.
   Options: trim horizon nodes / `fineHorizon`, profile CppAD eval, spend saved time on rate
   rather than iterations (benchmark already concluded rate > iterations).
