@@ -414,6 +414,21 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           tiltWeight: 10.0
           angularVelocityWeight: 5.0
 
+        # Flat-ground xy foothold reference for the swing foot (Raibert neutral point + optional
+        # capture-point correction) through the foot cost. Off = foot placement left to the
+        # optimizer (the behaviour before Phase 2.4); see docs/results/capture_point_sweep.md.
+        captureFootPlacement:
+          enabled: false
+          gain: 0.0                  # capture-point correction gain
+          stepWidth: 0.24            # G1 nominal foot spacing (hip pitch 0.0645 + hip roll 0.052 per side)
+          maxAdjustment: 0.10
+          trackingWeight: 50.0
+          projectionHorizon: 0.0
+          stepLengthGain: 0.0
+          stanceTimeGain: 0.5        # Raibert neutral point
+          footCenterOffset: 0.0      # contactGeometry already puts the frame at the sole centre
+          currentSwingOnly: true
+
         # Active J_leg^T W load cost; separate from r.jointTorques.
         legTorqueCost:
           activate: false  # Initial terrain ablation; input torque cost and actuator limits remain.

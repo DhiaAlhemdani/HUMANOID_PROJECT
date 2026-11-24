@@ -143,3 +143,21 @@ class MakeModelBox(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CapturePlacementShippedInert(unittest.TestCase):
+    """Phase 2.4: the G1 config carries the captureFootPlacement block (so make_config can sweep
+    it) but ships it disabled — identical behaviour to before the block existed."""
+
+    def test_block_present_and_disabled(self):
+        import yaml
+        c = yaml.safe_load((ROOT / "config/g1/ros2_controllers.yaml").read_text())
+        cfp = c["humanoid_whole_body_inverse_dynamics_mpc_controller"]["ros__parameters"]["ocs2"]["costs"]["captureFootPlacement"]
+        self.assertFalse(cfp["enabled"])
+        self.assertEqual(cfp["gain"], 0.0)
+        self.assertAlmostEqual(cfp["stepWidth"], 0.24)   # 2 x (0.064452 + 0.052) hip offsets
+        self.assertEqual(cfp["stanceTimeGain"], 0.5)
+        # every key the parameter schema declares is spelled correctly
+        schema = (ROOT / "src/controller/parameters.yaml").read_text()
+        for k in cfp:
+            self.assertRegex(schema, rf"\n\s+{k}: \{{type:", k)

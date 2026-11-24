@@ -293,7 +293,24 @@ pitch / acc_hf / z pp ≤ 0.85×; guards survived, vx, solve, steady acc_hf/roll
 
 ## Phase 2 — MPC formulation upgrades (medium effort)
 
-Ordered by expected smoothness payoff per unit work.
+Ordered by expected smoothness payoff per unit work *(as estimated before Phase 1)*.
+
+### Phase 2 execution order (set 2026-11-24, after Phase 1's evidence)
+
+Same methodology per item: implement → closed-loop sweep against a fresh baseline → results doc;
+shipped defaults stay inert until a sweep wins. Re-sequenced because Phase 1 showed the
+touchdown peak is actuator saturation (servo layer) and the remaining bounce is gait/contact
+driven, which lowers the expected payoff of plan-level force shaping (items 1–2):
+
+| order | item | why here | status |
+| --- | --- | --- | --- |
+| 2.A | **#4 capture-point / Raibert foothold** | config-only; the only lever aimed at lateral sway/roll and start-stop balance (benchmark #3) | tooling ✅ `run_capture_sweep.sh`; sweep ⏳ |
+| 2.B | **#6 whole-body QP layer** (promoted from "optional") | the 1 kHz PD at kp 200 is what turns touchdown error into saturated torque; a high-rate WBC tracking the MPC's wrenches/accelerations with the *measured* state is the largest smoothness step available with the current MPC | design next |
+| 2.C | **#3 touchdown impact model** | contained (dynamics jump map at mode events, ocs2 SQP supports event nodes); lets the plan anticipate impact | after 2.B |
+| 2.D | **#5 DCM/CoM reference** | moderate; natural lateral weight transfer; measured against 2.A's result | after 2.C |
+| 2.E | **#1 force-rate** | only as *state augmentation* (forces as state, rates as input — the per-stage cost route was tried and rejected in 1.3); value re-assessed once 2.B/2.C land | deferred |
+| 2.F | **#2 contact-timing optimization** | heaviest; last | deferred |
+| — | **#7 terrain anticipatory height** | flat-ground benchmark does not exercise it | out of scope for smoothness |
 
 1. **Contact-implicit / force-rate constraints** — replace prescribed wrench continuity with
    explicit `‖f_{k+1} − f_k‖` penalties or rate bounds; directly targets D2/D3 at the plan

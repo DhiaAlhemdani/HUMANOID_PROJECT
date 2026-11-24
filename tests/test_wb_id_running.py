@@ -83,9 +83,12 @@ class RunningGaitTest(unittest.TestCase):
         self.assertTrue(capture["currentSwingOnly"])
         self.assertEqual(params["ocs2"]["constraints"]["inverseDynamics"]["torqueConstraintNodes"], 10)
         self.assertGreaterEqual(params["ocs2"]["reference"]["maxDisplacementVelocityX"], 2.0)
+        # G1 leaves foot placement to the optimizer: the block exists (Phase 2.4 sweeps toggle it
+        # via make_config) but ships disabled, which is the schema default.
         g1 = yaml.safe_load((ROOT / "config/g1/ros2_controllers.yaml").read_text())
-        self.assertNotIn("captureFootPlacement",
-                         g1["humanoid_whole_body_inverse_dynamics_mpc_controller"]["ros__parameters"]["ocs2"]["costs"])
+        g1_capture = g1["humanoid_whole_body_inverse_dynamics_mpc_controller"]["ros__parameters"]["ocs2"]["costs"].get(
+            "captureFootPlacement", {"enabled": False})
+        self.assertFalse(g1_capture["enabled"])
 
     def test_inclusive_speed_boundary_tolerates_filter_roundoff(self):
         source = (ROOT / "src/mpc/common/reference_manager/ProceduralMpcMotionManager.cpp").read_text()
