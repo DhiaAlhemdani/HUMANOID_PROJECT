@@ -1,4 +1,6 @@
 Panels:
+  - Class: legged_robot_mpc_controller/SimulationResetPanel
+    Name: Simulation Reset
   - Class: rviz_common/Displays
     Help Height: 84
     Name: Displays

@@ -1,0 +1,3 @@
+# Unified diff artifacts necessarily contain a single-space context marker on empty lines.
+patches/*.patch whitespace=-blank-at-eol,-blank-at-eof
+patches/legacy/*.patch whitespace=-blank-at-eol,-blank-at-eof
