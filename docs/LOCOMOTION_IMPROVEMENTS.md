@@ -9,7 +9,7 @@ passes "no falls", but three smoothness defects remain:
 
 | # | Measured defect (G1, 0.5 m/s walk) | Evidence |
 |---|---|---|
-| D1 | **MPC-planned pelvis bounce** ≈ 11–12 mm (z sd), 4–40 Hz vertical accel 1.19 — **z sd not reproduced 2026-11-24: GT 1.6 / plan 2.14 mm** (main's quintic swing in tree); residual target = `pelvis_acc_hf` 1.16 | benchmark §"What remains"; blend A/B `summary.txt` |
+| D1 | **MPC-planned pelvis bounce** ≈ 11–12 mm (z sd), 4–40 Hz vertical accel 1.19 — **CLOSED 2026-11-24**: z sd not reproduced (GT 1.6 / plan 2.14 mm), cost sweep 0/4 → residual `acc_hf` 1.18 is contact-driven, carried into 1.3 | benchmark §"What remains"; blend A/B `summary.txt`; [`bounce_cost_sweep.md`](results/bounce_cost_sweep.md) |
 | D2 | **Touchdown torque spikes** ≈ 50 Nm (knee/ankle 99.9th pct) | benchmark; `impactProximityFactor*` |
 | D3 | **Per-solve command ripple** — torque jumps at each new solution: legs 0.79 vs 0.31 Nm on other ticks | `cmd_tau_jump_at_switch` in `plot_tracking.py` |
 
@@ -60,20 +60,21 @@ plus plan_z 2.14 mm. Recon: the walk height target is a *constant* (`defaultBase
 estimate off) — there is no gait-phase z reference to smooth, so the "smooth the height
 reference" lever is a dead end; the bounce was and is an optimizer choice.
 
-**Sweep status (implement → test → document):**
+**Sweep status (implement → test → document) — COMPLETE, no winner:**
 
 | step | status | artifact |
 | --- | --- | --- |
-| implement (sweep cases + tooling) | ✅ done | `tests/tuning/run_bounce_sweep.sh` (cases `accz10`, `accz100`, `z100`, `vz10`) + `tests/tuning/compare_bounce.py`; shipped config unchanged pending a winner |
-| test (closed-loop sweep) | ⏳ **run pending** | `WS=<ws> tests/tuning/run_bounce_sweep.sh 0.5` → `$OUT/bounce_sweep_report.txt`; baseline = existing `$OUT/blend_on` |
-| document results | baseline recorded here; results after sweep | this section → `docs/results/` |
+| implement (sweep cases + tooling) | ✅ done | `tests/tuning/run_bounce_sweep.sh` (cases `accz10`, `accz100`, `z100`, `vz10`) + `tests/tuning/compare_bounce.py`; shipped config unchanged |
+| test (closed-loop sweep) | ✅ done, **0/4** | `tuning_results/bounce_sweep_report.txt`: only the primary `acc_hf` gate failed (all candidates within ±2% noise on it, z100 +4.5% worse); every other guard passed |
+| document results | ✅ done | [`docs/results/bounce_cost_sweep.md`](results/bounce_cost_sweep.md) |
 
-Gates per candidate: `pelvis_acc_hf` ≤ 0.90× baseline (primary, ≥10% cut), survived, vx ≥ 0.90×,
-GT/plan z sd & z-track ≤ 1.10×+0.5 mm, roll ≤ 1.15×+0.05°, arm swing ≤ 1.20×+1°, solve ≥ 0.90×.
-The headline lever is **`r.baseAccelerations` z (0.005 → 0.05/0.5)** — never swept by the
-benchmark; `q.basePose[2]` 50→100 (300 fell) and vz 5→10 (20/30 rejected for roll) are the
-supporting cases. Doc/config note: the benchmark's "shipped vz = 10" does not match the repo
-(config has been 5 since the root commit).
+**Conclusion:** `acc_hf ≈ 1.18` is insensitive to planned-trajectory costs (the `r.baseAccelerations`
+z lever was inert even at ×100) while the plan itself is smooth — the residual enters through
+**contact/servo execution, not the plan**. D1 closed; the residual + D2's 50.25 Nm touchdown
+peak move to **Phase 1.3**. Notable near-miss: vz 5→10 cut GT z sd −15% (1.53→1.30 mm) but
+raised `acc_hf` — not adopted (z sd was already at the noise floor).
+Doc/config note: the benchmark's "shipped vz = 10" does not match the repo (config has been 5
+since the root commit).
 
 - **Vertical cost shaping**: the shipped `q.baseVelocity[2]` (vz) is 5 (the benchmark doc says
   10) and benchmark round 6
