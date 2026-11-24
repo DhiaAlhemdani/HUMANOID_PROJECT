@@ -54,6 +54,9 @@ struct ReferenceConfig {
   scalar_t maxBaseHeight{1.19};
   // Physical command slew limits [ax, ay, height rate, yaw acceleration]; zero disables an axis.
   vector4_t commandRateLimits{vector4_t::Zero()};
+  // Jerk limits on the same axes [ax/s, ay/s, height accel, yaw jerk]: the slew rate itself ramps (S-curve);
+  // zero keeps the pure rate clamp on that axis. Only meaningful where commandRateLimits is non-zero.
+  vector4_t commandJerkLimits{vector4_t::Zero()};
   // Height rate [m/s] of the rise from a reset height (the measured height at MPC takeover, e.g. after a stand-up)
   // to the commanded height; commandRateLimits applies once it arrives. Zero: commandRateLimits throughout.
   scalar_t takeoverHeightRate{0.0};

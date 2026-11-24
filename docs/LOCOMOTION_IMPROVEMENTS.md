@@ -226,14 +226,31 @@ PD HF, track err, z, arms, vx, solve).
 
 ### 1.6 Command & upper-body polish
 - Velocity command slew is linear (`velocityCommandRateLimits`); an **S-curve (jerk-limited)**
-  profile removes acceleration discontinuities at ramp start/stop — small change in
-  `WalkingVelocityTarget.cpp`.
-- **Arm swing**: reference exists (`reference.armSwing`); verify phase locking to gait and
-  add a small shoulder *velocity* weight reduction (already 0.06) so arms don't look stiff
-  against the torso cost (`torsoTiltCost` active at 10° corridor).
+  profile removes acceleration discontinuities at ramp start/stop — ✅ **implemented**:
+  `CommandSlewLimiter.h` (header-only `slewLimitStep`, discrete-safe brake cap, jerk 0 =
+  bit-identical legacy clamp) used by `WalkingVelocityTarget`; new parameter
+  `reference.velocityCommandJerkLimits` (shipped `[0,0,0,0]` → inert). Recon: the command path is
+  a 5 Hz low-pass → 0.5 m/s² clamp, so a command step was a linear ramp with an acceleration
+  *step* at both ends. Microbench `tests/tuning/run_slew_microbench.py` **17/17**.
+- **Arm swing**: reference exists (`reference.armSwing`); phase locking is by construction
+  (reference generated from the gait phase) and the shipped swing is 8.4° pp with no smoothness
+  defect attached — **not swept** (no measurable criterion under the benchmark priorities).
 - Revisit `useFeedbackPolicy: false` — the LQR feedback term from SQP is exactly the
-  disturbance-rejection smoother; it was disabled for compute. If 1.1 raises the rate,
-  re-enable and re-measure (benchmark round 5–6 tables are the baseline).
+  disturbance-rejection smoother; it was disabled for compute. Recon: the controller evaluates
+  the MRT policy with the *measured* state, so the flag is live (config-only A/B in the sweep).
+
+**Sweep status (implement → test → document):**
+
+| step | status | artifact |
+| --- | --- | --- |
+| implement (S-curve limiter + wiring, `command` transient metrics, generic comparator, sweep) | ✅ done | `CommandSlewLimiter.h`, `plot_tracking.py` `command` section, `tests/tuning/compare_ab.py`, `run_polish_sweep.sh` (set A: `po_base/po_fb/po_jerk1/po_fb_jerk1` @ vx; set B: `ps_base/ps_jerk1/ps_jerk05` @ `stops`); contract `tests/command_slew_contract_test.py` |
+| test (closed-loop, **needs a build**) | ⏳ pending | `tuning_results/polish_sweep_report.txt` |
+| document results | ⏳ pending | `docs/results/polish_sweep.md` |
+
+Gates — set A (steady walk, probe ramps): any-of `legs.cmd_tau_jump_at_switch` ≤ 0.85× /
+`acc_hf` ≤ 0.92× / `command.transient_pitch_max_deg` ≤ 0.85×, default guard set (incl. solve
+≥ 0.90× — the feedback policy's known cost). Set B (command steps 0↔0.5 m/s): any-of transient
+pitch / acc_hf / z pp ≤ 0.85×; guards survived, vx, solve, steady acc_hf/roll.
 
 ---
 

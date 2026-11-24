@@ -324,6 +324,46 @@ diag["gait"] = {
     "transition_roll_max_deg": _agg("roll_max_deg"),
     "first_step_asym_max": _agg("first_step_asym"),
 }
+# ---------------- command transients (roadmap #1.6 S-curve slew) ----------------
+# The probe's command schedule is known (wall clock -> sim time via ground truth): vx/vy/yaw
+# profiles ramp over RAMP s at SETTLE and SETTLE+RAMP+HOLD; `stops` additionally steps the command
+# 0 <-> VX every 4 s / 3 s during the hold. Each event is scored over [-0.3, +2.0] s on the ground
+# truth: HF vertical acceleration, height excursion, pitch/roll excursion from the hold median.
+events = []
+if PROF == "stops":
+    k, tw = 0, SETTLE + RAMP
+    while tw + 4.0 < SETTLE + RAMP + HOLD:
+        events.append(("step_down", tw + 4.0))
+        if tw + 7.0 < SETTLE + RAMP + HOLD:
+            events.append(("step_up", tw + 7.0))
+        tw += 7.0
+else:
+    events = [("ramp_up_start", SETTLE), ("ramp_up_end", SETTLE + RAMP),
+              ("ramp_down_start", SETTLE + RAMP + HOLD), ("ramp_down_end", SETTLE + RAMP + HOLD + RAMP)]
+_pitch_ref = float(np.median(_hold[:, 9])) if len(_hold) else float(np.median(gt[:, 9]))
+cmd_events = []
+for kind_, tw in events:
+    if not np.isnan(fell_wall) and fell_wall < tw:
+        break
+    ts = w2s(tw)
+    g = gt[(gtt >= ts - 0.3) & (gtt <= ts + 2.0)]
+    ev = {"kind": kind_, "t": round(ts, 3)}
+    if len(g) >= 100:
+        tt = g[:, 0]
+        ev["acc_hf"] = round(band_t(tt[1:], np.diff(g[:, 7]) / np.maximum(np.diff(tt), 1e-6)), 4)
+        ev["z_pp_mm"] = round(1000 * float(np.ptp(g[:, 4] - np.polyval(np.polyfit(tt - tt[0], g[:, 4], 1), tt - tt[0]))), 2)
+        ev["pitch_max_deg"] = round(math.degrees(float(np.max(np.abs(g[:, 9] - _pitch_ref)))), 3)
+        ev["roll_max_deg"] = round(math.degrees(float(np.max(np.abs(g[:, 8] - _roll_ref)))), 3)
+    cmd_events.append(ev)
+_cagg = lambda key: (round(max(ev[key] for ev in cmd_events if key in ev), 4) if any(key in ev for ev in cmd_events) else None)
+diag["command"] = {
+    "profile": PROF,
+    "events": cmd_events,
+    "transient_acc_hf_max": _cagg("acc_hf"),
+    "transient_z_pp_mm_max": _cagg("z_pp_mm"),
+    "transient_pitch_max_deg": _cagg("pitch_max_deg"),
+    "transient_roll_max_deg": _cagg("roll_max_deg"),
+}
 json.dump(diag, open(OUT("diag.json"), "w"), indent=1)
 
 # ---------------- figures ----------------
@@ -437,5 +477,7 @@ print(f"DIAG {TITLE} | base z sd plan {B['plan_z_sd_mm']} / obs {B['obs_z_sd_mm'
       + (f" (acc_hf max {diag['gait']['transition_acc_hf_max']}, z pp {diag['gait']['transition_z_pp_mm_max']} mm,"
          f" roll max {diag['gait']['transition_roll_max_deg']} deg, 1st-step asym {diag['gait']['first_step_asym_max']})"
          if diag['gait']['changes_locomotion'] else "")
+      + f" | cmd transients ({diag['command']['profile']}, {len(diag['command']['events'])} events) acc_hf max {diag['command']['transient_acc_hf_max']},"
+        f" z pp {diag['command']['transient_z_pp_mm_max']} mm, pitch max {diag['command']['transient_pitch_max_deg']} deg"
       + (f" | solve {diag['solver']['advance_ms_mean']} ms mean, {diag['solver']['advance_ms_p95']} p95, {diag['solver']['solve_hz']} Hz, eq_sse {diag['solver']['eq_sse_mean']:.1e}"
          f" (first 3 nodes {diag['solver'].get('eq_sse_near_mean', float('nan')):.1e})" if "solver" in diag else ""))

@@ -180,6 +180,8 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
     auto reference_config = common::buildReferenceConfig(parameters_);
     reference_config.commandRateLimits =
       Eigen::Map<const ocs2::vector4_t>(parameters_.ocs2.reference.velocityCommandRateLimits.data());
+    reference_config.commandJerkLimits =
+      Eigen::Map<const ocs2::vector4_t>(parameters_.ocs2.reference.velocityCommandJerkLimits.data());
     reference_config.takeoverHeightRate = parameters_.ocs2.reference.takeoverHeightRate;
     {
       const auto& heights = parameters_.ocs2.reference.postureHeights;

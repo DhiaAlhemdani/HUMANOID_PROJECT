@@ -435,6 +435,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           slew limits [ax, ay (m/s^2), height rate (m/s), yaw acceleration (rad/s^2)] applied to the scaled walking
           command (base_twist/terrain_walk), next to the maxDisplacementVelocity/maxRotationVelocity scaling;
           zero disables an axis", validation: {fixed_size<>: [4], element_bounds<>: [0.0, 100.0]}}
+      velocityCommandJerkLimits: {type: double_array, default_value: [0.0, 0.0, 0.0, 0.0], description: "Jerk limits
+          on the same axes as velocityCommandRateLimits [m/s^3, m/s^3, m/s^2, rad/s^3]: the slew rate itself ramps
+          (S-curve reference, no acceleration step at ramp start/stop); zero keeps the pure rate clamp on that
+          axis", validation: {fixed_size<>: [4], element_bounds<>: [0.0, 1000.0]}}
       takeoverHeightRate: {type: double, default_value: 0.0, description: "Height rate [m/s] of the reference's rise
           from the measured height at MPC takeover (after a planned stand-up) to the commanded height;
           velocityCommandRateLimits applies once it arrives. 0: velocityCommandRateLimits throughout",

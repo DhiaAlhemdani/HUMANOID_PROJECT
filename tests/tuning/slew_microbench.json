@@ -1,0 +1,74 @@
+{
+ "legacy_rate_equals_limit": {
+  "ok": true,
+  "value": 0.5
+ },
+ "legacy_reaches_in_1s": {
+  "ok": true,
+  "value": 1
+ },
+ "scurve_rate_within_limit": {
+  "ok": true,
+  "value": 0.5
+ },
+ "scurve_jerk_within_limit": {
+  "ok": true,
+  "value": 1
+ },
+ "scurve_overshoot_below_jerk_dt2": {
+  "ok": true,
+  "value": 0
+ },
+ "scurve_converges": {
+  "ok": true,
+  "value": 0.5
+ },
+ "scurve_rate_returns_to_zero": {
+  "ok": true,
+  "value": 0
+ },
+ "scurve_soft_start": {
+  "ok": true,
+  "value": 0.00015625
+ },
+ "scurve_duration_about_1p5s": {
+  "ok": true,
+  "value": 1.4875
+ },
+ "reversal_jerk_within_limit": {
+  "ok": true,
+  "value": 1
+ },
+ "reversal_converges": {
+  "ok": true,
+  "value": -0.3
+ },
+ "reversal_undershoot_below_jerk_dt2": {
+  "ok": true,
+  "value": 0
+ },
+ "tiny_step_converges": {
+  "ok": true,
+  "value": 0.0001
+ },
+ "tiny_step_monotone": {
+  "ok": true,
+  "value": 1
+ },
+ "disabled_axis_passthrough": {
+  "ok": true,
+  "value": 0.3
+ },
+ "zero_dt_holds": {
+  "ok": true,
+  "value": 0.3
+ },
+ "large_dt_rate_within_limit": {
+  "ok": true,
+  "value": 0.05
+ },
+ "summary": {
+  "pass": 17,
+  "total": 17
+ }
+}
