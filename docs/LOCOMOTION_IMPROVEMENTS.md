@@ -10,7 +10,7 @@ passes "no falls", but three smoothness defects remain:
 | # | Measured defect (G1, 0.5 m/s walk) | Evidence |
 |---|---|---|
 | D1 | **MPC-planned pelvis bounce** ≈ 11–12 mm (z sd), 4–40 Hz vertical accel 1.19 — **CLOSED 2026-11-24**: z sd not reproduced (GT 1.6 / plan 2.14 mm), cost sweep 0/4 → residual `acc_hf` 1.18 is contact-driven, carried into 1.3 | benchmark §"What remains"; blend A/B `summary.txt`; [`bounce_cost_sweep.md`](results/bounce_cost_sweep.md) |
-| D2 | **Touchdown torque spikes** ≈ 50 Nm (knee/ankle 99.9th pct) — **IMPROVED then CLOSED 2026-11-24**: `touchDownVelocity −0.05` shipped → `acc_hf` −8.7% (best of project); the 50.25 peak proved **invariant across all three lever rounds** (trajectory configs, touchdown velocity, structural load-share: ≤0.02 Nm over a 1000× span) at ≈ ankle effort-limit scale → **closed as plan-inert (contact/servo saturation)** | benchmark; [`touchdown_sweep.md`](results/touchdown_sweep.md); [`load_share_cost.md`](results/load_share_cost.md) |
+| D2 | **Touchdown torque spikes** ≈ 50 Nm (knee/ankle 99.9th pct) — **IMPROVED then CLOSED 2026-11-24**: `touchDownVelocity −0.05` shipped → `acc_hf` −8.7% (best of project); the 50.25 peak proved **invariant across all three lever rounds** (trajectory configs, touchdown velocity, structural load-share: ≤0.02 Nm over a 1000× span) at ≈ ankle effort-limit scale → **root-caused 2026-11-24: ankle actuator saturation** (`pd_tau_p999` is |meas−cmd| with meas clamped at the 50 Nm ankle limit; contact-model sweep neutral) → metric retired, replaced by `legs.tau_sat_pct`; residual D2 = servo layer (ankle kp 200 × touchdown error) | benchmark; [`touchdown_sweep.md`](results/touchdown_sweep.md); [`load_share_cost.md`](results/load_share_cost.md); [`foot_contact_sweep.md`](results/foot_contact_sweep.md) |
 | D3 | **Per-solve command ripple** — torque jumps at each new solution: legs 0.79 vs 0.31 Nm on other ticks — **largely closed by the Phase 1.1 blend** (jump 1.317 → 0.105 on the 2026-11-24 baseline); load-share round **rejected** (jump +27…41%) | `cmd_tau_jump_at_switch` in `plot_tracking.py`; [`load_share_cost.md`](results/load_share_cost.md) |
 
 User priority order (from the benchmark): **falls → smoothness (bounce, jitter) → velocity tracking.**
@@ -168,8 +168,15 @@ then **also failed to move the peak and worsened D3** ([`load_share_cost.md`](re
 | step | status | artifact |
 | --- | --- | --- |
 | implement (model tool + scene hook + sweep + comparator) | ✅ done | `tests/tuning/make_model.py`, `mujoco_scene.py --robot-model`, `run_case.sh MODEL=`, `run_footcontact_sweep.sh` (cases `fc_rectfit`, `fc_box`, `fc_box_rectfit`, `fc_boxrect`), `compare_footcontact.py`; contract `tests/foot_contact_model_test.py` |
-| test (closed-loop sweep) | ⏳ pending | `tuning_results/footcontact_sweep_report.txt` |
-| document results | ⏳ pending | `docs/results/foot_contact_sweep.md` |
+| test (closed-loop sweep) | ✅ done 2026-11-24 | **0/4, all guards pass, no primary improves** — contact shape is neutral on acc_hf/roll; `fc_boxrect` peak 48.99 (−2.5 %) is the first movement of the "plateau" and explains it (see below); report `tuning_results/footcontact_sweep_report.txt` |
+| document results | ✅ done | [`docs/results/foot_contact_sweep.md`](results/foot_contact_sweep.md) |
+
+**Outcome:** nothing shipped (MJCF and rectangle unchanged); §1.4 closed. Key finding: the
+50.24 Nm `pd_tau_p999` is **ankle actuator saturation** (`actuatorfrcrange ±50` = URDF effort,
+servo `kp 200` ⇒ 14° touchdown error saturates) — a clipped signal, which is why every OCP/contact
+lever left it at 50.25 ± 0.01. `plot_tracking.py` now reports `legs.tau_sat_pct` (saturation duty)
+and `pd_tau_p999` is retired as a D2 effectiveness metric. D2 is a servo-layer item from here
+(ankle kp/kd vs touchdown error), to be measured with `tau_sat_pct` first.
 
 Gates (any-of primaries — the roadmap expects *both* bounce and lateral gains and the D2 peak
 lives at this layer): `acc_hf` ≤ 0.92× **or** roll ≤ 0.85× **or** legs `pd_tau_p999` ≤ 0.90×;

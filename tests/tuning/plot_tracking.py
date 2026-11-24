@@ -9,7 +9,9 @@ commands (MPC level), or does the measurement depart from a good command (joint 
 import json
 import math
 import os
+import pathlib
 import sys
+import xml.etree.ElementTree as ET
 
 import matplotlib
 matplotlib.use("Agg")
@@ -154,6 +156,24 @@ for gname, group in (("legs", LEGS), ("waist", WAIST), ("arms", ARMS)):
         "pd_tau_max": {j.replace("_joint", ""): round(float(np.max(np.abs(pd[j][walk]))), 1)
                        for j in sorted(group, key=lambda j: -np.max(np.abs(pd[j][walk])))[:3]},
     }
+# Actuator saturation (D2 reality check): the measured torque is the plant's actuator force,
+# which MuJoCo clamps at actuatorfrcrange (= URDF effort). The ankles sit at 50 Nm, so
+# legs.pd_tau_p999 pins at ~50.25 whenever >0.1 % of walk ticks saturate and says nothing
+# about how often that happens — this does. Limits are read from the shipped URDF.
+URDF = pathlib.Path(__file__).resolve().parents[2] / "description/urdf/robots/g1/g1_29dof.urdf"
+try:
+    _lim = {j.get("name"): float(j.find("limit").get("effort")) for j in ET.parse(URDF).getroot().iter("joint")
+            if j.find("limit") is not None and j.find("limit").get("effort")}
+except (OSError, ET.ParseError):
+    _lim = {}
+for gname, group in (("legs", LEGS), ("arms", ARMS)):
+    sat = {j: float(np.mean(np.abs(c("meas_tau/" + j)[walk]) >= 0.98 * _lim[j])) for j in group if _lim.get(j)}
+    if sat:
+        worst = max(sat, key=sat.get)
+        diag[gname]["tau_sat_pct"] = round(100.0 * sat[worst], 3)          # worst joint, % of walk ticks at >=98 % of its limit
+        diag[gname]["tau_sat_pct_all"] = round(100.0 * float(np.mean(list(sat.values()))), 3)
+        diag[gname]["tau_sat_worst"] = worst.replace("_joint", "")
+        diag[gname]["tau_sat_limit"] = _lim[worst]
 detr = lambda x, m: x[m] - np.polyval(np.polyfit(t[m] - t[m][0], x[m], 1), t[m] - t[m][0])
 diag["base"] = {
     "plan_z_sd_mm": round(1000 * float(np.std(detr(c("plan_base/z"), walk))), 2),
@@ -285,6 +305,7 @@ json.dump(diag, open(OUT("diag.json"), "w"), indent=1)
 L, A, B = diag["legs"], diag["arms"], diag["base"]
 print(f"DIAG {TITLE} | base z sd plan {B['plan_z_sd_mm']} / obs {B['obs_z_sd_mm']} mm, vz rms plan {B['plan_vz_rms']} / obs {B['obs_vz_rms']}"
       f" | legs PD peak p99.9 {L['pd_tau_p999']} Nm max {list(L['pd_tau_max'].items())[0]}"
+      f" sat {L.get('tau_sat_pct', 'n/a')}% of ticks ({L.get('tau_sat_worst', '-')} @ {L.get('tau_sat_limit', '-')} Nm)"
       f" | legs q err {L['track_err_q_deg']}deg, q_hf cmd {L['cmd_q_hf_deg']} meas {L['meas_q_hf_deg']}, tau_hf ff {L['cmd_tau_hf']} pd {L['pd_tau_hf']}, jump@switch {L['cmd_tau_jump_at_switch']} vs {L['cmd_tau_step_otherwise']}"
       f" | arms q err {A['track_err_q_deg']}deg, q_hf cmd {A['cmd_q_hf_deg']} meas {A['meas_q_hf_deg']}, tau_hf ff {A['cmd_tau_hf']} pd {A['pd_tau_hf']}, jump@switch {A['cmd_tau_jump_at_switch']} vs {A['cmd_tau_step_otherwise']}"
       f" | switches {diag['policy_switch_hz']} Hz"
