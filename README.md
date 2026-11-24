@@ -99,6 +99,15 @@ Do not add a duplicate checkout of a package already in the workspace.
   vcs import < legged_robot_mpc_controller_dependencies/legged_robot_state_estimator/legged_robot_state_estimator.repos
   ```
 
+- Apply the thin MuJoCo integration patch so Backspace calls the same ROS reset coordinator as RViz. The simulator uses MuJoCo's built-in `mj_resetData`; the patch restores only configured spawn `qpos` after that reset. The ROS coordinator deactivates and reactivates active controllers while physics remains frozen. The helper also upgrades reset patches from earlier versions of this branch.
+  ```bash
+  ./src/legged_robot_mpc_controller/scripts/apply_mujoco_reset_patch.sh \
+    ./src/legged_robot_mpc_controller_dependencies/mujoco_ros2_control
+  colcon build --packages-select mujoco_ros2_control
+  colcon build --packages-up-to legged_robot_mpc_controller
+  source install/setup.bash
+  ```
+
 - First install by `rosdep`
   ```bash
   # rosdep install
@@ -122,7 +131,6 @@ Do not add a duplicate checkout of a package already in the workspace.
     --cmake-args -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release && \
     . install/setup.bash
   ```
-
 
 ## Run MuJoCo Example
 
@@ -165,6 +173,7 @@ ros2 launch legged_robot_mpc_controller robot.launch.py \
 
 The first launch for each robot generates and compiles its CppAD libraries (several minutes); later launches load them from the cache.
 
+**Reset:** press **Backspace** in the MuJoCo viewer or click **Reset Simulation** in the RViz panel. Both use the same ROS coordinator: active controllers are deactivated, MuJoCo `mj_resetData` resets the simulation data and clock (configured spawn coordinates are restored), physics stays paused while controllers reactivate in startup order, then resumes. For camera-only reset, use MuJoCo **R** or RViz's standard view **Reset** action.
 
 **Useful launch args:**
 

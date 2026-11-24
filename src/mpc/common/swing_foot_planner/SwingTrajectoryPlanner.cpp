@@ -139,8 +139,8 @@ void SwingTrajectoryPlanner::update(const ModeSchedule& modeSchedule,
         // A running swing spans several contact modes; all use the same complete spline.
         const scalar_t liftOffZ = liftOffHeightSequence[j][swingStartIndex + 1];
         const scalar_t touchDownZ = touchDownHeightSequence[j][swingFinalIndex];
-        const CubicSpline::Node liftOffHeight{swingStartTime, liftOffZ, scaling * config_.liftOffVelocity};
-        const CubicSpline::Node touchDownHeight{swingFinalTime, touchDownZ, scaling * config_.touchDownVelocity};
+        const QuinticSpline::Node liftOffHeight{swingStartTime, liftOffZ, scaling * config_.liftOffVelocity};
+        const QuinticSpline::Node touchDownHeight{swingFinalTime, touchDownZ, scaling * config_.touchDownVelocity};
         // Select at lift-off, not at the current phase: flight modes and gait splices share one spline.
         const scalar_t gaitHeight = swingHeightSequence.empty() ? -1.0 : swingHeightSequence[swingStartIndex + 1];
         const scalar_t swingHeight = gaitHeight < 0.0 ? config_.swingHeight : gaitHeight;
@@ -152,9 +152,9 @@ void SwingTrajectoryPlanner::update(const ModeSchedule& modeSchedule,
         impactProximityTrajectories_[j].emplace_back(impactProximityLiftOff, config_.impactProximityFactorMidPointValue,
                                                    impactProximityTouchDown);
       } else {  // for a stance leg
-        // Note: setting the time here arbitrarily to 0.0 -> 1.0 makes the assert in CubicSpline fail
-        const CubicSpline::Node liftOff{0.0, liftOffHeightSequence[j][p], 0.0};
-        const CubicSpline::Node touchDown{1.0, liftOffHeightSequence[j][p], 0.0};
+        // The stance height is constant; use a valid interval for the stationary quintic.
+        const QuinticSpline::Node liftOff{0.0, liftOffHeightSequence[j][p], 0.0, 0.0};
+        const QuinticSpline::Node touchDown{1.0, liftOffHeightSequence[j][p], 0.0, 0.0};
         feetHeightTrajectories_[j].emplace_back(liftOff, liftOffHeightSequence[j][p], touchDown);
 
         // If the foot is in contact the impact proximity factor is always 1.

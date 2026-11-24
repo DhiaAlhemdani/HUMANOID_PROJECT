@@ -29,6 +29,7 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   rclcpp
   rclcpp_lifecycle
   realtime_tools
+  rviz_common
   std_msgs
   std_srvs
   tf2_msgs
@@ -43,6 +44,7 @@ find_package(ament_cmake REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system filesystem log log_setup)
 find_package(yaml-cpp REQUIRED)
+find_package(Qt5 REQUIRED COMPONENTS Widgets)
 
 foreach(dependency IN ITEMS ${THIS_PACKAGE_INCLUDE_DEPENDS})
   find_package(${dependency} REQUIRED)
@@ -145,6 +147,12 @@ pluginlib_export_plugin_description_file(
   legged_robot_mpc_controller_plugin.xml
 )
 
+add_library(simulation_reset_panel SHARED src/visualization/simulation_reset_panel.cpp)
+target_compile_features(simulation_reset_panel PUBLIC cxx_std_17)
+ament_target_dependencies(simulation_reset_panel PUBLIC rclcpp rviz_common std_srvs)
+target_link_libraries(simulation_reset_panel PUBLIC Qt5::Widgets)
+pluginlib_export_plugin_description_file(rviz_common rviz_reset_panel_plugin.xml)
+
 install(DIRECTORY include/
   DESTINATION include
 )
@@ -157,6 +165,7 @@ install(DIRECTORY launch config docs description
   PATTERN ".DS_Store" EXCLUDE
 )
 install(PROGRAMS
+  launch/simulation_reset.py
   launch/base_command_gui.py
   launch/figure_eight_command.py
   launch/push_recovery_test.py
@@ -172,6 +181,7 @@ install(TARGETS
   humanoid_whole_body_inverse_dynamics_mpc_controller_parameters
   legged_robot_humanoid_common_core
   legged_robot_humanoid_wb_id_core
+  simulation_reset_panel
   EXPORT export_${PROJECT_NAME}
   ARCHIVE DESTINATION lib
   LIBRARY DESTINATION lib

@@ -33,6 +33,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ocs2_core/reference/ModeSchedule.h>
 
 #include "legged_robot_mpc_controller/mpc/common/model/Types.h"
+#include "legged_robot_mpc_controller/mpc/common/swing_foot_planner/MinimumJerkSplineCpg.h"
 #include "legged_robot_mpc_controller/mpc/common/swing_foot_planner/SplineCpg.h"
 
 namespace ocs2::humanoid {
@@ -115,7 +116,7 @@ class SwingTrajectoryPlanner {
   const size_t numFeet_;
 
   feet_array_t<std::vector<SplineCpg>> impactProximityTrajectories_;
-  feet_array_t<std::vector<SplineCpg>> feetHeightTrajectories_;
+  feet_array_t<std::vector<MinimumJerkSplineCpg>> feetHeightTrajectories_;
   feet_array_t<std::vector<scalar_t>> feetHeightTrajectoriesEvents_;
 };
 
