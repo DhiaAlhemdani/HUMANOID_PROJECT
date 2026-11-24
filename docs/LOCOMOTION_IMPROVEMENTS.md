@@ -11,7 +11,7 @@ passes "no falls", but three smoothness defects remain:
 |---|---|---|
 | D1 | **MPC-planned pelvis bounce** ≈ 11–12 mm (z sd), 4–40 Hz vertical accel 1.19 — **CLOSED 2026-11-24**: z sd not reproduced (GT 1.6 / plan 2.14 mm), cost sweep 0/4 → residual `acc_hf` 1.18 is contact-driven, carried into 1.3 | benchmark §"What remains"; blend A/B `summary.txt`; [`bounce_cost_sweep.md`](results/bounce_cost_sweep.md) |
 | D2 | **Touchdown torque spikes** ≈ 50 Nm (knee/ankle 99.9th pct) — **IMPROVED then CLOSED 2026-11-24**: `touchDownVelocity −0.05` shipped → `acc_hf` −8.7% (best of project); the 50.25 peak proved **invariant across all three lever rounds** (trajectory configs, touchdown velocity, structural load-share: ≤0.02 Nm over a 1000× span) at ≈ ankle effort-limit scale → **root-caused 2026-11-24: ankle actuator saturation** (`pd_tau_p999` is |meas−cmd| with meas clamped at the 50 Nm ankle limit; contact-model sweep neutral) → metric retired, replaced by `legs.tau_sat_pct`; residual D2 = servo layer (ankle kp 200 × touchdown error) | benchmark; [`touchdown_sweep.md`](results/touchdown_sweep.md); [`load_share_cost.md`](results/load_share_cost.md); [`foot_contact_sweep.md`](results/foot_contact_sweep.md) |
-| D3 | **Per-solve command ripple** — torque jumps at each new solution: legs 0.79 vs 0.31 Nm on other ticks — **largely closed by the Phase 1.1 blend** (jump 1.317 → 0.105 on the 2026-11-24 baseline); load-share round **rejected** (jump +27…41%) | `cmd_tau_jump_at_switch` in `plot_tracking.py`; [`load_share_cost.md`](results/load_share_cost.md) |
+| D3 | **Per-solve command ripple** — torque jumps at each new solution: legs 0.79 vs 0.31 Nm on other ticks — **closed by the Phase 1.1 blend** (jump 1.317 → 0.105–0.137 on the 2026-11-24 baselines); load-share round **rejected** (+27…41 %), `useFeedbackPolicy` **rejected** (+96 %, −18 % solve) | `cmd_tau_jump_at_switch` in `plot_tracking.py`; [`load_share_cost.md`](results/load_share_cost.md) |
 
 User priority order (from the benchmark): **falls → smoothness (bounce, jitter) → velocity tracking.**
 
@@ -23,6 +23,38 @@ SUMMARY/DIAG metrics) — every item below is designed to be A/B-tested with it.
 ## Phase 1 — Smoothness with the existing MPC (highest ROI)
 
 These need no new architecture; most are config or small controller changes.
+
+### Phase 1 scorecard (closed 2026-11-24)
+
+Every section followed implement → closed-loop sweep → results doc; **28 scored candidates in 8
+sweeps, 2 shipped, 0 falls**. Shipped config/controller changes (all in `config/g1`):
+
+| change | effect (same-build A/B) | source |
+| --- | --- | --- |
+| `control.solveBlendSeconds` policy-swap blend (1.1) | jump@switch **1.317 → 0.105–0.137 Nm**, arm ripple 0.206 → 0.035 | [`policy_swap_blend.md`](results/policy_swap_blend.md) |
+| `touchDownVelocity: −0.05` (1.3) | `acc_hf` **1.18 → 1.08 (−8.7 %)**, leg PD HF −7.8 % | [`touchdown_sweep.md`](results/touchdown_sweep.md) |
+
+Rejected with evidence (do not retry as-is): bounce cost levers (1.2), swing-trajectory configs
+and `impactProximityFactor` (1.3), DS load-share cost (1.3 structural), box sole / fitted CoP
+rectangle (1.4), stance splice at gait changes (1.5), S-curve command slew and
+`useFeedbackPolicy` (1.6). Inert-but-available tooling shipped at weight/limit 0:
+`contactLoadShareWeight`, `velocityCommandJerkLimits`, `make_model.py` sole variants.
+
+What the negatives established (the real deliverable of the phase):
+1. **The 50.25 Nm "touchdown peak" is ankle actuator saturation** (50 Nm limit, servo kp 200);
+   no plan-side lever can move it — D2 is a servo-layer item, now measured by `legs.tau_sat_pct`.
+2. **Steady bounce is contact-driven and gait-driven**: trot `acc_hf` 1.40 vs walk 1.05–1.08;
+   at ≥0.5 m/s the trot template is the largest remaining smoothness source.
+3. **Transitions are best left continuous**: any inserted pause (stance splice) or discontinuous
+   feedback (per-solve `K`) adds lurch; smoothing must interpolate across the handover.
+
+Instrumentation added to `plot_tracking.py` (back-fillable from any `data.npz`): `gait`
+(templates, transitions, per-change window metrics), `command` (ramp/step transients),
+`tau_sat_pct`; generic scorer `tests/tuning/compare_ab.py`.
+
+Recommended next steps, in benchmark-priority order: (a) servo-layer D2 — ankle kp/kd vs
+`tau_sat_pct` and touchdown tracking error; (b) trot template smoothness or a double-support
+rung between walk and trot; (c) feedback policy with the blend extended to `K`.
 
 ### 1.1 Kill the per-solve ripple (D3) — *benchmark's own #1 next step*
 - **Policy blend on solve handover** ✅ *implemented*: `control.solveBlendSeconds`
@@ -244,8 +276,13 @@ PD HF, track err, z, arms, vx, solve).
 | step | status | artifact |
 | --- | --- | --- |
 | implement (S-curve limiter + wiring, `command` transient metrics, generic comparator, sweep) | ✅ done | `CommandSlewLimiter.h`, `plot_tracking.py` `command` section, `tests/tuning/compare_ab.py`, `run_polish_sweep.sh` (set A: `po_base/po_fb/po_jerk1/po_fb_jerk1` @ vx; set B: `ps_base/ps_jerk1/ps_jerk05` @ `stops`); contract `tests/command_slew_contract_test.py` |
-| test (closed-loop, **needs a build**) | ⏳ pending | `tuning_results/polish_sweep_report.txt` |
-| document results | ⏳ pending | `docs/results/polish_sweep.md` |
+| test (closed-loop) | ✅ done 2026-11-24 | **0/3 (set A) + 0/2 (set B)** — `useFeedbackPolicy` doubles jump@switch (+96 %) and costs 18 % solve rate despite −37 % ramp pitch; S-curve inert in steady walk, no primary win at command steps (hold `acc_hf` −9/−10 % in the stops profile noted, with a roll penalty at jerk 0.5); report `tuning_results/polish_sweep_report.txt` |
+| document results | ✅ done | [`docs/results/polish_sweep.md`](results/polish_sweep.md) |
+
+**Outcome:** nothing shipped; `useFeedbackPolicy` stays false, `velocityCommandJerkLimits` stays
+`[0,0,0,0]` (limiter kept; `[1,1,0,4]` is the tested-safe teleop value). Lead: the feedback
+policy's within-solve gain is real — usable only if the policy-swap blend also interpolates `K`.
+**§1.6 closed — Phase 1 complete.**
 
 Gates — set A (steady walk, probe ramps): any-of `legs.cmd_tau_jump_at_switch` ≤ 0.85× /
 `acc_hf` ≤ 0.92× / `command.transient_pitch_max_deg` ≤ 0.85×, default guard set (incl. solve

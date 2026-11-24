@@ -48,4 +48,42 @@ switches cost solver time); candidates within guard.
 
 ## Set A — steady walk + probe ramps (`PROFILE=vx`, 0.5 m/s)
 
-*pending — report section not yet received.*
+Primaries (any-of): `legs.cmd_tau_jump_at_switch` ≤ 0.85× / hold `acc_hf` ≤ 0.92× / worst ramp
+pitch ≤ 0.85×; default guard set.
+
+| run | config | jump@switch [Nm] | hold acc_hf | ramp pitch max [°] | ramp z pp [mm] | leg PD HF | vx | solve [Hz] | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| **po_base** | shipped | **0.137** | **1.096** | 1.71 | 27.3 | 2.15 | 0.425 | 60.5 | — |
+| po_fb | `useFeedbackPolicy: true` | 0.269 (**+96 %**) | 1.162 (+6 %) | **1.08 (−37 %)** | 22.6 (−17 %) | 2.14 | 0.422 | **49.7 (−18 %)** | guards-fail |
+| po_jerk1 | jerk `[1,1,0,4]` | 0.152 (+11 %) | 1.104 (+1 %) | 1.87 (+10 %) | 26.0 | 2.12 | 0.424 | 60.5 | no gain |
+| po_fb_jerk1 | both | 0.336 (**+145 %**) | 1.186 (+8 %) | 1.12 (−34 %) | 41.1 (+50 %) | 2.12 | 0.421 | 50.8 (−16 %) | guards-fail |
+
+All survived.
+
+### Reading
+
+1. **`useFeedbackPolicy: true` is rejected.** It does what an LQR term promises *within* one
+   solution — the probe-ramp pitch transient drops 37 % — but it **doubles the per-solve command
+   jump** (0.137 → 0.269 Nm; with the jerk limiter 0.336): every new solution brings a new gain
+   `K(t)` and a new nominal `x_plan(t)`, so the feedback term `K·(x − x_plan)` is discontinuous at
+   exactly the handover the Phase 1.1 blend was built to smooth (the blend interpolates the
+   feed-forward and the joint targets, not `K`). It also raises hold `acc_hf` 6–8 % and costs
+   **16–18 % of the solve rate** (Riccati gains per solve). Two of three benchmark priorities
+   worse for one transient gain → no.
+2. **S-curve slew is inert in steady walk**, as designed (jump +11 % and pitch +10 % are inside
+   the run spread; the probe's own 3 s linear ramp is far below the 0.5 m/s² clamp, so the
+   limiter never engages). Combined with set B: no benchmark gain anywhere → shipped value stays
+   `[0,0,0,0]`.
+3. The baseline solve rate was 60.5 Hz in this batch (67 Hz in the earlier ones) — machine load
+   varies between batches; only within-batch ratios are compared, which is why every sweep runs
+   its own baseline.
+
+## Decisions — Phase 1.6 closed
+
+- Nothing shipped: `useFeedbackPolicy` stays **false**, `velocityCommandJerkLimits` stays
+  **`[0,0,0,0]`** (the limiter remains available; `[1.0, 1.0, 0.0, 4.0]` is the tested-safe value
+  for a softer teleop response).
+- **Lead for later** (outside Phase 1): the feedback policy's within-solve benefit is real; to
+  use it, the policy-swap blend would have to interpolate the feedback term too (blend `K` and
+  `x_plan` across the handover, or fade `K` in after each swap). That is a controller change
+  with a clear hypothesis and the measurement (`cmd_tau_jump_at_switch`) already in place.
