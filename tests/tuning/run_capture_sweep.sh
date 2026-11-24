@@ -15,7 +15,8 @@
 # No C++ change: SKIP_BUILD=1 is fine if the install is current.
 #
 # usage: run_capture_sweep.sh [vx_mps]   env: OUT, WS, SKIP_BUILD=1, SETS="A B" (default A)
-# writes: $OUT/<tag>/..., $OUT/<tag>.yaml, $OUT/capture_sweep_report.txt
+# writes: $OUT/<tag>/..., $OUT/<tag>.yaml, $OUT/capture_sweep_report.txt (appended per set;
+#         per-set copies in capture_sweep_report_{A,B}.txt so one set never overwrites the other)
 set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
@@ -52,7 +53,7 @@ run() {
   fi
 }
 
-: > "$OUT/capture_sweep_report.txt"
+REPORT="$OUT/capture_sweep_report.txt"
 if [[ " $SETS " == *" A "* ]]; then
   run cp_base vx
   run cp_g0 vx "$ON" "$G=0.0"
@@ -63,7 +64,7 @@ if [[ " $SETS " == *" A "* ]]; then
   python3 "$HERE/compare_ab.py" \
     --primary walk.roll_rms_deg:0.85 --primary walk.pelvis_acc_hf:0.92 --primary base.roll_track_err_deg:0.85 \
     --show walk.vy_mean --show walk.yaw_change_deg --show legs.track_err_q_deg \
-    "$OUT/cp_base" "$OUT/cp_g0" "$OUT/cp_g03" "$OUT/cp_g06" "$OUT/cp_g10" | tee -a "$OUT/capture_sweep_report.txt"
+    "$OUT/cp_base" "$OUT/cp_g0" "$OUT/cp_g03" "$OUT/cp_g06" "$OUT/cp_g10" | tee "$OUT/capture_sweep_report_A.txt" | tee -a "$REPORT"
 fi
 if [[ " $SETS " == *" B "* ]]; then
   run cps_base stops
@@ -75,5 +76,5 @@ if [[ " $SETS " == *" B "* ]]; then
     --primary walk.pelvis_acc_hf:0.92 \
     --guard walk.vx_mean:min:0.90:0 --guard solver.solve_hz:min:0.90:0 --guard walk.roll_rms_deg:max:1.15:0.05 \
     --show command.transient_z_pp_mm_max \
-    "$OUT/cps_base" "$OUT/cps_g0" "$OUT/cps_g06" | tee -a "$OUT/capture_sweep_report.txt"
+    "$OUT/cps_base" "$OUT/cps_g0" "$OUT/cps_g06" | tee "$OUT/capture_sweep_report_B.txt" | tee -a "$REPORT"
 fi

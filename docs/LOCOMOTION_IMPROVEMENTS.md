@@ -304,7 +304,7 @@ driven, which lowers the expected payoff of plan-level force shaping (items 1–
 
 | order | item | why here | status |
 | --- | --- | --- | --- |
-| 2.A | **#4 capture-point / Raibert foothold** | config-only; the only lever aimed at lateral sway/roll and start-stop balance (benchmark #3) | tooling ✅ `run_capture_sweep.sh`; sweep ⏳ |
+| 2.A | **#4 capture-point / Raibert foothold** | config-only; the only lever aimed at lateral sway/roll and start-stop balance (benchmark #3) | set B (stops) ✅ **0/2** — capture foothold raises start/stop roll +32…73 %, pitch +29…34 %; set A (steady) rescore ⏳ → `docs/results/capture_point_sweep.md`; block stays disabled |
 | 2.B | **#6 whole-body QP layer** (promoted from "optional") | the 1 kHz PD at kp 200 is what turns touchdown error into saturated torque; a high-rate WBC tracking the MPC's wrenches/accelerations with the *measured* state is the largest smoothness step available with the current MPC | design next |
 | 2.C | **#3 touchdown impact model** | contained (dynamics jump map at mode events, ocs2 SQP supports event nodes); lets the plan anticipate impact | after 2.B |
 | 2.D | **#5 DCM/CoM reference** | moderate; natural lateral weight transfer; measured against 2.A's result | after 2.C |
