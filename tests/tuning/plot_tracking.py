@@ -200,6 +200,130 @@ for gname, group in (("legs", LEGS), ("arms", ARMS)):
     diag[gname]["cmd_tau_jump_at_switch"] = round(float(at), 3)
     diag[gname]["cmd_tau_step_otherwise"] = round(float(off), 3)
 diag["policy_switch_hz"] = round(float(switch.sum() / max(1e-6, t[walk][-1] - t[walk][0])), 1)
+
+
+# ---------------- gait templates & transitions (roadmap #1.5) ----------------
+# plan_mode per tick (FLY 0, RF 1, LF 2, STANCE 3). A swing phase is labelled by what follows it:
+# a short STANCE (< DS_MAX, the walk's double support) -> walk, the other foot's swing -> trot,
+# FLY -> run; long stances are the stance template. Changes between locomotion templates are
+# where gait.phaseTransitionStanceTime acts; each is scored over [-0.5, +1.5] s around the first
+# step of the new template. Whole-run (policy-valid) scope, not just the hold window.
+DS_MAX = 0.25
+_mode = np.where(c("policy_valid") > 0, np.nan_to_num(c("plan_mode"), nan=-1.0), -1.0).astype(int)
+_cut = np.flatnonzero(np.diff(_mode) != 0) + 1
+phases = []  # (mode, t_start, t_end)
+for s_, e_ in zip(np.concatenate([[0], _cut]), np.concatenate([_cut, [len(_mode)]])):
+    if _mode[s_] >= 0:
+        phases.append((int(_mode[s_]), float(t[s_]), float(t[e_]) if e_ < len(t) else float(t[-1])))
+segs: list = []  # [label, t_start, t_end, swing durations]
+
+
+def _push(label, a, b, dur=None):
+    if segs and segs[-1][0] == label:
+        segs[-1][2] = b
+        if dur is not None:
+            segs[-1][3].append(dur)
+    else:
+        segs.append([label, a, b, [] if dur is None else [dur]])
+
+
+def _last_loco():
+    return next((s[0] for s in reversed(segs) if s[0] != "stance"), "walk")
+
+
+def _kind(p):
+    if p is None:
+        return "none"
+    if p[0] == 0:
+        return "fly"
+    if p[0] == 3:
+        return "ds" if p[2] - p[1] < DS_MAX else "stance"
+    return "swing"
+
+
+_LAB = {"ds": "walk", "swing": "trot"}
+items = []  # ("stance", a, b, None) | ("swing", a, b, label-or-None)
+for i, (m, a, b) in enumerate(phases):
+    if m == 3:
+        if b - a >= DS_MAX:
+            items.append(["stance", a, b, None])
+        continue  # a short double support belongs to the walk around it
+    if m == 0:
+        continue  # flight belongs to the run around it
+    prv, nxt = _kind(phases[i - 1] if i > 0 else None), _kind(phases[i + 1] if i + 1 < len(phases) else None)
+    # Steps with the same kind of neighbour on both sides are unambiguous (flight on either
+    # side = run; a stop on one side = the other side decides). A step between a double
+    # support and another swing is a boundary step of a walk<->trot change and is resolved
+    # below by its duration (walk swing 0.3 s vs trot 0.5 s), since the splice stance that
+    # phaseTransitionStanceTime inserts looks exactly like a walk double support.
+    if "fly" in (prv, nxt):
+        label = "run"
+    elif prv in _LAB and nxt in _LAB and prv != nxt:
+        label = None
+    elif prv in _LAB:
+        label = _LAB[prv]
+    elif nxt in _LAB:
+        label = _LAB[nxt]
+    else:
+        label = "walk"
+    items.append(["swing", a, b, label])
+for k, it in enumerate(items):
+    if it[0] != "swing" or it[3] is not None:
+        continue
+    dur = it[2] - it[1]
+    best, best_err = None, None
+    for direction in (-1, 1):
+        j = k + direction
+        while 0 <= j < len(items) and not (items[j][0] == "swing" and items[j][3] is not None):
+            j += direction
+        if 0 <= j < len(items):
+            err = abs((items[j][2] - items[j][1]) - dur)
+            if best is None or err < best_err - 1e-9 or (abs(err - best_err) <= 1e-9 and direction == 1):
+                best, best_err = items[j][3], err
+    it[3] = best or _last_loco()
+for kind_, a, b, label in items:
+    if kind_ == "stance":
+        _push("stance", a, b)
+    else:
+        _push(label, a, b, b - a)
+
+gtt = gt[:, 0]
+_hold = gt[(gtt >= w0) & (gtt <= w1)]
+_roll_ref = float(np.median(_hold[:, 8])) if len(_hold) else float(np.median(gt[:, 8]))
+changes = []
+loco = [k for k, s in enumerate(segs) if s[0] != "stance"]
+for k_prev, k_next in zip(loco, loco[1:]):
+    between = segs[k_prev + 1:k_next]
+    if any(s[2] - s[1] >= 1.0 for s in between):
+        continue  # a real stop in between, not a gait-to-gait transition
+    prev, new = segs[k_prev], segs[k_next]
+    tc = new[1]
+    ch = {"t": round(tc, 3), "from": prev[0], "to": new[0], "gap_s": round(new[1] - prev[2], 3)}
+    g = gt[(gtt >= tc - 0.5) & (gtt <= tc + 1.5)]
+    if len(g) >= 100:
+        tt = g[:, 0]
+        ch["acc_hf"] = round(band_t(tt[1:], np.diff(g[:, 7]) / np.maximum(np.diff(tt), 1e-6)), 4)
+        ch["z_pp_mm"] = round(1000 * float(np.ptp(g[:, 4] - np.polyval(np.polyfit(tt - tt[0], g[:, 4], 1), tt - tt[0]))), 2)
+        ch["roll_max_deg"] = round(math.degrees(float(np.max(np.abs(g[:, 8] - _roll_ref)))), 3)
+    d_new = new[3]
+    if len(d_new) >= 5:
+        ref = float(np.median(d_new[2:]))
+        ch["first_step_asym"] = round(float(max(abs(x - ref) for x in d_new[:2]) / max(ref, 1e-6)), 3)
+    changes.append(ch)
+_tot = {}
+for lab, a, b, _ in segs:
+    _tot[lab] = round(_tot.get(lab, 0.0) + (b - a), 2)
+_agg = lambda key: (round(max(ch[key] for ch in changes if key in ch), 4) if any(key in ch for ch in changes) else None)
+diag["gait"] = {
+    "sequence": ">".join(s[0] for s in segs),
+    "templates_s": _tot,
+    "changes_locomotion": len(changes),
+    "changes": changes,
+    "transition_acc_hf_max": _agg("acc_hf"),
+    "transition_z_pp_mm_max": _agg("z_pp_mm"),
+    "transition_roll_max_deg": _agg("roll_max_deg"),
+    "first_step_asym_max": _agg("first_step_asym"),
+}
 json.dump(diag, open(OUT("diag.json"), "w"), indent=1)
 
 # ---------------- figures ----------------
@@ -309,5 +433,9 @@ print(f"DIAG {TITLE} | base z sd plan {B['plan_z_sd_mm']} / obs {B['obs_z_sd_mm'
       f" | legs q err {L['track_err_q_deg']}deg, q_hf cmd {L['cmd_q_hf_deg']} meas {L['meas_q_hf_deg']}, tau_hf ff {L['cmd_tau_hf']} pd {L['pd_tau_hf']}, jump@switch {L['cmd_tau_jump_at_switch']} vs {L['cmd_tau_step_otherwise']}"
       f" | arms q err {A['track_err_q_deg']}deg, q_hf cmd {A['cmd_q_hf_deg']} meas {A['meas_q_hf_deg']}, tau_hf ff {A['cmd_tau_hf']} pd {A['pd_tau_hf']}, jump@switch {A['cmd_tau_jump_at_switch']} vs {A['cmd_tau_step_otherwise']}"
       f" | switches {diag['policy_switch_hz']} Hz"
+      f" | gait {diag['gait']['sequence']} {diag['gait']['templates_s']} transitions {diag['gait']['changes_locomotion']}"
+      + (f" (acc_hf max {diag['gait']['transition_acc_hf_max']}, z pp {diag['gait']['transition_z_pp_mm_max']} mm,"
+         f" roll max {diag['gait']['transition_roll_max_deg']} deg, 1st-step asym {diag['gait']['first_step_asym_max']})"
+         if diag['gait']['changes_locomotion'] else "")
       + (f" | solve {diag['solver']['advance_ms_mean']} ms mean, {diag['solver']['advance_ms_p95']} p95, {diag['solver']['solve_hz']} Hz, eq_sse {diag['solver']['eq_sse_mean']:.1e}"
          f" (first 3 nodes {diag['solver'].get('eq_sse_near_mean', float('nan')):.1e})" if "solver" in diag else ""))

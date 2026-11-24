@@ -188,6 +188,28 @@ jump@switch ≤ 1.15×+0.02, leg PD HF ≤ 1.10×+0.1, track err ≤ 1.20×+0.05
 - `phaseTransitionStanceTime: 0.0` on all robots — gait ladder switches splice with **no
   double-support buffer**. Try 0.1–0.2 s stance splice at transitions (walk↔trot especially);
   `GaitSchedule` already supports it.
+
+**Recon (2026-11-24):** `GaitScheduleUpdater` splices the new template in at the event before
+an `LF` phase, and `GaitSchedule::insertModeSequenceTemplate` adds the stance only when the
+outgoing mode is not already stance. Net effect: **walk→trot deletes the walk's last double
+support** and inserts `phaseTransitionStanceTime` s of stance instead (shipped 0 → swing straight
+into swing); trot→walk inserts it after a swing; stand↔gait changes are unaffected. The 0.5 m/s
+probe sits on the walk→trot edge (walk band tops at 0.45, trot engages at measured >0.40), so the
+sweep runs at **0.6 m/s** to cross walk→trot on the ramp up and trot→walk on the way down.
+
+**Sweep status (implement → test → document):**
+
+| step | status | artifact |
+| --- | --- | --- |
+| implement (transition metrics + sweep + comparator) | ✅ done | `plot_tracking.py` `gait` section (template classification from `plan_mode`, per-change window metrics, back-fillable), `tests/tuning/synth_run.py`, `run_gaitsplice_sweep.sh` (cases `gs_t005`…`gs_t020`), `compare_gaitsplice.py`; contract `tests/gait_transition_metrics_test.py` |
+| test (closed-loop sweep @ 0.6 m/s) | ⏳ pending | `tuning_results/gaitsplice_sweep_report.txt` |
+| document results | ⏳ pending | `docs/results/gait_splice_sweep.md` |
+
+Gates (any-of primaries over the worst transition window [−0.5, +1.5] s): `transition_acc_hf_max`
+≤ 0.85× **or** `transition_z_pp_mm_max` ≤ 0.85× **or** `transition_roll_max_deg` ≤ 0.85×; guards:
+survived, same number of gait-to-gait transitions as the baseline, non-improved primaries not
+worse, `first_step_asym_max` ≤ 1.20×+0.05, plus the steady-state guard set (acc_hf, roll, jump,
+PD HF, track err, z, arms, vx, solve).
 - The ladder's `minDwellTime: 0.2` + `switchDelayHorizonFraction: 0.3` hysteresis is good;
   consider **cost-based smoothing**: penalize contact-schedule changes (extra SQP variable
   or heuristic) so the gait doesn't oscillate between rungs near band edges.
