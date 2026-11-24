@@ -292,6 +292,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             torque quadratic cost"}
         rightWeights: {type: double_array, default_value: [], description: "Weights of the right-leg external torque
             quadratic cost (pre-scaling)"}
+      contactLoadShareWeight: {type: double, default_value: 0.0, description: "Linear weight of the
+          double-support load-share cost (0 disables it): pulls the free vertical-force split between
+          the feet toward a C1 smoothstep transfer across each DS window, shaping the contact-handover
+          force rate (D2/D3); registered only when > 0", validation: {gt_eq: [0.0]}}
     constraints:
       footMotionEquality:
         activate: {type: bool, default_value: true, description: "Enable stance and swing foot acceleration equalities; disable only for diagnostic ablation"}

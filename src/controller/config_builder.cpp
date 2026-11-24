@@ -306,6 +306,9 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
       p.costs.legTorqueCost.scaling * toVector(p.costs.legTorqueCost.rightWeights);
   }
 
+  // --- double-support load-transfer shaping (D2/D3); 0 keeps the shipped behavior ---
+  config.contactLoadShareWeight = p.costs.contactLoadShareWeight;
+
   // --- task-space kinematics costs ---
   config.activateTaskSpaceFootCost = p.costs.taskSpaceFootCost.activate;
   if (config.activateTaskSpaceFootCost) {

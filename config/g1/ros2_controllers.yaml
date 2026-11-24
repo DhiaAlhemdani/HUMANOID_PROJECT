@@ -437,6 +437,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           rightWeights: 
             [2.0, 2.0, 1.0, 8.0, 0.2, 0.2]
 
+        # Double-support load-share cost (D2/D3): 0 disables; sweep picks a value
+        # (docs/results/ after tests/tuning/run_loadshare_sweep.sh).
+        contactLoadShareWeight: 0.0
+
       constraints:
         inverseDynamics:
           # Keep physical equalities enabled for locomotion; disabling is diagnostic-only.

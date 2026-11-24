@@ -80,6 +80,9 @@ class WbIdMpcInterface final : public RobotInterface {
     bool activateTaskSpaceFootCost = true;
     EndEffectorKinematicsWeights taskSpaceFootCostWeights;
     bool activateLegTorqueCost = true;
+    //! Linear weight of the double-support load-share cost (WbIdContactLoadShareCost);
+    //! 0 disables the cost — the shipped default until a sweep adopts a value.
+    scalar_t contactLoadShareWeight = 0.0;
     WbIdTorsoTiltCost::Config torsoTiltCost;
 
     //! Acceleration-level stance/swing foot constraint gains.

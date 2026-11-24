@@ -1,0 +1,22 @@
+{
+  "harness": "tests/tuning/loadshare_microbench.cpp",
+  "source": "include/legged_robot_mpc_controller/mpc/wb_id/cost/WbIdContactLoadShareCost.h",
+  "gates": {
+    "brackets_first_ds": "PASS",
+    "brackets_second_ds": "PASS",
+    "entry_targets": "PASS",
+    "exit_targets": "PASS",
+    "sum_to_one": "PASS",
+    "monotone_transfer": "PASS",
+    "zero_edge_slopes": "PASS",
+    "zero_at_proportional": "PASS",
+    "imbalance_antisymmetric": "PASS",
+    "cost_identity": "PASS",
+    "fallback_before_first": "PASS",
+    "fallback_past_last": "PASS",
+    "fallback_on_event": "PASS",
+    "smoothstep_basics": "PASS"
+  },
+  "passed": 14,
+  "total": 14
+}

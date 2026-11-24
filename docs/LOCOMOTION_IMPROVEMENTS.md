@@ -132,9 +132,16 @@ exhausted; the residual PD-peak plateau is structural (late-swing gain / Δf_z c
   `impactProximityFactorTouchDownVelocity` slope was rejected (solve 67→56 Hz, no softening).
 - **Late-swing damping**: raise `footMotionEquality.linearVelocityErrorGain_z` only in the
   last ~100 ms of swing (time-varying gain) — currently constant across the mode.
-- **Vertical force-rate limiting**: add a soft cost on `Δf_z` between adjacent contact
-  nodes (the wrench decision variable already exists; this is one extra quadratic term in
-  `WbIdCost`) — the cleanest structural fix for impact chatter.
+- **Vertical force-rate limiting** — ✅ **implemented** (structural round) as the
+  `WbIdContactLoadShareCost` double-support load-share cost: ocs2 costs are per-stage
+  `(t, x, u)` only, so a literal cross-node `Δf_z` term is not expressible; instead the
+  cost shapes the one direction the RNEA leaves free in DS — the vertical force split —
+  toward a C1 smoothstep transfer across each window (total-invariant residual, active in
+  DS only, registered only when `ocs2.costs.contactLoadShareWeight > 0`, shipped **0**).
+  Tooling: `tests/tuning/run_loadshare_microbench.py` (14/14 gates),
+  `tests/wb_id_load_share_contract_test.py`, sweep pair `run_loadshare_sweep.sh` +
+  `compare_loadshare.py` (primary `cmd_tau_jump_at_switch ≤ 0.85×`, D2 peak guard
+  ≤1.05×). **Sweep run pending** (4 log-spaced weights + fresh baseline).
 - **Swing spline**: replace the two-segment `CubicSpline`/`SplineCpg` with a quintic /
   min-jerk profile so acceleration is continuous at lift-off, apex and touchdown
   (`src/mpc/common/swing_foot_planner/`).

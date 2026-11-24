@@ -20,6 +20,7 @@
 
 #include "legged_robot_mpc_controller/mpc/wb_id/model/WbIdPinocchioMapping.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/constraint/WbIdJointTorqueLimitConstraint.h"
+#include "legged_robot_mpc_controller/mpc/wb_id/cost/WbIdContactLoadShareCost.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/constraint/WbIdJointVelocityLimitConstraint.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/constraint/WbIdRneaConstraintCppAd.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/dynamics/WbIdDynamics.h"
@@ -119,6 +120,13 @@ void WbIdMpcInterface::setupOptimalControlProblem() {
   if (config_.torsoTiltCost.activate) {
     problemPtr_->costPtr->add("torsoTiltCost", std::make_unique<WbIdTorsoTiltCost>(
         config_.torsoTiltCost, *pinocchioInterfacePtr_, *mpcRobotModelADPtr_, modelSettings_));
+  }
+
+  // Double-support load-transfer shaping (D2/D3); registered only when explicitly weighted.
+  if (config_.contactLoadShareWeight > 0.0) {
+    problemPtr_->costPtr->add("contactLoadShareCost", std::make_unique<WbIdContactLoadShareCost>(
+                                                          config_.contactLoadShareWeight, *referenceManagerPtr_,
+                                                          *mpcRobotModelADPtr_, modelSettings_));
   }
 
   const WbIdPinocchioMappingCppAd pinocchioMappingCppAd(mpcRobotModelPtr_->getGenCoordinatesDim(), mpcRobotModelPtr_->getInputDim());
