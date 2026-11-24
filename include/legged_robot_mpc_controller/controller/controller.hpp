@@ -117,6 +117,8 @@ private:
   void solver_worker();
   vector_t compute_weight_compensating_torque(const ocs2::SystemObservation& observation);
   JointActionCommand compute_mpc_joint_action(const ocs2::SystemObservation& observation);
+  //! Ramp a freshly swapped-in policy's command from the last written one (control.solveBlendSeconds).
+  JointActionCommand apply_policy_swap_blend(JointActionCommand command, double now, bool policy_updated);
   void clamp_torque(vector_t& tau) const;
 
   // Humanoids settle/initialise before MPC; planned wheeled stand-up blends directly.
@@ -258,6 +260,12 @@ private:
   std::atomic_bool reset_mpc_warm_start_requested_{false};
   bool has_active_policy_{false};  // Owned by the control thread, like the active MRT policy.
   bool active_policy_ready_{false};  // Revalidated against this tick's timestamp.
+  //! Solve-handover blend (control thread): what was last written to the hardware,
+  //! the command the active ramp started from, and when it started (negative = idle).
+  JointActionCommand last_written_command_;
+  JointActionCommand last_policy_blend_from_;
+  bool has_last_written_command_{false};
+  double policy_blend_start_time_{-1.0};
   std::atomic_bool stand_up_requested_{false};
   std::atomic_bool start_requested_{false};
   std::atomic_bool sit_down_requested_{false};

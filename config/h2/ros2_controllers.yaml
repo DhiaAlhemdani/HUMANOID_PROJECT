@@ -270,6 +270,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
     control:
       observationVelocityFilterCutoffHz: 30.0
       feedforward: policy_torque
+      # Ramp the command from the last written one when a new solve swaps the policy in
+      # (smooths the per-solve command step); ~half the solve period at 80-100 Hz MPC.
+      solveBlendSeconds: 0.005
       jointEffortPd:
         # H2 stand-up uses higher tracking gains than G1, with lower damping at each knee.
         kp:

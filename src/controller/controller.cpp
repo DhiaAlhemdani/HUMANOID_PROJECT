@@ -458,6 +458,8 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
   mpc_ready_.store(false);
   has_active_policy_ = false;
   active_policy_ready_ = false;
+  has_last_written_command_ = false;
+  policy_blend_start_time_ = -1.0;
   motion_manager_->setOperatorMotionEnabled(!stand_up_trajectory_);
   motion_manager_->setPostureHeightOverride(std::numeric_limits<double>::quiet_NaN());
 
@@ -701,7 +703,6 @@ controller_interface::return_type HumanoidWholeBodyInverseDynamicsMpcController:
     command = run_bring_up(time, observation);
   } else if (active_policy_ready_) {
     command = compute_mpc_joint_action(observation);
-    passive_hold_joints_ = command.policy_position;
   } else {
     // Ground-truth base, first ticks: seed the solver from this tick's observation
     // (see on_activate) and hold the activation pose until the first policy.
@@ -716,6 +717,15 @@ controller_interface::return_type HumanoidWholeBodyInverseDynamicsMpcController:
                                                               : control_model_->getJointAngles(observation.state);
     command.policy_velocity = vector_t::Zero(command.policy_position.size());
     command.feedforward = compute_weight_compensating_torque(observation);
+  }
+
+  // A fresh solve swaps in a policy whose first evaluation can step against what was
+  // written a tick ago (the per-solve command ripple); ramp from the last written
+  // command over control.solveBlendSeconds instead. Bring-up phases reach the hardware
+  // through here too, so a mid-phase policy swap cannot jump their targets either.
+  command = apply_policy_swap_blend(std::move(command), observation.time, policy_updated);
+  if (!uses_bring_up() && active_policy_ready_) {
+    passive_hold_joints_ = command.policy_position;
   }
 
   write_joint_action_command(command.policy_position, command.policy_velocity, command.feedforward);
@@ -1838,6 +1848,52 @@ HumanoidWholeBodyInverseDynamicsMpcController::compute_mpc_joint_action(const oc
       control_model_->getGeneralizedCoordinates(observation.state), control_model_->getGeneralizedVelocities(observation.state));
   }
   clamp_torque(command.feedforward);
+  return command;
+}
+
+HumanoidWholeBodyInverseDynamicsMpcController::JointActionCommand
+HumanoidWholeBodyInverseDynamicsMpcController::apply_policy_swap_blend(
+  JointActionCommand command, double now, bool policy_updated)
+{
+  const auto same_size = [](const JointActionCommand& a, const JointActionCommand& b) {
+    return a.policy_position.size() == b.policy_position.size() &&
+           a.policy_velocity.size() == b.policy_velocity.size() && a.feedforward.size() == b.feedforward.size();
+  };
+  const double duration = parameters_.control.solveBlendSeconds;
+  if (duration > 0.0) {
+    if (policy_updated && has_last_written_command_ && same_size(command, last_written_command_)) {
+      // Each fresh solve ramps from what is currently on the hardware, so swapping the
+      // policy can never step the written command (the per-solve torque ripple); with
+      // solves slower than the ramp the command fully reaches the new policy anyway.
+      last_policy_blend_from_ = last_written_command_;
+      policy_blend_start_time_ = now;
+    }
+    if (policy_blend_start_time_ >= 0.0) {
+      if (!same_size(command, last_policy_blend_from_)) {
+        policy_blend_start_time_ = -1.0;
+      } else if (now < policy_blend_start_time_) {
+        // A backward clock (sim reset) would freeze the ramp at its start; re-anchor.
+        policy_blend_start_time_ = now;
+      } else {
+        const double a = std::clamp((now - policy_blend_start_time_) / duration, 0.0, 1.0);
+        // Smoothstep keeps the ramp's own velocity continuous at both ends.
+        const double s = a * a * (3.0 - 2.0 * a);
+        command.policy_position =
+          (1.0 - s) * last_policy_blend_from_.policy_position + s * command.policy_position;
+        command.policy_velocity =
+          (1.0 - s) * last_policy_blend_from_.policy_velocity + s * command.policy_velocity;
+        command.feedforward = (1.0 - s) * last_policy_blend_from_.feedforward + s * command.feedforward;
+        clamp_torque(command.feedforward);
+        if (a >= 1.0) {
+          policy_blend_start_time_ = -1.0;
+        }
+      }
+    }
+  } else {
+    policy_blend_start_time_ = -1.0;
+  }
+  last_written_command_ = command;
+  has_last_written_command_ = true;
   return command;
 }
 

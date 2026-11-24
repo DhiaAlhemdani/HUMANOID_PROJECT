@@ -86,6 +86,8 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
     control:
       observationVelocityFilterCutoffHz: 0.0
       feedforward: policy_torque
+      # 200 Hz MPC solves every 5 ms; keep the policy-swap ramp shorter than the period.
+      solveBlendSeconds: 0.002
       jointEffortPd:
         # Leg servos around the planned trajectory, on top of the MPC torque; wheels get no position
         # gain (their angle is free) and light velocity damping towards the planned wheel speed.

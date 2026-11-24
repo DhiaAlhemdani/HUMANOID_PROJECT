@@ -286,6 +286,7 @@ Planned joint position/velocity extraction is at [line 1389](../src/controller/c
 The torque-window check and planned-state inverse-dynamics fallback are at [line 1407](../src/controller/controller.cpp#L1407).
 The alternative measured-state inverse dynamics is at [line 1424](../src/controller/controller.cpp#L1424).
 Feedforward clipping is [clamp_torque():1577](../src/controller/controller.cpp#L1577).
+A freshly swapped policy can evaluate differently from the previous one at the same instant, stepping the written command once per solve; `apply_policy_swap_blend()` therefore ramps position, velocity and feedforward from the last written command over `control.solveBlendSeconds` (smoothstep, torque re-clamped) whenever `updatePolicy()` reports a new policy, and the blend state resets on activation.
 Joint position/velocity/effort and optional gain interface writes are at [line 1709](../src/controller/controller.cpp#L1709).
 
 `python3 tests/wb_id_startup_contract_test.py -v` checks the startup observation flow, policy bounds, reset ownership and bring-up guards without a ROS build.
@@ -334,6 +335,7 @@ The walking harness sets the launch working directory to the workspace root so g
 | `ocs2.reference.armSwing.jointNames` | Joint identities used by the arm-swing reference and model index setup |
 | `target.mpcTargetsTopic` | Arm joint command input |
 | `control.feedforward` | Feedforward selection |
+| `control.solveBlendSeconds` | Ramp from the last written command when a solve swaps in a new policy (per-solve command-step smoothing); 0 disables |
 | `ocs2.constraints.jointTorqueLimits.activate`, `.limits`, `.torqueScaling`, `.mu`, `.delta` | Omitted limits use URDF efforts; scaled bounds are shared with runtime feedforward clipping, which remains active independently of the OCP activation flag |
 | `ocs2.solver.rollout.policyTimeOffset` | Policy look-ahead time used by validation and execution |
 | `control.jointEffortPd.kp`, `kd` | Inner servo gains |
