@@ -39,26 +39,43 @@ Reading:
   decel, 100 nearly fell at 2 m/s): the heuristic is fragile exactly at speed changes. On the H2 it
   earns its place at running speeds that the G1 benchmark does not reach.
 
-## Set A — steady walk (`PROFILE=vx` 0.5)
+## Set A — steady walk (`PROFILE=vx` 0.5, 2026-11-24)
 
-_Pending rescore._ The first run's scoring was overwritten by the set B invocation (the script
-truncated the shared report file at start-up — fixed in the same commit as this doc: per-set reports
-`capture_sweep_report_{A,B}.txt`). The `cp_*` case directories are intact; rescore without re-running:
+Scoring (`compare_ab.py`, default guards): primaries `walk.roll_rms_deg ≤0.85×`, `walk.pelvis_acc_hf ≤0.92×`,
+`base.roll_track_err_deg ≤0.85×`. Shown: `vy_mean`, `yaw_change_deg`, `legs.track_err_q_deg`.
 
-```bash
-cd ~/Documents/GitHub/humanoid_ws/src/legged_robot_mpc_controller
-python3 tests/tuning/compare_ab.py \
-  --primary walk.roll_rms_deg:0.85 --primary walk.pelvis_acc_hf:0.92 --primary base.roll_track_err_deg:0.85 \
-  --show walk.vy_mean --show walk.yaw_change_deg --show legs.track_err_q_deg \
-  tuning_results/cp_base tuning_results/cp_g0 tuning_results/cp_g03 tuning_results/cp_g06 tuning_results/cp_g10 \
-  | tee tuning_results/capture_sweep_report_A.txt
-```
+| case | capture | gain | roll rms (°) | acc_hf | roll track err (°) | vy mean | yaw change (°) | q track err (°) | jump@switch (Nm) | pd_tau_hf | vx | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `cp_base` | off | — | **0.670** | **1.094** | **0.104** | 0.001 | 0.01 | 0.169 | **0.110** | 2.128 | 0.425 | baseline (solve 67.6 Hz) |
+| `cp_g0` | on | 0.0 | 0.765 (+14 %) | 1.056 (−3 %) | 0.108 | −0.003 | −1.29 | 0.193 | 0.157 (+43 %) | — | 0.429 | **guards-fail** |
+| `cp_g03` | on | 0.3 | 0.763 (+14 %) | 1.116 (+2 %) | 0.113 | 0.000 | −0.96 | 0.200 | 0.156 (+42 %) | — | 0.427 | **guards-fail** |
+| `cp_g06` | on | 0.6 | 0.791 (+18 %) | 1.215 (+11 %) | 0.124 (+19 %) | −0.003 | 0.23 | 0.210 | 0.201 (+83 %) | — | 0.425 | **guards-fail** |
+| `cp_g10` | on | 1.0 | 0.816 (+22 %) | 1.328 (+21 %) | 0.124 (+19 %) | −0.001 | −0.65 | 0.217 | 0.161 (+46 %) | 2.561 (+20 %) | 0.423 | **guards-fail** |
 
-## Decision (provisional, pending set A)
+Result: **0/4.** All candidates survived; vx unaffected; no lateral/yaw drift (|vy| ≤ 3 mm/s, |Δyaw| ≤ 1.3° over the run).
 
-- `captureFootPlacement` stays **`enabled: false`** on the G1. Set B rules it out as a start/stop
-  balance aid regardless of set A: a steady-walk-only win would still have to be gated off around
-  command transients, and nothing in the current implementation does that.
-- If set A shows a clean steady-walk roll reduction (≤0.85×) with no vy/yaw drift, the follow-up is
-  *not* to ship the block but to note it as a candidate for the DCM reference item (2.D), where the
-  lateral target comes from the plan rather than the instantaneous velocity.
+Reading:
+
+- Roll gets *worse* the moment the capture foothold is on (+14 % at gain 0) and degrades further with
+  the Raibert term — the opposite of the hypothesis. The optimizer's free placement was already
+  better at lateral balance than the LIP capture point; forcing the foot toward `com + v/ω` on a robot
+  whose CoM dynamics are not LIP-like (heavy legs, arm swing, torso compliance) adds a steady
+  disturbance that the ankles must then counter.
+- `cmd_tau_jump_at_switch` +42…83 %: the swing-foot target now moves *during* swing (it is recomputed
+  from the live CoM velocity every solve), so the foot arrives with a different plan than it left
+  with and the stance handover is rougher. This is the same mechanism — a reference changing under
+  the solver — that Phase 1's `solveBlendSeconds` was introduced to tame.
+- `acc_hf` −3 % at gain 0 is noise; at gain ≥ 0.6 the pelvis vibration rises in step with the
+  placement authority.
+
+## Decision — Phase 2.A closed (0/6)
+
+- `captureFootPlacement` stays **`enabled: false`** on the G1. Both regimes are negative: steady walk
+  (roll +14…22 %, handover jump +42…83 %) and start/stop (transient roll +32…73 %). The block remains
+  in the config only as the H2-compatible schema anchor; it is an **established negative** for the
+  G1 at ≤ 0.5 m/s and is not to be retried with different weights.
+- Carried forward: the G1's MPC already places feet better than a LIP heuristic can, so Phase 2.D
+  (DCM/CoM reference) should shape the **base reference** the optimizer tracks, not override its
+  foothold choice. Any future placement aid must (a) be gated off around command transients and
+  (b) freeze its target once swing begins — the two failure modes measured here.
+- Next: 2.B whole-body QP layer (roadmap execution table).
