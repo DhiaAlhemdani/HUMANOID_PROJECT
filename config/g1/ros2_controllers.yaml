@@ -669,7 +669,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # Swing-foot trajectory, shared by every template.
         swingTrajectory:
           liftOffVelocity: 0.05
-          touchDownVelocity: -0.0
+          # -0.05 m/s: sweep-proven softer landing (pelvis acc_hf 1.1805 -> 1.078, -8.7%,
+          # leg PD HF -7.8%); +0.05 was +29% acc_hf. Effective node velocity is 0.75x this
+          # for the 0.3 s walk swing. docs/results/touchdown_sweep.md
+          touchDownVelocity: -0.05
           swingHeight: 0.08 # default fallback for templates that omit swingHeight; 0.08 [m] is the walk value.
           touchDownHeightOffset: -0.001
           swingTimeScale: 0.4
