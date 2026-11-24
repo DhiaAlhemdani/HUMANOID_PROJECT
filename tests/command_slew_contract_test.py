@@ -28,8 +28,8 @@ HAVE_PLOT = importlib.util.find_spec("numpy") is not None and importlib.util.fin
 class Wiring(unittest.TestCase):
     def test_header_is_dependency_free_and_marked(self):
         text = HDR.read_text()
-        self.assertNotIn("ocs2_core", text)
-        self.assertNotIn("Eigen", text)
+        includes = re.findall(r"^#include\s*[<\"]([^>\"]+)[>\"]", text, flags=re.M)
+        self.assertEqual(sorted(includes), ["algorithm", "cmath"])  # standalone: no ocs2/Eigen
         self.assertIn("// SLEW_LIMITER_BEGIN", text)
         self.assertIn("// SLEW_LIMITER_END", text)
         self.assertIn("inline double slewLimitStep(", text)
