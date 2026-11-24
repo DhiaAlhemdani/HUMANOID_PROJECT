@@ -202,8 +202,14 @@ sweep runs at **0.6 m/s** to cross walk→trot on the ramp up and trot→walk on
 | step | status | artifact |
 | --- | --- | --- |
 | implement (transition metrics + sweep + comparator) | ✅ done | `plot_tracking.py` `gait` section (template classification from `plan_mode`, per-change window metrics, back-fillable), `tests/tuning/synth_run.py`, `run_gaitsplice_sweep.sh` (cases `gs_t005`…`gs_t020`), `compare_gaitsplice.py`; contract `tests/gait_transition_metrics_test.py` |
-| test (closed-loop sweep @ 0.6 m/s) | ⏳ pending | `tuning_results/gaitsplice_sweep_report.txt` |
-| document results | ⏳ pending | `docs/results/gait_splice_sweep.md` |
+| test (closed-loop sweep @ 0.6 m/s) | ✅ done 2026-11-24 | **0/4 — every splice length is worse**: transition roll +36…48 %, z excursion +31 % from 0.15 s, first-step asymmetry 0.99 at 0.2 s, jump@switch +32…39 % at 0.1/0.2 s; all survived, 2 transitions each; report `tuning_results/gaitsplice_sweep_report.txt` |
+| document results | ✅ done | [`docs/results/gait_splice_sweep.md`](results/gait_splice_sweep.md) |
+
+**Outcome:** `phaseTransitionStanceTime` stays **0.0** — a stance pause at a gait change lets the
+base keep its momentum over planted feet, so the first step of the new template starts from a
+larger CoM offset (bigger lateral lurch), and longer pauses break the step rhythm. The shipped
+swing-into-swing splice is the best of the five. §1.5 closed. Side finding: **trot itself** is the
+remaining bounce source at ≥0.5 m/s (steady `acc_hf` 1.40 in trot vs 1.05–1.08 in walk).
 
 Gates (any-of primaries over the worst transition window [−0.5, +1.5] s): `transition_acc_hf_max`
 ≤ 0.85× **or** `transition_z_pp_mm_max` ≤ 0.85× **or** `transition_roll_max_deg` ≤ 0.85×; guards:
@@ -212,10 +218,11 @@ worse, `first_step_asym_max` ≤ 1.20×+0.05, plus the steady-state guard set (a
 PD HF, track err, z, arms, vx, solve).
 - The ladder's `minDwellTime: 0.2` + `switchDelayHorizonFraction: 0.3` hysteresis is good;
   consider **cost-based smoothing**: penalize contact-schedule changes (extra SQP variable
-  or heuristic) so the gait doesn't oscillate between rungs near band edges.
-- **Overlap bands** already exist between rungs — verify with the gait-regularity analyzer
-  (`tests/tuning/analyze_gait_regularity.py`) that transitions produce symmetric step
-  timing, not one long + one short step.
+  or heuristic) so the gait doesn't oscillate between rungs near band edges. *(Not pursued:
+  the 0.6 m/s sweep showed no rung oscillation — exactly one up and one down change per run.)*
+- **Overlap bands** already exist between rungs — ~~verify with the gait-regularity analyzer~~
+  verified by the `gait` diag section: the shipped splice gives first-step asymmetry **0.00**
+  at both changes; only the stance-pause candidates break symmetry.
 
 ### 1.6 Command & upper-body polish
 - Velocity command slew is linear (`velocityCommandRateLimits`); an **S-curve (jerk-limited)**
