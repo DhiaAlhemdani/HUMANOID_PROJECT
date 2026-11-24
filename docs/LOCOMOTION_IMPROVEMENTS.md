@@ -9,7 +9,7 @@ passes "no falls", but three smoothness defects remain:
 
 | # | Measured defect (G1, 0.5 m/s walk) | Evidence |
 |---|---|---|
-| D1 | **MPC-planned pelvis bounce** ≈ 11–12 mm (z sd), 4–40 Hz vertical accel 1.19 | benchmark §"What remains" |
+| D1 | **MPC-planned pelvis bounce** ≈ 11–12 mm (z sd), 4–40 Hz vertical accel 1.19 — **z sd not reproduced 2026-11-24: GT 1.6 / plan 2.14 mm** (main's quintic swing in tree); residual target = `pelvis_acc_hf` 1.16 | benchmark §"What remains"; blend A/B `summary.txt` |
 | D2 | **Touchdown torque spikes** ≈ 50 Nm (knee/ankle 99.9th pct) | benchmark; `impactProximityFactor*` |
 | D3 | **Per-solve command ripple** — torque jumps at each new solution: legs 0.79 vs 0.31 Nm on other ticks | `cmd_tau_jump_at_switch` in `plot_tracking.py` |
 
@@ -51,7 +51,32 @@ These need no new architecture; most are config or small controller changes.
   `cmd_tau_jump_at_switch`.
 
 ### 1.2 Reduce planned bounce (D1)
-- **Vertical cost shaping**: the shipped `q.baseVelocity[2]` (vz) is 10 and benchmark round 6
+
+**Measurement status (2026-11-24, blend A/B runs, G1 vx 0.5, `summary.txt`):** the benchmark's
+11–12 mm planned bounce **does not reproduce** — GT z sd 1.6 mm, plan 2.14, obs 1.8 (the branch
+now carries main's quintic swing-foot spline). D1's headline is resolved; what remains is the
+**4–40 Hz vertical acceleration `pelvis_acc_hf` = 1.16** (benchmark's post-tuning best: 1.19)
+plus plan_z 2.14 mm. Recon: the walk height target is a *constant* (`defaultBaseHeight`, terrain
+estimate off) — there is no gait-phase z reference to smooth, so the "smooth the height
+reference" lever is a dead end; the bounce was and is an optimizer choice.
+
+**Sweep status (implement → test → document):**
+
+| step | status | artifact |
+| --- | --- | --- |
+| implement (sweep cases + tooling) | ✅ done | `tests/tuning/run_bounce_sweep.sh` (cases `accz10`, `accz100`, `z100`, `vz10`) + `tests/tuning/compare_bounce.py`; shipped config unchanged pending a winner |
+| test (closed-loop sweep) | ⏳ **run pending** | `WS=<ws> tests/tuning/run_bounce_sweep.sh 0.5` → `$OUT/bounce_sweep_report.txt`; baseline = existing `$OUT/blend_on` |
+| document results | baseline recorded here; results after sweep | this section → `docs/results/` |
+
+Gates per candidate: `pelvis_acc_hf` ≤ 0.90× baseline (primary, ≥10% cut), survived, vx ≥ 0.90×,
+GT/plan z sd & z-track ≤ 1.10×+0.5 mm, roll ≤ 1.15×+0.05°, arm swing ≤ 1.20×+1°, solve ≥ 0.90×.
+The headline lever is **`r.baseAccelerations` z (0.005 → 0.05/0.5)** — never swept by the
+benchmark; `q.basePose[2]` 50→100 (300 fell) and vz 5→10 (20/30 rejected for roll) are the
+supporting cases. Doc/config note: the benchmark's "shipped vz = 10" does not match the repo
+(config has been 5 since the root commit).
+
+- **Vertical cost shaping**: the shipped `q.baseVelocity[2]` (vz) is 5 (the benchmark doc says
+  10) and benchmark round 6
   showed vz 30 moves the motion into arms/roll — so raise the **base-height tracking cost**
   (`q.basePose[2]`) and the **vertical acceleration** entry of `r.baseAccelerations`
   instead of vz alone; sweep with `make_config.py`.
