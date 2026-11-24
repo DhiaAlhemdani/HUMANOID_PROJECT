@@ -48,15 +48,23 @@ diag() {
 if [ -n "${BASELINE:-}" ]; then
   BL=$BASELINE
 else
+  # The baseline MUST go through make_config too: the shipped config has no
+  # diagnostics.trackingRate, so a plain `default` run bags the tracking topic at
+  # 0 Hz and plot_tracking writes no diag.json (jump/peak gates unreadable).
+  # make_config adds trackingRate=500 — diagnostics only, dynamics unchanged.
+  echo "== baseline config ls_base.yaml (shipped + diagnostics.trackingRate)"
+  python3 "$HERE/make_config.py" "$OUT/ls_base.yaml" \
+    --in "$REPO/config/g1/ros2_controllers.yaml" || exit 1
   echo "== baseline: fresh shipped-config run (ls_base)"
-  OUT=$OUT bash "$HERE/run_case.sh" ls_base default "$VX" || exit 1
+  OUT=$OUT bash "$HERE/run_case.sh" ls_base "$OUT/ls_base.yaml" "$VX" || exit 1
   BL=$OUT/ls_base
 fi
 echo "== baseline: $BL"
-if [ ! -f "$BL/metrics.json" ]; then
-  # Abort early: with no baseline the sweep cannot be scored, and the candidates
-  # would only repeat the same environment failure (the cost is OFF at weight 0).
-  { echo "BASELINE FAILED: $BL has no metrics.json"; diag "$BL"; } | tee "$OUT/loadshare_sweep_report.txt"
+if [ ! -f "$BL/metrics.json" ] || [ ! -f "$BL/diag.json" ]; then
+  # Abort early: with no baseline the sweep cannot be scored (the cost is OFF at
+  # weight 0, so candidates would only repeat an environment failure).
+  { echo "BASELINE FAILED: $BL needs both metrics.json and diag.json (got: $(ls "$BL" 2>/dev/null | tr '\n' ' '))"
+    diag "$BL"; } | tee "$OUT/loadshare_sweep_report.txt"
   exit 1
 fi
 
@@ -65,16 +73,16 @@ for spec in "${CASES[@]}"; do
   tag=${spec%%|*}
   edits=${spec#*|}
   IFS='|' read -r -a arr <<< "$edits"
-  echo "== config ls_$tag"
-  python3 "$HERE/make_config.py" "$OUT/ls_$tag.yaml" \
+  echo "== config $tag"
+  python3 "$HERE/make_config.py" "$OUT/$tag.yaml" \
     --in "$REPO/config/g1/ros2_controllers.yaml" "${arr[@]}" || exit 1
-  echo "== run ls_$tag"
-  OUT=$OUT bash "$HERE/run_case.sh" "ls_$tag" "$OUT/ls_$tag.yaml" "$VX" || exit 1
-  if [ ! -f "$OUT/ls_$tag/metrics.json" ]; then
-    echo "WARN: ls_$tag produced no metrics.json (scored as ERROR):"
-    diag "$OUT/ls_$tag"
+  echo "== run $tag"
+  OUT=$OUT bash "$HERE/run_case.sh" "$tag" "$OUT/$tag.yaml" "$VX" || exit 1
+  if [ ! -f "$OUT/$tag/metrics.json" ] || [ ! -f "$OUT/$tag/diag.json" ]; then
+    echo "WARN: $tag missing metrics.json/diag.json (scored as ERROR):"
+    diag "$OUT/$tag"
   fi
-  CANDS+=("$OUT/ls_$tag")
+  CANDS+=("$OUT/$tag")
 done
 
 echo "== score"
