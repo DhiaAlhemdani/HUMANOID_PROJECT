@@ -37,6 +37,14 @@ CASES=(
   "ls_w1e3|ocs2.costs.contactLoadShareWeight=0.001"
 )
 
+# diag <dir>: one-glance failure evidence for a run that never produced metrics.json.
+diag() {
+  local d=$1
+  echo "-- $d"
+  [ -f "$d/summary.txt" ] && tail -n 8 "$d/summary.txt"
+  grep -aE "FAULT|Traceback|on_configure failed|Segmentation|what\(\)|no locomotion|RUN:" "$d/sim.log" 2>/dev/null | tail -n 8
+}
+
 if [ -n "${BASELINE:-}" ]; then
   BL=$BASELINE
 else
@@ -45,6 +53,12 @@ else
   BL=$OUT/ls_base
 fi
 echo "== baseline: $BL"
+if [ ! -f "$BL/metrics.json" ]; then
+  # Abort early: with no baseline the sweep cannot be scored, and the candidates
+  # would only repeat the same environment failure (the cost is OFF at weight 0).
+  { echo "BASELINE FAILED: $BL has no metrics.json"; diag "$BL"; } | tee "$OUT/loadshare_sweep_report.txt"
+  exit 1
+fi
 
 CANDS=()
 for spec in "${CASES[@]}"; do
@@ -56,6 +70,10 @@ for spec in "${CASES[@]}"; do
     --in "$REPO/config/g1/ros2_controllers.yaml" "${arr[@]}" || exit 1
   echo "== run ls_$tag"
   OUT=$OUT bash "$HERE/run_case.sh" "ls_$tag" "$OUT/ls_$tag.yaml" "$VX" || exit 1
+  if [ ! -f "$OUT/ls_$tag/metrics.json" ]; then
+    echo "WARN: ls_$tag produced no metrics.json (scored as ERROR):"
+    diag "$OUT/ls_$tag"
+  fi
   CANDS+=("$OUT/ls_$tag")
 done
 

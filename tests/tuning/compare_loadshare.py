@@ -40,10 +40,20 @@ GUARDS = [
 ]
 
 
-def load(d: Path) -> dict:
+def load(d: Path) -> tuple[dict | None, str | None]:
+    """Return (flat_metrics, None) or (None, reason); never raises — a silent crash
+    here produced an empty tee'd report once already."""
+    if not d.is_dir():
+        return None, f"missing directory {d}"
+    missing = [f for f in ("metrics.json", "diag.json") if not (d / f).is_file()]
+    if missing:
+        return None, f"missing {', '.join(missing)} (run ended before scoring; see {d}/summary.txt)"
+    try:
+        met = json.loads((d / "metrics.json").read_text())
+        diag = json.loads((d / "diag.json").read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        return None, f"unreadable metrics: {e}"
     flat: dict = {}
-    met = json.loads((d / "metrics.json").read_text())
-    diag = json.loads((d / "diag.json").read_text())
     flat["survived"] = met.get("survived")
     flat["fell_at"] = met.get("fell_at")
     for k, v in (met.get("walk") or {}).items():
@@ -52,7 +62,7 @@ def load(d: Path) -> dict:
         for k, v in (diag.get(section) or {}).items():
             if not isinstance(v, dict):
                 flat[f"{section}.{k}"] = v
-    return flat
+    return flat, None
 
 
 def gate_list(base: dict, cand: dict) -> list[tuple[str, bool, str]]:
@@ -77,8 +87,10 @@ def main(argv: list[str]) -> int:
     if len(argv) < 3:
         print(__doc__)
         return 2
-    base = load(Path(argv[1]))
-    cands = [(p, load(Path(p))) for p in argv[2:]]
+    base, base_err = load(Path(argv[1]))
+    if base is None:
+        print(f"BASELINE FAILED: {argv[1]}: {base_err}")
+        return 2
 
     print(f"baseline: {argv[1]}")
     print(f"  jump@switch {get(base, 'legs.cmd_tau_jump_at_switch')} | PD peak {get(base, 'legs.pd_tau_p999')} | "
@@ -92,8 +104,13 @@ def main(argv: list[str]) -> int:
 
     winners: list[str] = []
     detail: list[tuple[str, list[tuple[str, bool, str]]]] = []
-    for path, cand in cands:
+    cands = [(p, *load(Path(p))) for p in argv[2:]]
+    for path, cand, cand_err in cands:
         name = Path(path).name
+        if cand is None:
+            detail.append((name, [("load", False, cand_err or "unknown error")]))
+            print(f"{name:12s} {'-':>6s} {'-':>7s} {'-':>7s} {'-':>6s} {'-':>6s} {'-':>6s} {'-':>6s}  ERROR")
+            continue
         gates = gate_list(base, cand)
         detail.append((name, gates))
         ok = all(g[1] for g in gates)
