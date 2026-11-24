@@ -10,8 +10,8 @@ passes "no falls", but three smoothness defects remain:
 | # | Measured defect (G1, 0.5 m/s walk) | Evidence |
 |---|---|---|
 | D1 | **MPC-planned pelvis bounce** ≈ 11–12 mm (z sd), 4–40 Hz vertical accel 1.19 — **CLOSED 2026-11-24**: z sd not reproduced (GT 1.6 / plan 2.14 mm), cost sweep 0/4 → residual `acc_hf` 1.18 is contact-driven, carried into 1.3 | benchmark §"What remains"; blend A/B `summary.txt`; [`bounce_cost_sweep.md`](results/bounce_cost_sweep.md) |
-| D2 | **Touchdown torque spikes** ≈ 50 Nm (knee/ankle 99.9th pct) — **IMPROVED 2026-11-24**: `touchDownVelocity −0.05` shipped → `acc_hf` −8.7% (best of project); the 50.25 peak proved **config-invariant** (≤0.02 Nm across a ∓0.075 m/s × 3.3× trajectory sweep) → residual is structural | benchmark; `impactProximityFactor*`; [`touchdown_sweep.md`](results/touchdown_sweep.md) |
-| D3 | **Per-solve command ripple** — torque jumps at each new solution: legs 0.79 vs 0.31 Nm on other ticks | `cmd_tau_jump_at_switch` in `plot_tracking.py` |
+| D2 | **Touchdown torque spikes** ≈ 50 Nm (knee/ankle 99.9th pct) — **IMPROVED then CLOSED 2026-11-24**: `touchDownVelocity −0.05` shipped → `acc_hf` −8.7% (best of project); the 50.25 peak proved **invariant across all three lever rounds** (trajectory configs, touchdown velocity, structural load-share: ≤0.02 Nm over a 1000× span) at ≈ ankle effort-limit scale → **closed as plan-inert (contact/servo saturation)** | benchmark; [`touchdown_sweep.md`](results/touchdown_sweep.md); [`load_share_cost.md`](results/load_share_cost.md) |
+| D3 | **Per-solve command ripple** — torque jumps at each new solution: legs 0.79 vs 0.31 Nm on other ticks — **largely closed by the Phase 1.1 blend** (jump 1.317 → 0.105 on the 2026-11-24 baseline); load-share round **rejected** (jump +27…41%) | `cmd_tau_jump_at_switch` in `plot_tracking.py`; [`load_share_cost.md`](results/load_share_cost.md) |
 
 User priority order (from the benchmark): **falls → smoothness (bounce, jitter) → velocity tracking.**
 
@@ -113,6 +113,9 @@ tightly approaching contact. Baseline: legs `pd_tau_p999` **50.25 Nm** (right an
 | implement (sweep cases + tooling) | ✅ done | `tests/tuning/run_touchdown_sweep.sh` (cases `tdvn05`, `tdvp05`, `impf06`, `impf10`) + `tests/tuning/compare_touchdown.py` (`77977ff`) |
 | test (closed-loop sweep) | ✅ done 2026-11-24 | **0/4 gates** — but primary `pd_tau_p999` shown **config-invariant** (50.24–50.26 across all four edits); report `tuning_results/touchdown_sweep_report.txt` |
 | document results | ✅ done | [`docs/results/touchdown_sweep.md`](results/touchdown_sweep.md) |
+| implement (structural: DS load-share cost + tooling) | ✅ done | `WbIdContactLoadShareCost` (registered only when `contactLoadShareWeight > 0`, shipped 0), microbench 14/14, contract test (`8c704da`) |
+| test (structural sweep, 4 log-spaced weights) | ✅ done 2026-11-24 | **0/4** — primary `jump@switch` **worse +27…41%** (0.105 → 0.133–0.148); peak unmoved (50.24–50.25); `acc_hf` no gain; report `tuning_results/loadshare_sweep_report.txt` |
+| document structural results | ✅ done | [`docs/results/load_share_cost.md`](results/load_share_cost.md) |
 
 Gates: legs `pd_tau_p999` ≤ 0.90× (original primary), survived, vx ≥ 0.90×, `acc_hf` ≤ 1.10×,
 leg PD HF ≤ 1.10×+0.1, leg track err ≤ 1.20×+0.05°, plan z sd / z-track ≤ 1.10×+0.5 mm,
@@ -123,8 +126,9 @@ roll ≤ 1.15×+0.05°, arm swing ≤ 1.20×+1°, solve ≥ 0.90×.
 effectiveness gate re-bases on `pelvis_acc_hf` (benchmark priority #1). **Shipped:
 `touchDownVelocity: -0.05` (g1)** → `acc_hf` 1.1805 → **1.078 (−8.7%, best of project)**,
 leg PD HF −7.8%, all other guards pass. Rejected: `+0.05` (acc_hf +29% — sign confirmed),
-`impactProximityFactor` 0.6/1.0 (solve 67→56 Hz, acc_hf +6%). Config levers for D2 are now
-exhausted; the residual PD-peak plateau is structural (late-swing gain / Δf_z cost).
+`impactProximityFactor` 0.6/1.0 (solve 67→56 Hz, acc_hf +6%). The structural Δf_z round
+then **also failed to move the peak and worsened D3** ([`load_share_cost.md`](results/load_share_cost.md))
+→ D2 closed as plan-inert; the bounce-energy improvement stands.
 
 - **Touchdown vertical velocity** — ✅ **tested & shipped**: `touchDownVelocity: -0.05` in the
   g1 config (`acc_hf` −8.7%; `+0.05` was +29% — sign resolved empirically; sweep:
@@ -132,16 +136,15 @@ exhausted; the residual PD-peak plateau is structural (late-swing gain / Δf_z c
   `impactProximityFactorTouchDownVelocity` slope was rejected (solve 67→56 Hz, no softening).
 - **Late-swing damping**: raise `footMotionEquality.linearVelocityErrorGain_z` only in the
   last ~100 ms of swing (time-varying gain) — currently constant across the mode.
-- **Vertical force-rate limiting** — ✅ **implemented** (structural round) as the
-  `WbIdContactLoadShareCost` double-support load-share cost: ocs2 costs are per-stage
-  `(t, x, u)` only, so a literal cross-node `Δf_z` term is not expressible; instead the
-  cost shapes the one direction the RNEA leaves free in DS — the vertical force split —
-  toward a C1 smoothstep transfer across each window (total-invariant residual, active in
-  DS only, registered only when `ocs2.costs.contactLoadShareWeight > 0`, shipped **0**).
-  Tooling: `tests/tuning/run_loadshare_microbench.py` (14/14 gates),
-  `tests/wb_id_load_share_contract_test.py`, sweep pair `run_loadshare_sweep.sh` +
-  `compare_loadshare.py` (primary `cmd_tau_jump_at_switch ≤ 0.85×`, D2 peak guard
-  ≤1.05×). **Sweep run pending** (4 log-spaced weights + fresh baseline).
+- **Vertical force-rate limiting** — ❌ **tested & rejected** (structural round, 0/4):
+  implemented as the `WbIdContactLoadShareCost` DS load-share cost (ocs2 costs are
+  per-stage `(t, x, u)`, so a literal cross-node `Δf_z` term is not expressible; the cost
+  instead shapes the split direction the RNEA leaves free toward a C1 smoothstep transfer;
+  shipped weight **0**). Sweep: jump@switch **+27…41% worse** at every weight (moving φ
+  target + per-node activation as the horizon slides → more solution disagreement at
+  switches), peak unmoved, `acc_hf` no gain — full analysis:
+  [`results/load_share_cost.md`](results/load_share_cost.md). Tooling kept:
+  microbench 14/14, contract test, sweep pair.
 - **Swing spline**: replace the two-segment `CubicSpline`/`SplineCpg` with a quintic /
   min-jerk profile so acceleration is continuous at lift-off, apex and touchdown
   (`src/mpc/common/swing_foot_planner/`).
