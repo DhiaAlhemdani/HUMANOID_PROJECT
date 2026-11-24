@@ -93,6 +93,31 @@ since the root commit).
   `plan_*` columns — confirm with `~/tracking` before tuning the estimator.
 
 ### 1.3 Soften touchdown (D2)
+
+**Recon (2026-11-24):** main already landed the quintic swing-height spline (roadmap's
+"spline" item — `SwingTrajectoryPlanner` uses `QuinticSpline` nodes with velocity boundary
+conditions), so the untested levers are the two swing-trajectory configs the benchmark
+explicitly left as its next step (§"Touchdown impact… the swing touchdown velocity").
+Semantics read from code: node velocity = `min(1, swingDuration/swingTimeScale) × config`
+→ **0.75× for the 0.3 s walk swing**; z-up world, so `touchDownVelocity` sign is ambiguous
+in the docs (negative = still descending at contact) — the sweep tests **both signs**.
+`impactProximityFactor*` are boundary *slopes* of the velocity-error gating cubic (value 1
+at both swing ends, 0 mid-swing): a larger touchdown slope tracks the landing velocity more
+tightly approaching contact. Baseline: legs `pd_tau_p999` **50.25 Nm** (right ankle),
+`acc_hf` 1.18, leg PD HF 2.22 (blend A/B `summary.txt`).
+
+**Sweep status (implement → test → document):**
+
+| step | status | artifact |
+| --- | --- | --- |
+| implement (sweep cases + tooling) | ✅ done | `tests/tuning/run_touchdown_sweep.sh` (cases `tdvn05`, `tdvp05`, `impf06`, `impf10`) + `tests/tuning/compare_touchdown.py`; shipped config unchanged pending a winner |
+| test (closed-loop sweep) | ⏳ **run pending** | `WS=<ws> tests/tuning/run_touchdown_sweep.sh 0.5` → `$OUT/touchdown_sweep_report.txt`; baseline = existing `$OUT/blend_on` |
+| document results | pending | this section → `docs/results/` |
+
+Gates: **legs `pd_tau_p999` ≤ 0.90× (primary)**, survived, vx ≥ 0.90×, `acc_hf` ≤ 1.10×,
+leg PD HF ≤ 1.10×+0.1, leg track err ≤ 1.20×+0.05°, plan z sd / z-track ≤ 1.10×+0.5 mm,
+roll ≤ 1.15×+0.05°, arm swing ≤ 1.20×+1°, solve ≥ 0.90×.
+
 - **Touchdown vertical velocity**: `swingTrajectory.touchDownVelocity` defaults to `0.0`;
   a slightly *negative* target plus a larger `impactProximityFactorTouchDownVelocity`
   weight makes the optimizer prefer a slower landing (the factor currently *gates costs*,
