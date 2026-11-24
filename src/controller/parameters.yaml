@@ -53,6 +53,47 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           the hardware's gains (effort_pd_kp in the xacro).", validation: {lower_element_bounds<>: [0.0]}}
       kd: {type: double_array, default_value: [], description: "Velocity gains of the effort_pd joint servo,
           index-aligned with robot.jointNames; see kp.", validation: {lower_element_bounds<>: [0.0]}}
+    wholeBody:
+      enabled: {type: bool, default_value: false, description: "Phase 2.B whole-body feedback layer: every servo tick
+          the measured state and the policy at the current time give desired generalized accelerations (plan + task
+          PD on base, joints and swing feet); a contact-consistent least squares under the floating-base dynamics and
+          the stance constraints returns the feedforward torque. The hardware PD then runs with residualKp/residualKd
+          instead of jointEffortPd (needs jointEffortPd and commandInterface effort_pd). false: the servo path is
+          unchanged."}
+      residualKp: {type: double, default_value: 20.0, description: "effort_pd position gain written while the layer is
+          active, for every joint whose jointEffortPd.kp is > 0 (wheel joints stay 0) [N m/rad]", validation: {gt_eq: [0.0]}}
+      residualKd: {type: double, default_value: 3.0, description: "effort_pd velocity gain while the layer is active
+          [N m s/rad]", validation: {gt_eq: [0.0]}}
+      gainRampSeconds: {type: double, default_value: 0.5, description: "Ramp of the written servo gains from
+          jointEffortPd to residualKp/Kd when the layer first engages (the Blend -> Locomotion handover) [s]",
+          validation: {gt_eq: [0.0]}}
+      baseKp: {type: double_array, default_value: [0.0, 0.0, 100.0, 50.0, 200.0, 200.0], description: "Base task
+          stiffness on the generalized-coordinate error [x y z yaw pitch roll] (world position, Euler ZYX angles)
+          [1/s^2]; 0 tracks the planned acceleration only", validation: {fixed_size<>: [6], lower_element_bounds<>: [0.0]}}
+      baseKd: {type: double_array, default_value: [0.0, 0.0, 20.0, 14.0, 28.0, 28.0], description: "Base task damping
+          on the generalized-velocity error [1/s]", validation: {fixed_size<>: [6], lower_element_bounds<>: [0.0]}}
+      baseWeight: {type: double_array, default_value: [1.0, 1.0, 10.0, 10.0, 10.0, 10.0], description: "Least-squares
+          weight of the base acceleration rows", validation: {fixed_size<>: [6], lower_element_bounds<>: [1.0e-6]}}
+      jointKp: {type: double, default_value: 100.0, description: "Joint posture task stiffness on (q_plan - q), in
+          acceleration space so each joint sees it scaled by its own inertia [1/s^2]", validation: {gt_eq: [0.0]}}
+      jointKd: {type: double, default_value: 20.0, description: "Joint posture task damping [1/s]", validation: {gt_eq: [0.0]}}
+      jointWeight: {type: double, default_value: 1.0, description: "Least-squares weight of the joint acceleration
+          rows", validation: {gt: [0.0]}}
+      swingKp: {type: double_array, default_value: [200.0, 200.0, 200.0], description: "Swing-foot position task
+          stiffness, world axes [1/s^2]", validation: {fixed_size<>: [3], lower_element_bounds<>: [0.0]}}
+      swingKd: {type: double_array, default_value: [28.0, 28.0, 28.0], description: "Swing-foot task damping [1/s]",
+          validation: {fixed_size<>: [3], lower_element_bounds<>: [0.0]}}
+      swingWeight: {type: double, default_value: 5.0, description: "Least-squares weight of the swing-foot task
+          (3 rows per swing foot); 0 disables it", validation: {gt_eq: [0.0]}}
+      wrenchWeight: {type: double, default_value: 0.01, description: "Weight pulling the solved contact wrenches
+          toward the policy's (keeps the MPC's double-support load split); the dynamics rows always win",
+          validation: {gt: [0.0]}}
+      frictionCoefficient: {type: double, default_value: 0.6, description: "Post-solve clip of the solved wrenches:
+          |f_xy| <= mu f_z, f_z >= 0 (S1 clips; S2 constrains)", validation: {gt: [0.0]}}
+      soleHalfLength: {type: double, default_value: 0.10, description: "Post-solve centre-of-pressure clip,
+          contact-frame x half-extent [m]", validation: {gt: [0.0]}}
+      soleHalfWidth: {type: double, default_value: 0.04, description: "Post-solve centre-of-pressure clip,
+          contact-frame y half-extent [m]", validation: {gt: [0.0]}}
   diagnostics:
     statusLogPeriod: {type: double, default_value: 5.0, description: "Period of the MPC timing/utilization status
         log [s]", validation: {gt: [0.0]}}

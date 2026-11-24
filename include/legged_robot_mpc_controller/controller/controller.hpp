@@ -38,6 +38,7 @@
 #include <legged_robot_mpc_controller/mpc/wb_id/model/WbIdMpcRobotModel.h>
 
 #include "legged_robot_mpc_controller/common/ros2_procedural_mpc_motion_manager.hpp"
+#include "legged_robot_mpc_controller/controller/whole_body_feedback.hpp"
 #include "legged_robot_mpc_controller/common/yaw_unwrapper.hpp"
 #include "legged_robot_state_estimator/estimator_state_interfaces.hpp"
 #include "legged_robot_mpc_controller/humanoid_whole_body_inverse_dynamics_mpc_controller_parameters.hpp"
@@ -156,6 +157,25 @@ private:
   //! Where the joint torque feedforward comes from (control.feedforward).
   enum class Feedforward { PolicyTorque, InverseDynamics };
   Feedforward feedforward_{Feedforward::PolicyTorque};
+
+  // Phase 2.B whole-body feedback layer (control.wholeBody): replaces the feedforward of
+  // compute_mpc_joint_action with the contact-consistent torque at the measured state and
+  // lowers the written servo gains to the residual PD while it is engaged.
+  std::unique_ptr<legged_robot_mpc_controller::wbc::WholeBodyFeedback> whole_body_feedback_;
+  vector_t whole_body_residual_kp_;
+  vector_t whole_body_residual_kd_;
+  vector_t whole_body_written_kp_;  //!< gains written this tick while engaged (ramped)
+  vector_t whole_body_written_kd_;
+  bool whole_body_tick_{false};        //!< this tick's command came from the layer
+  bool whole_body_engaged_{false};     //!< gains are on the residual set (ramping or settled)
+  double whole_body_engage_time_{-1.0};
+  double whole_body_gain_alpha_{0.0};  //!< 0 = jointEffortPd, 1 = residual
+  std::atomic<std::size_t> whole_body_invalid_ticks_{0};
+  double whole_body_last_residual_{0.0};
+  int whole_body_last_clips_{0};
+  //! Select the servo gains for this tick (stand-up override > whole-body residual > jointEffortPd).
+  void select_servo_gains(const vector_t*& kp, const vector_t*& kd) const;
+  void update_whole_body_gain_ramp(double now);
 
   void write_joint_action_command(
     const vector_t& q_des, const vector_t& qd_des, const vector_t& tau_ff);

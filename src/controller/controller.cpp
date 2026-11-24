@@ -164,6 +164,48 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
     RCLCPP_INFO(get_node()->get_logger(), "%s joint servo gains: %s", kTag,
                 joint_kp_.size() > 0 ? "control.jointEffortPd, written every tick" : "the hardware's (not claimed)");
 
+    // Phase 2.B whole-body feedback layer: built here, used by compute_mpc_joint_action.
+    whole_body_feedback_.reset();
+    whole_body_engaged_ = false;
+    whole_body_tick_ = false;
+    whole_body_engage_time_ = -1.0;
+    whole_body_gain_alpha_ = 0.0;
+    whole_body_invalid_ticks_.store(0);
+    if (parameters_.control.wholeBody.enabled) {
+      const auto& wb = parameters_.control.wholeBody;
+      if (joint_kp_.size() == 0) {
+        throw std::invalid_argument("control.wholeBody needs control.jointEffortPd (it writes the residual servo gains)");
+      }
+      legged_robot_mpc_controller::wbc::Settings settings;
+      settings.enabled = true;
+      settings.baseKp = Eigen::Map<const legged_robot_mpc_controller::wbc::Vector6>(wb.baseKp.data());
+      settings.baseKd = Eigen::Map<const legged_robot_mpc_controller::wbc::Vector6>(wb.baseKd.data());
+      settings.baseWeight = Eigen::Map<const legged_robot_mpc_controller::wbc::Vector6>(wb.baseWeight.data());
+      settings.jointKp = wb.jointKp;
+      settings.jointKd = wb.jointKd;
+      settings.jointWeight = wb.jointWeight;
+      settings.swingKp = Eigen::Map<const Eigen::Vector3d>(wb.swingKp.data());
+      settings.swingKd = Eigen::Map<const Eigen::Vector3d>(wb.swingKd.data());
+      settings.swingWeight = wb.swingWeight;
+      settings.wrenchWeight = wb.wrenchWeight;
+      settings.limits.frictionCoefficient = wb.frictionCoefficient;
+      settings.limits.soleHalfLengthX = wb.soleHalfLength;
+      settings.limits.soleHalfLengthY = wb.soleHalfWidth;
+      whole_body_feedback_ = std::make_unique<legged_robot_mpc_controller::wbc::WholeBodyFeedback>(
+        settings, contact_frame_names(), *control_pinocchio_);
+      // Residual servo: residualKp on every joint the shipped PD drives, 0 where it is 0 (wheels).
+      whole_body_residual_kp_ = (joint_kp_.array() > 0.0).cast<double>() * wb.residualKp;
+      whole_body_residual_kd_ = (joint_kd_.array() > 0.0).cast<double>() * wb.residualKd;
+      whole_body_written_kp_ = joint_kp_;
+      whole_body_written_kd_ = joint_kd_;
+      RCLCPP_INFO(get_node()->get_logger(),
+                  "%s whole-body feedback layer on: residual servo kp %.1f kd %.1f (ramp %.2f s), base kp [%.0f %.0f %.0f | %.0f %.0f %.0f], "
+                  "joint kp %.0f, swing kp %.0f, weights base/joint/swing/wrench %.1f/%.2f/%.1f/%.3f",
+                  kTag, wb.residualKp, wb.residualKd, wb.gainRampSeconds, wb.baseKp[0], wb.baseKp[1], wb.baseKp[2],
+                  wb.baseKp[3], wb.baseKp[4], wb.baseKp[5], wb.jointKp, wb.swingKp[2], wb.baseWeight[2], wb.jointWeight,
+                  wb.swingWeight, wb.wrenchWeight);
+    }
+
     stand_up_trajectory_.reset();
     if (!parameters_.bringUp.standUpTrajectoryFile.empty()) {
       if (joint_kp_.size() == 0) {
@@ -665,6 +707,7 @@ controller_interface::return_type HumanoidWholeBodyInverseDynamicsMpcController:
   }
 
   read_state_estimator();
+  whole_body_tick_ = false;
 
   const auto observation = build_observation(time);
   const bool solver_ready = mpc_ready_.load(std::memory_order_acquire);
@@ -729,6 +772,7 @@ controller_interface::return_type HumanoidWholeBodyInverseDynamicsMpcController:
   if (!uses_bring_up() && active_policy_ready_) {
     passive_hold_joints_ = command.policy_position;
   }
+  update_whole_body_gain_ramp(observation.time);
 
   write_joint_action_command(command.policy_position, command.policy_velocity, command.feedforward);
   write_estimator_references(time.seconds());
@@ -1850,7 +1894,91 @@ HumanoidWholeBodyInverseDynamicsMpcController::compute_mpc_joint_action(const oc
       control_model_->getGeneralizedCoordinates(observation.state), control_model_->getGeneralizedVelocities(observation.state));
   }
   clamp_torque(command.feedforward);
+
+  // Phase 2.B: the whole-body layer's contact-consistent torque at the measured state
+  // replaces the feedforward above; on an invalid solve this tick keeps the plan's torque.
+  if (whole_body_feedback_) {
+    legged_robot_mpc_controller::wbc::Input input;
+    input.qMeasured = control_model_->getGeneralizedCoordinates(observation.state);
+    input.vMeasured = control_model_->getGeneralizedVelocities(observation.state);
+    input.qPlan = control_model_->getGeneralizedCoordinates(policy_state);
+    input.vPlan = control_model_->getGeneralizedVelocities(policy_state);
+    input.accPlan = control_model_->getGeneralizedAccelerations(policy_input);
+    const auto contacts = ocs2::humanoid::modeNumber2StanceLeg(policy_mode);
+    for (std::size_t c = 0; c < legged_robot_mpc_controller::wbc::kContacts; ++c) {
+      input.inContact[c] = contacts[c];
+      input.wrenchPlan[c] = control_model_->getContactWrench(policy_input, c);
+    }
+    const auto result = whole_body_feedback_->compute(*control_pinocchio_, input);
+    whole_body_tick_ = true;  // gains go to the residual set even on a fallback tick
+    if (result.valid && result.jointTorque.size() == command.feedforward.size()) {
+      vector_t tau = result.jointTorque;
+      // The modelled joint Coulomb friction, as the plan's inverse dynamics adds it.
+      const auto& friction = mpc_interface_->modelSettings().jointFriction;
+      const auto nj = static_cast<Eigen::Index>(friction.size());
+      if (nj == tau.size()) {
+        const vector_t joint_velocities = input.vMeasured.tail(nj);
+        for (Eigen::Index i = 0; i < nj; ++i) {
+          tau(i) += friction[static_cast<size_t>(i)] *
+                    std::tanh(joint_velocities(i) / mpc_interface_->modelSettings().jointFrictionVelocity);
+        }
+      }
+      clamp_torque(tau);
+      command.feedforward = tau;
+      whole_body_last_residual_ = result.dynamicsResidual;
+      whole_body_last_clips_ = result.wrenchClips;
+    } else {
+      const auto count = ++whole_body_invalid_ticks_;
+      RCLCPP_WARN_THROTTLE(get_node()->get_logger(), *get_node()->get_clock(), 2000,
+                           "%s whole-body feedback solve invalid (%lu ticks so far); using the plan's torque this tick",
+                           kTag, static_cast<unsigned long>(count));
+      whole_body_last_residual_ = std::numeric_limits<double>::quiet_NaN();
+      whole_body_last_clips_ = -1;
+    }
+  }
   return command;
+}
+
+void HumanoidWholeBodyInverseDynamicsMpcController::select_servo_gains(const vector_t*& kp, const vector_t*& kd) const
+{
+  kp = &joint_kp_;
+  kd = &joint_kd_;
+  if (servo_kp_override_.size() == joint_kp_.size() && servo_kd_override_.size() == joint_kd_.size()) {
+    kp = &servo_kp_override_;
+    kd = &servo_kd_override_;
+  } else if (whole_body_engaged_ && whole_body_written_kp_.size() == joint_kp_.size() &&
+             whole_body_written_kd_.size() == joint_kd_.size()) {
+    kp = &whole_body_written_kp_;
+    kd = &whole_body_written_kd_;
+  }
+}
+
+void HumanoidWholeBodyInverseDynamicsMpcController::update_whole_body_gain_ramp(double now)
+{
+  if (!whole_body_feedback_ || joint_kp_.size() == 0) {
+    whole_body_engaged_ = false;
+    return;
+  }
+  // Engage only once the MPC command reaches the hardware unblended (Locomotion, or no
+  // bring-up at all): the Blend phase mixes the stand's hold into the command and keeps
+  // the shipped gains for it. Any other tick (bring-up, hold) returns to the shipped gains
+  // at once; the layer re-ramps when it engages again.
+  const bool driving = whole_body_tick_ && (!uses_bring_up() || bring_up_phase_.load() == BringUpPhase::Locomotion);
+  if (!driving) {
+    whole_body_engaged_ = false;
+    whole_body_engage_time_ = -1.0;
+    whole_body_gain_alpha_ = 0.0;
+    return;
+  }
+  if (!whole_body_engaged_ || whole_body_engage_time_ < 0.0 || now < whole_body_engage_time_) {
+    whole_body_engaged_ = true;
+    whole_body_engage_time_ = now;
+  }
+  const double ramp = parameters_.control.wholeBody.gainRampSeconds;
+  const double a = ramp > 0.0 ? std::clamp((now - whole_body_engage_time_) / ramp, 0.0, 1.0) : 1.0;
+  whole_body_gain_alpha_ = a * a * (3.0 - 2.0 * a);
+  whole_body_written_kp_ = (1.0 - whole_body_gain_alpha_) * joint_kp_ + whole_body_gain_alpha_ * whole_body_residual_kp_;
+  whole_body_written_kd_ = (1.0 - whole_body_gain_alpha_) * joint_kd_ + whole_body_gain_alpha_ * whole_body_residual_kd_;
 }
 
 HumanoidWholeBodyInverseDynamicsMpcController::JointActionCommand
@@ -1960,6 +2088,13 @@ void HumanoidWholeBodyInverseDynamicsMpcController::configure_tracking()
   for (const auto& sensor : parameters_.diagnostics.contactSensorNames) {
     tracking_names_.push_back("meas_contact/" + sensor + "/normal_force");
     tracking_names_.push_back("meas_contact/" + sensor + "/contact");
+  }
+  if (parameters_.control.wholeBody.enabled) {
+    // Whole-body layer: 1 when this tick's torque came from it, the base-rows residual of its
+    // solve, the number of wrench components clipped, and the servo-gain ramp (0 shipped PD, 1 residual).
+    for (const char* name : {"active", "residual", "clips", "gain_alpha"}) {
+      tracking_names_.push_back(std::string("wbc/") + name);
+    }
   }
   tracking_row_.data.assign(tracking_names_.size(), std::numeric_limits<double>::quiet_NaN());
 
@@ -2211,6 +2346,12 @@ void HumanoidWholeBodyInverseDynamicsMpcController::publish_tracking(
     put(force ? *force : std::numeric_limits<double>::quiet_NaN());
     put(contact ? *contact : std::numeric_limits<double>::quiet_NaN());
   }
+  if (parameters_.control.wholeBody.enabled) {
+    put(whole_body_tick_ && std::isfinite(whole_body_last_residual_) ? 1.0 : 0.0);
+    put(whole_body_tick_ ? whole_body_last_residual_ : std::numeric_limits<double>::quiet_NaN());
+    put(whole_body_tick_ ? static_cast<double>(whole_body_last_clips_) : std::numeric_limits<double>::quiet_NaN());
+    put(whole_body_gain_alpha_);
+  }
   (void)tracking_publisher_->try_publish(tracking_row_);
 }
 
@@ -2232,12 +2373,13 @@ void HumanoidWholeBodyInverseDynamicsMpcController::write_joint_action_command(
     (void)command_interfaces_[3 * i + 2].set_value(safe(i < static_cast<size_t>(tau_ff.size()) ? tau_ff[idx] : 0.0));
   }
   // Servo gains, every tick: the hardware runs the PD with whatever was written last.
-  const vector_t& kp = servo_kp_override_.size() == joint_kp_.size() ? servo_kp_override_ : joint_kp_;
-  const vector_t& kd = servo_kd_override_.size() == joint_kd_.size() ? servo_kd_override_ : joint_kd_;
+  const vector_t* kp = nullptr;
+  const vector_t* kd = nullptr;
+  select_servo_gains(kp, kd);
   for (size_t i = 0; 2 * i + 1 < gain_command_index_.size(); ++i) {
     const auto idx = static_cast<Eigen::Index>(i);
-    (void)command_interfaces_[gain_command_index_[2 * i]].set_value(kp[idx]);
-    (void)command_interfaces_[gain_command_index_[2 * i + 1]].set_value(kd[idx]);
+    (void)command_interfaces_[gain_command_index_[2 * i]].set_value((*kp)[idx]);
+    (void)command_interfaces_[gain_command_index_[2 * i + 1]].set_value((*kd)[idx]);
   }
   // Joints excluded from the MPC model (wrists): hold zero, soft hardware gains.
   for (size_t i = 0; i < fixed_joint_count; ++i) {

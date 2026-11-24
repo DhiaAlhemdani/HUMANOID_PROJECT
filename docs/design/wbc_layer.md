@@ -1,7 +1,27 @@
 # Phase 2.B — whole-body feedback layer between the MPC and the joint servos
 
-Status: **design, awaiting go/no-go** (2026-11-24). Roadmap Phase 2 #6, promoted to 2.B by the Phase 1
-evidence. Nothing in this document is implemented yet.
+Status: **S1 implemented, ships disabled, awaiting the closed-loop sweep** (2026-11-24). Roadmap
+Phase 2 #6, promoted to 2.B by the Phase 1 evidence. Decisions taken: S1 go (user); S2's dense QP
+will be HPIPM, which `ocs2_sqp` already links through `hpipm_catkin` / `blasfeo_catkin` in the
+`wei-hsuan-cheng/ocs2_ros2` stack this repo builds against (no new dependency).
+
+## 0. What S1 is in the code
+
+| piece | file |
+| --- | --- |
+| Eigen-only least-squares core (KKT solve, wrench clip, joint-row torques) | `include/legged_robot_mpc_controller/controller/whole_body_feedback_core.hpp` |
+| Pinocchio assembly (plan swing targets, measured `M, h, J, J̇v`, task PD) | `include/.../controller/whole_body_feedback.hpp`, `src/controller/whole_body_feedback.cpp` |
+| Controller wiring: replaces the feedforward in `compute_mpc_joint_action`, residual servo gains ramped in Locomotion only, `wbc/*` tracking columns | `src/controller/controller.cpp`, `controller.hpp` |
+| Parameters (`control.wholeBody.*`, shipped `enabled: false`) | `src/controller/parameters.yaml`, `config/g1/ros2_controllers.yaml` |
+| Tests | `tests/whole_body_feedback_core_test.cpp` (Eigen, in `BUILD_TESTING`; passes in the sandbox), `tests/whole_body_feedback_contract_test.py` |
+| Sweep | `tests/tuning/run_wbc_sweep.sh`; new metric `legs.meas_tau_hf` in `plot_tracking.py` (total applied torque HF — `pd_tau_hf` is not comparable once the feedback moves into `cmd_tau`) |
+
+Behavioural notes that differ from the sketch below: the swing-foot task uses the plan's foot
+position/velocity from forward kinematics of the policy state and the measured-configuration
+Jacobian for the planned acceleration; the residual servo gains are smooth-stepped from
+`jointEffortPd` to `residualKp/Kd` over `gainRampSeconds` after the bring-up reaches Locomotion
+(the Blend phase keeps the shipped gains); an invalid solve falls back to the plan's torque for
+that tick and is counted (`whole-body feedback solve invalid` log, `wbc/active` column).
 
 ## 1. Why this is the next item
 

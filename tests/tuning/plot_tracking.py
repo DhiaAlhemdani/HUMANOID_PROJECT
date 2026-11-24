@@ -149,6 +149,9 @@ for gname, group in (("legs", LEGS), ("waist", WAIST), ("arms", ARMS)):
         "meas_q_hf_deg": round(math.degrees(np.mean([band(c("meas_q/" + j), walk) for j in group])), 4),
         "cmd_tau_hf": round(float(np.mean([band(c("cmd_tau/" + j), walk) for j in group])), 3),
         "pd_tau_hf": round(float(np.mean([band(pd[j], walk) for j in group])), 3),
+        # Total applied torque HF: the servo-architecture-independent number (with the whole-body
+        # layer the feedback moves from pd_tau into cmd_tau, so neither alone compares across configs).
+        "meas_tau_hf": round(float(np.mean([band(c("meas_tau/" + j), walk) for j in group])), 3),
         "pd_tau_rms": round(float(np.mean([np.sqrt(np.mean(pd[j][walk] ** 2)) for j in group])), 3),
         "cmd_tau_rms": round(float(np.mean([np.sqrt(np.mean(c("cmd_tau/" + j)[walk] ** 2)) for j in group])), 3),
         # Peaks the averages hide (touchdown impacts): 99.9th percentile and max of |PD torque|.
