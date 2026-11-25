@@ -263,6 +263,38 @@ but the swing gain on ramps is unmeasured.
   blend the swing gain to the stance value over the last ~40 ms of swing (planner side) rather than
   to go back to the shared gain.
 
+### Jump anatomy: the seam is real and it sits at the contact event
+
+`jump_anatomy.py` on the walk runs (per-switch leg-mean |Δτ_cmd|, Nm):
+
+| case | switches | mean (= metric) | median | p99 | top 1 % share | within 40 ms of a contact change | elsewhere |
+|---|---|---|---|---|---|---|---|
+| fk_base (50/50) | 1130 | 0.121 | 0.071 | 0.64 | 26 % | 0.357 (n 184) | 0.076 |
+| fk200 (200/200) | 1123 | 0.104 | 0.068 | 0.49 | 21 % | 0.268 (n 186) | 0.072 |
+| sk200 (200/50) | 1121 | 0.190 | 0.069 | 0.56 | **54 %** | **0.781 (n 188)** | 0.071 |
+
+Away from contact changes the three are identical (0.071–0.076); the whole excess is at the
+~17 % of policy switches that fall within 40 ms of a planned contact change, where the split gain
+is 2.9× the shared gain and 2.2× the pre-ship value. Not noise — a located mechanism: the foot
+still lands 6–8 ms early (with the sag gone, the −1 mm `touchDownHeightOffset` is now the entire
+residual: 1 mm at ~0.15 m/s), so the re-solves between the real contact and `t_e` start from a
+stopped foot with the swing equality still active. kp 200 on that error, against kp 50 in the
+stance form one node later, is the seam; the shared gain had no seam (0.268 < 0.357 base).
+The repeat `sk200` run died before scoring (`plot_tracking` IndexError on an empty ground-truth
+array: the simulator did not come up — check `tuning_results/sk200/summary.txt`); `so_base` in
+sweep 4 is that repeat.
+
+## Sweep 4 (planned): close the residual earliness instead of softening the gain
+
+`run_touchdown_sweep4.sh` (config only): shipped vs `touchDownHeightOffset` 0 / +0.5 mm on top of
+the swing gain. Primary `legs.cmd_tau_jump_at_switch` ≤ 0.8× (plus abs_early_ms, acc_hf);
+`landing_speed` not-worse. Sweep 1 tested the offset alone and its stops verdict rested on
+`base_vz_mismatch`, since shown to be noise; with the sag removed the offset's job changes from
+"a margin against a plan that digs in" to "where the spline ends", and 0 is the physically
+right value if the foot is on the spline. Fallback if the seam survives: blend the swing gain
+to the stance value over the last ~40 ms of swing, planner side (`getImpactProximityFactor` is
+already available in the constraint's parameter path), rather than returning to the shared gain.
+
 ## Follow-up 2: repeat runs
 
 The first repeat attempt (`td_off0`, `tds_off0`) produced no data: the single-case command omitted
