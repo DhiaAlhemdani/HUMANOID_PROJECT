@@ -75,6 +75,12 @@ def diag(case: pathlib.Path):
               f"p99 {np.percentile(res, 99):.2e} max {np.max(res):.2e} | clips mean {np.mean(clips):.2f}, ticks with clips "
               f"{100 * np.mean(clips > 0):.1f} % | gains fully residual from t={t_full[0]:.2f} s" if len(t_full) else
               f"  wbc: active {100 * np.mean(act > 0):.2f} % | gain ramp never completed (alpha max {np.max(alpha):.2f})")
+        if "wbc/contact_alpha" in col:
+            ca = c("wbc/contact_alpha")[walk]
+            ca = ca[np.isfinite(ca)]
+            if len(ca):
+                print(f"  wbc contact-switch fade: alpha < 1 on {100 * np.mean(ca < 0.999):.1f} % of walk ticks, "
+                      f"alpha = 0 on {100 * np.mean(ca < 1e-3):.1f} % (mean {np.mean(ca):.3f})")
     else:
         print("  wbc columns absent (layer disabled in this case)")
 

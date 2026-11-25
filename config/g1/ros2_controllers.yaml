@@ -261,6 +261,7 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         residualKp: 20.0
         residualKd: 3.0
         gainRampSeconds: 0.5
+        contactBlendSeconds: 0.0
         baseKp: [0.0, 0.0, 50.0, 25.0, 100.0, 100.0]
         baseKd: [0.0, 0.0, 14.0, 10.0, 20.0, 20.0]
         baseWeight: [1.0, 1.0, 10.0, 10.0, 10.0, 10.0]

@@ -19,6 +19,11 @@ will be HPIPM, which `ocs2_sqp` already links through `hpipm_catkin` / `blasfeo_
 Sweep 1 (`docs/results/wbc_s1_sweep.md`): −35 % pelvis acc_hf and no ankle saturation with soft
 gains, but the pelvis base task folds the torso at the waist (3 falls at the original gains).
 Added for sweep 2: per-joint posture weights and a link-orientation task (`torso_link`), see §2.
+Sweep 2 (0 winners) located the hip-pitch impulses at the plan's contact switch — the layer changes
+its contact set with the plan mode a few ms before the robot does. Added for sweep 3:
+`contactBlendSeconds`, a smoothstep fade of the layer's torque into the plan's torque around every
+planned switch (previous switch = observed mode change, next = policy `modeSchedule_.eventTimes`),
+logged as `wbc/contact_alpha`. S2 would handle this properly (contact-timing-aware constraints).
 
 Behavioural notes that differ from the sketch below: the swing-foot task uses the plan's foot
 position/velocity from forward kinematics of the policy state and the measured-configuration

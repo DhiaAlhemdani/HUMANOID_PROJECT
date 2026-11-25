@@ -171,6 +171,9 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
     whole_body_engage_time_ = -1.0;
     whole_body_gain_alpha_ = 0.0;
     whole_body_invalid_ticks_.store(0);
+    whole_body_last_mode_ = std::numeric_limits<std::size_t>::max();
+    whole_body_last_switch_time_ = -1.0;
+    whole_body_contact_alpha_ = 1.0;
     if (parameters_.control.wholeBody.enabled) {
       const auto& wb = parameters_.control.wholeBody;
       if (joint_kp_.size() == 0) {
@@ -210,11 +213,12 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
       whole_body_written_kd_ = joint_kd_;
       RCLCPP_INFO(get_node()->get_logger(),
                   "%s whole-body feedback layer on: residual servo kp %.1f kd %.1f (ramp %.2f s), base kp [%.0f %.0f %.0f | %.0f %.0f %.0f], "
-                  "joint kp %.0f, swing kp %.0f, weights base/joint/swing/wrench %.1f/%.2f/%.1f/%.3f, orientation task %s (w %.1f)%s",
+                  "joint kp %.0f, swing kp %.0f, weights base/joint/swing/wrench %.1f/%.2f/%.1f/%.3f, orientation task %s (w %.1f)%s, "
+                  "contact-switch fade %.3f s",
                   kTag, wb.residualKp, wb.residualKd, wb.gainRampSeconds, wb.baseKp[0], wb.baseKp[1], wb.baseKp[2],
                   wb.baseKp[3], wb.baseKp[4], wb.baseKp[5], wb.jointKp, wb.swingKp[2], wb.baseWeight[2], wb.jointWeight,
                   wb.swingWeight, wb.wrenchWeight, wb.orientationLink.empty() ? "off" : wb.orientationLink.c_str(),
-                  wb.orientationWeight, wb.jointWeights.empty() ? "" : ", per-joint weights");
+                  wb.orientationWeight, wb.jointWeights.empty() ? "" : ", per-joint weights", wb.contactBlendSeconds);
     }
 
     stand_up_trajectory_.reset();
@@ -1935,7 +1939,9 @@ HumanoidWholeBodyInverseDynamicsMpcController::compute_mpc_joint_action(const oc
         }
       }
       clamp_torque(tau);
-      command.feedforward = tau;
+      // Contact-switch fade: the plan's torque carries the switch, the layer's torque the rest.
+      whole_body_contact_alpha_ = contact_switch_fade(policy_time, policy_mode);
+      command.feedforward = command.feedforward + whole_body_contact_alpha_ * (tau - command.feedforward);
       whole_body_last_residual_ = result.dynamicsResidual;
       whole_body_last_clips_ = result.wrenchClips;
     } else {
@@ -1962,6 +1968,35 @@ void HumanoidWholeBodyInverseDynamicsMpcController::select_servo_gains(const vec
     kp = &whole_body_written_kp_;
     kd = &whole_body_written_kd_;
   }
+}
+
+double HumanoidWholeBodyInverseDynamicsMpcController::contact_switch_fade(double policy_time, std::size_t policy_mode)
+{
+  // Smoothstep of the distance to the nearest planned contact switch over contactBlendSeconds:
+  // the previous switch is the last observed plan-mode change, the next one the first event of the
+  // policy's mode schedule after policy_time.
+  constexpr std::size_t kNoMode = std::numeric_limits<std::size_t>::max();
+  if (whole_body_last_mode_ == kNoMode) {
+    whole_body_last_mode_ = policy_mode;  // first tick: no previous switch
+    whole_body_last_switch_time_ = -std::numeric_limits<double>::infinity();
+  } else if (policy_mode != whole_body_last_mode_) {
+    whole_body_last_mode_ = policy_mode;
+    whole_body_last_switch_time_ = policy_time;
+  }
+  const double half = parameters_.control.wholeBody.contactBlendSeconds;
+  if (half <= 0.0) {
+    return 1.0;
+  }
+  double distance = policy_time - whole_body_last_switch_time_;
+  if (active_policy_ready_) {
+    const auto& events = mrt_interface_->getPolicy().modeSchedule_.eventTimes;
+    const auto next = std::upper_bound(events.begin(), events.end(), policy_time);
+    if (next != events.end()) {
+      distance = std::min(distance, *next - policy_time);
+    }
+  }
+  const double a = std::clamp(distance / half, 0.0, 1.0);
+  return a * a * (3.0 - 2.0 * a);
 }
 
 void HumanoidWholeBodyInverseDynamicsMpcController::update_whole_body_gain_ramp(double now)
@@ -2102,8 +2137,9 @@ void HumanoidWholeBodyInverseDynamicsMpcController::configure_tracking()
   }
   if (parameters_.control.wholeBody.enabled) {
     // Whole-body layer: 1 when this tick's torque came from it, the base-rows residual of its
-    // solve, the number of wrench components clipped, and the servo-gain ramp (0 shipped PD, 1 residual).
-    for (const char* name : {"active", "residual", "clips", "gain_alpha"}) {
+    // solve, the number of wrench components clipped, the servo-gain ramp (0 shipped PD, 1 residual)
+    // and the contact-switch fade (1 layer torque, 0 plan torque).
+    for (const char* name : {"active", "residual", "clips", "gain_alpha", "contact_alpha"}) {
       tracking_names_.push_back(std::string("wbc/") + name);
     }
   }
@@ -2362,6 +2398,7 @@ void HumanoidWholeBodyInverseDynamicsMpcController::publish_tracking(
     put(whole_body_tick_ ? whole_body_last_residual_ : std::numeric_limits<double>::quiet_NaN());
     put(whole_body_tick_ ? static_cast<double>(whole_body_last_clips_) : std::numeric_limits<double>::quiet_NaN());
     put(whole_body_gain_alpha_);
+    put(whole_body_tick_ ? whole_body_contact_alpha_ : std::numeric_limits<double>::quiet_NaN());
   }
   (void)tracking_publisher_->try_publish(tracking_row_);
 }

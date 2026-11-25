@@ -146,3 +146,69 @@ exited 1 and the probe saw no ground truth. Only the two cases that overrode the
 plus a contract test that rejects empty lists in any `config/*/ros2_controllers.yaml`; `run_case.sh`
 now keeps the "no locomotion" verdict and the launch's error lines in `summary.txt`. Sweep 2 is re-run
 in full (the two surviving cases are kept for consistency checks only).
+
+### Sweep 2 result (2026-11-25, valid run): 0/4 + 0/2 — and the real cause of the hip-pitch peaks
+
+Set A (`vx` 0.5, baseline `wb2_base`; gates as declared above):
+
+| case | acc_hf (≤0.92×) | meas_tau_hf (≤0.85×, nw 1.1×) | tau_sat % | roll track (≤0.85×) | pitch track (≤1.2×+0.05) | pitch rms (≤1.15×+0.05) | q track | z_sd | jump@switch (≤1.15×+0.02) | vx | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `wb2_base` | 1.087 | 3.856 | 0.129 | 0.101 | 0.087 | 0.243 | 0.173 | 1.54 | 0.115 | 0.425 | — |
+| `wb2_soft` | 0.629 | 4.448 ✗ | 0.012 | 0.076 ✓ | 0.203 ✗ | 0.462 ✗ | 0.215 | 1.98 | 0.180 ✗ | 0.459 | guards-fail |
+| `wb2_waist` | 0.703 | 4.483 ✗ | 0.012 | 0.085 ✓ | 0.237 ✗ | 0.501 ✗ | 0.228 | 1.87 | 0.174 ✗ | 0.458 | guards-fail |
+| `wb2_torso` | 0.940 | 4.815 ✗ | 0.000 | 0.135 ✗ | 0.191 ✗ | 0.464 ✗ | 0.256 | 1.61 | 0.249 ✗ | 0.457 | guards-fail |
+| `wb2_lowbase` | 0.828 | 4.637 ✗ | 0.035 | 0.117 ✗ | 0.182 ✗ | 0.480 ✗ | 0.238 | 1.71 | 0.166 ✗ | 0.458 | guards-fail |
+
+Set B (`stops`, baseline `wbs2_base`):
+
+| case | transient roll | transient pitch (nw 1.1×) | acc_hf | tau_sat % | z p-p max (≤1.15×+2) | meas_tau_hf | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `wbs2_base` | 1.414 | 1.255 | 1.253 | 0.153 | 25.5 | 4.009 | — |
+| `wbs2_waist` | 1.403 | 4.689 ✗ | 1.090 | 0.012 | 46.2 ✗ | 4.043 | guards-fail |
+| `wbs2_torso` | 1.696 ✗ | 1.710 ✗ | 1.162 | 0.024 | 29.1 | 4.930 | guards-fail |
+
+Reading:
+
+- `wb2_soft` reproduces sweep 1's `wb_s1_soft` to within noise (acc_hf 0.629 vs 0.695,
+  meas_tau_hf 4.448 vs 4.466, pitch track 0.203 vs 0.235) — the sweep is repeatable.
+- **Hip-pitch peaks are not the pelvis task.** `wb2_torso` zeroes the pelvis pitch/roll gains and
+  `wb2_lowbase` quarters them; hip_pitch |max| stays at 86 Nm in all five WBC cases and legs HF
+  *rises* (10.4 → 11.3 Nm). The waist weight changes nothing in steady walk (±1 %).
+- **The waist "stop fix" seen in the invalid run was a one-off.** Same config, two runs: first
+  step_down obs−plan pitch 0.41° / 43 mm, then 3.21° / 49 mm with the plan itself pitching 5°.
+  That event depends on the gait phase at the moment the command drops; single runs cannot score it.
+  The earlier provisional reading is withdrawn.
+- Spike anatomy (`wbc_diag.py`, section 2b, added for this): in `wb2_soft` and `wb2_torso` every
+  hip-pitch |cmd| > 60 Nm event (17 per run ≈ one per step, median 86–88 Nm, **2 ms wide**) is on
+  the leg that **just touched down, 0 ms after the plan's contact switch**, and 54–58 Nm of it is
+  the layer's correction over a 30 Nm plan torque. The baseline has no such event.
+
+Diagnosis: the layer takes its contact set from the plan mode (`modeNumber2StanceLeg(policy_mode)`).
+At the switch tick the lifting foot's wrench is removed and the landing foot's hard no-motion rows
+switch on, while the measured robot is still in the previous contact state for a couple of
+milliseconds; the KKT solve then routes the whole support transient through the landing hip as a
+one-tick impulse. That impulse is what lifts `meas_tau_hf` (+15 %) and `cmd_tau_jump_at_switch`
+(+55 %), and it is invariant to every gain the layer exposes — which is why sweeps 1 and 2 could not
+move it. It also explains why `pitch_rms` doubles (0.24 → 0.46°): a 55 Nm hip impulse every step.
+
+## Sweep 3 — declared 2026-11-25 (`tests/tuning/run_wbc_sweep3.sh`)
+
+One lever, the Phase-1 `solveBlendSeconds` pattern applied to the contact switch: around every
+planned switch the layer's torque is faded into the plan's torque,
+`τ = τ_plan + α (τ_wbc − τ_plan)`, α = smoothstep(|t − t_switch| / `contactBlendSeconds`), with the
+previous switch taken from the observed plan-mode change and the next from the policy's
+`modeSchedule_.eventTimes` (so the fade starts *before* touchdown). New `wbc/contact_alpha`
+tracking column. Ships `contactBlendSeconds: 0.0` (off); the servo residual PD is untouched.
+
+| case | change |
+| --- | --- |
+| `wb3_soft` | none (control) |
+| `wb3_fade30` | `contactBlendSeconds 0.03` |
+| `wb3_fade60` | `contactBlendSeconds 0.06` |
+
+Gates: **unchanged from sweep 2** (both sets). Expected if the diagnosis is right: hip_pitch |max|
+back to ≈35 Nm, `meas_tau_hf` ≤ baseline, `cmd_tau_jump_at_switch` ≤ baseline, acc_hf still ≤0.7×;
+pitch track may stay above its guard (0.2° vs 0.087°) — that would then be the next, separate
+question (the plan pitch p-p itself grows 1.0 → 2.5° under the layer). If the fade does not remove
+the 86 Nm peaks, the diagnosis is wrong and S1 closes as "not shippable without S2's contact
+handling" with this record.

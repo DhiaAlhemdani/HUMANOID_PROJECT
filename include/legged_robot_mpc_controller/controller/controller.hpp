@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -173,6 +174,10 @@ private:
   std::atomic<std::size_t> whole_body_invalid_ticks_{0};
   double whole_body_last_residual_{0.0};
   int whole_body_last_clips_{0};
+  std::size_t whole_body_last_mode_{std::numeric_limits<std::size_t>::max()};  //!< plan mode of the previous layer tick
+  double whole_body_last_switch_time_{-1.0};        //!< policy time at which that mode last changed
+  double whole_body_contact_alpha_{1.0};            //!< 1 = layer torque, 0 = plan torque (contact-switch fade)
+  double contact_switch_fade(double policy_time, std::size_t policy_mode);
   //! Select the servo gains for this tick (stand-up override > whole-body residual > jointEffortPd).
   void select_servo_gains(const vector_t*& kp, const vector_t*& kd) const;
   void update_whole_body_gain_ramp(double now);

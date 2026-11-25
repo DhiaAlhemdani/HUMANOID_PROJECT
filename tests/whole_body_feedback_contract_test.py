@@ -81,7 +81,7 @@ class WholeBodyFeedbackContract(unittest.TestCase):
 
     def test_sweep_sets_only_existing_keys(self):
         keys = set(schema_whole_body())
-        for name in ("run_wbc_sweep.sh", "run_wbc_sweep2.sh"):
+        for name in ("run_wbc_sweep.sh", "run_wbc_sweep2.sh", "run_wbc_sweep3.sh"):
             script = (ROOT / "tests/tuning" / name).read_text()
             for key in re.findall(r"\$WB\.(\w+)=", script):
                 self.assertIn(key, keys, f"{name} sets unknown key control.wholeBody.{key}")
