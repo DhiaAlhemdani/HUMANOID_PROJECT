@@ -67,10 +67,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
       gainRampSeconds: {type: double, default_value: 0.5, description: "Ramp of the written servo gains from
           jointEffortPd to residualKp/Kd when the layer first engages (the Blend -> Locomotion handover) [s]",
           validation: {gt_eq: [0.0]}}
-      baseKp: {type: double_array, default_value: [0.0, 0.0, 100.0, 50.0, 200.0, 200.0], description: "Base task
+      baseKp: {type: double_array, default_value: [0.0, 0.0, 50.0, 25.0, 100.0, 100.0], description: "Base task
           stiffness on the generalized-coordinate error [x y z yaw pitch roll] (world position, Euler ZYX angles)
           [1/s^2]; 0 tracks the planned acceleration only", validation: {fixed_size<>: [6], lower_element_bounds<>: [0.0]}}
-      baseKd: {type: double_array, default_value: [0.0, 0.0, 20.0, 14.0, 28.0, 28.0], description: "Base task damping
+      baseKd: {type: double_array, default_value: [0.0, 0.0, 14.0, 10.0, 20.0, 20.0], description: "Base task damping
           on the generalized-velocity error [1/s]", validation: {fixed_size<>: [6], lower_element_bounds<>: [0.0]}}
       baseWeight: {type: double_array, default_value: [1.0, 1.0, 10.0, 10.0, 10.0, 10.0], description: "Least-squares
           weight of the base acceleration rows", validation: {fixed_size<>: [6], lower_element_bounds<>: [1.0e-6]}}
@@ -79,9 +79,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
       jointKd: {type: double, default_value: 20.0, description: "Joint posture task damping [1/s]", validation: {gt_eq: [0.0]}}
       jointWeight: {type: double, default_value: 1.0, description: "Least-squares weight of the joint acceleration
           rows", validation: {gt: [0.0]}}
-      swingKp: {type: double_array, default_value: [200.0, 200.0, 200.0], description: "Swing-foot position task
+      swingKp: {type: double_array, default_value: [100.0, 100.0, 100.0], description: "Swing-foot position task
           stiffness, world axes [1/s^2]", validation: {fixed_size<>: [3], lower_element_bounds<>: [0.0]}}
-      swingKd: {type: double_array, default_value: [28.0, 28.0, 28.0], description: "Swing-foot task damping [1/s]",
+      swingKd: {type: double_array, default_value: [20.0, 20.0, 20.0], description: "Swing-foot task damping [1/s]",
           validation: {fixed_size<>: [3], lower_element_bounds<>: [0.0]}}
       swingWeight: {type: double, default_value: 5.0, description: "Least-squares weight of the swing-foot task
           (3 rows per swing foot); 0 disables it", validation: {gt_eq: [0.0]}}

@@ -255,19 +255,20 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
       # Phase 2.B whole-body feedback layer (docs/design/wbc_layer.md). Shipped off: the servo
       # path above is unchanged until the sweep (tests/tuning/run_wbc_sweep.sh) finds a winner.
       # Base order [x y z yaw pitch roll]; acceleration-space gains (per-joint inertia scales them).
+      # Gains = the S1 sweep's 'soft' set: the 2x stiffer original defaults fell (wb_s1 11.7 s, wb_s1_stiff 1.5 s).
       wholeBody:
         enabled: false
         residualKp: 20.0
         residualKd: 3.0
         gainRampSeconds: 0.5
-        baseKp: [0.0, 0.0, 100.0, 50.0, 200.0, 200.0]
-        baseKd: [0.0, 0.0, 20.0, 14.0, 28.0, 28.0]
+        baseKp: [0.0, 0.0, 50.0, 25.0, 100.0, 100.0]
+        baseKd: [0.0, 0.0, 14.0, 10.0, 20.0, 20.0]
         baseWeight: [1.0, 1.0, 10.0, 10.0, 10.0, 10.0]
         jointKp: 100.0
         jointKd: 20.0
         jointWeight: 1.0
-        swingKp: [200.0, 200.0, 200.0]
-        swingKd: [28.0, 28.0, 28.0]
+        swingKp: [100.0, 100.0, 100.0]
+        swingKd: [20.0, 20.0, 20.0]
         swingWeight: 5.0
         wrenchWeight: 0.01
         frictionCoefficient: 0.6

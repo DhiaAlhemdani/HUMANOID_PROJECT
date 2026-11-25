@@ -41,7 +41,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "legged_robot_mpc_controller/mpc/common/command/TargetTrajectoriesCalculatorBase.h"
 #include "legged_robot_mpc_controller/mpc/common/command/WalkingVelocityCommand.h"
 #include "legged_robot_mpc_controller/mpc/common/reference_manager/BreakFrequencyAlphaFilter.h"
-#include "legged_robot_mpc_controller/mpc/common/target/CommandSlewLimiter.h"
 
 namespace ocs2::humanoid {
 
@@ -94,8 +93,6 @@ class WalkingVelocityTarget {
   scalar_t minBaseHeight_;
   scalar_t maxBaseHeight_;
   vector4_t commandRateLimits_;
-  vector4_t commandJerkLimits_;
-  vector4_t previousRate_{vector4_t::Zero()};
   scalar_t takeoverHeightRate_;
   bool risingFromResetHeight_{false};
   vector4_t previousCommand_;
