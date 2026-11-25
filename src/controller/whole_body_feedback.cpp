@@ -7,6 +7,7 @@
 #include <pinocchio/algorithm/jacobian.hpp>
 #include <pinocchio/algorithm/kinematics.hpp>
 #include <pinocchio/algorithm/rnea.hpp>
+#include <pinocchio/spatial/explog.hpp>
 
 #include <cmath>
 #include <stdexcept>
@@ -28,6 +29,18 @@ WholeBodyFeedback::WholeBodyFeedback(Settings settings, const std::array<std::st
   if (model.nq != model.nv) {
     throw std::invalid_argument("[WholeBodyFeedback] expects nq == nv (translation + Euler ZYX base joint)");
   }
+  if (!settings_.orientationLink.empty()) {
+    if (!model.existFrame(settings_.orientationLink)) {
+      throw std::invalid_argument("[WholeBodyFeedback] orientation task link '" + settings_.orientationLink +
+                                  "' is not in the model");
+    }
+    orientationFrameId_ = model.getFrameId(settings_.orientationLink);
+    hasOrientationTask_ = settings_.orientationWeight > 0.0;
+  }
+  if (settings_.jointWeights.size() != 0 && settings_.jointWeights.size() != model.nv - kBaseDof) {
+    throw std::invalid_argument("[WholeBodyFeedback] jointWeights needs one entry per MPC joint (or none)");
+  }
+  problem_.tasks.resize(hasOrientationTask_ ? 1 : 0);
 }
 
 Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, const Input& in)
@@ -50,6 +63,12 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
     footPlan[c] = data.oMf[frameIds_[c]].translation();
     footVelPlan[c] = pinocchio::getFrameVelocity(model, data, frameIds_[c], pinocchio::LOCAL_WORLD_ALIGNED).linear();
   }
+  Eigen::Matrix3d orientationPlan = Eigen::Matrix3d::Identity();
+  Eigen::Vector3d angularVelPlan = Eigen::Vector3d::Zero();
+  if (hasOrientationTask_) {
+    orientationPlan = data.oMf[orientationFrameId_].rotation();
+    angularVelPlan = pinocchio::getFrameVelocity(model, data, orientationFrameId_, pinocchio::LOCAL_WORLD_ALIGNED).angular();
+  }
 
   // 2. Measured kinematics and dynamics.
   const Eigen::VectorXd zeroAcc = Eigen::VectorXd::Zero(nv);
@@ -70,7 +89,11 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
   p.desiredAcc = in.accPlan;
   p.accWeight.resize(nv);
   p.accWeight.head(kBaseDof) = settings_.baseWeight;
-  p.accWeight.tail(nj).setConstant(settings_.jointWeight);
+  if (settings_.jointWeights.size() == nj) {
+    p.accWeight.tail(nj) = settings_.jointWeights;
+  } else {
+    p.accWeight.tail(nj).setConstant(settings_.jointWeight);
+  }
   {
     Vector6 poseError = in.qPlan.head(kBaseDof) - in.qMeasured.head(kBaseDof);
     poseError(3) = std::remainder(poseError(3), 2.0 * M_PI);  // yaw
@@ -103,6 +126,25 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
       swing.desiredAcc = planAcc + settings_.swingKp.cwiseProduct(footPlan[c] - foot) +
                          settings_.swingKd.cwiseProduct(footVelPlan[c] - footVel);
     }
+  }
+
+  // 5. Link orientation task (world axes, as the LOCAL_WORLD_ALIGNED angular rows).
+  if (hasOrientationTask_) {
+    LinearTask& task = p.tasks.front();
+    Matrix6X J = Matrix6X::Zero(6, nv);
+    pinocchio::getFrameJacobian(model, data, orientationFrameId_, pinocchio::LOCAL_WORLD_ALIGNED, J);
+    task.jacobian = J.bottomRows(3);
+    task.driftAcc =
+      pinocchio::getFrameClassicalAcceleration(model, data, orientationFrameId_, pinocchio::LOCAL_WORLD_ALIGNED).angular();
+    const Eigen::Matrix3d orientation = data.oMf[orientationFrameId_].rotation();
+    const Eigen::Vector3d angularVel =
+      pinocchio::getFrameVelocity(model, data, orientationFrameId_, pinocchio::LOCAL_WORLD_ALIGNED).angular();
+    const Eigen::Vector3d orientationError = pinocchio::log3(orientationPlan * orientation.transpose());
+    const Eigen::Vector3d planAcc = task.jacobian * in.accPlan + task.driftAcc;
+    task.desiredAcc = planAcc + settings_.orientationKp.cwiseProduct(orientationError) +
+                      settings_.orientationKd.cwiseProduct(angularVelPlan - angularVel);
+    task.weight = settings_.orientationWeight;
+    task.active = true;
   }
 
   const Solution s = solve(p, settings_.limits);

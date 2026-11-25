@@ -74,4 +74,66 @@ What the numbers establish:
   pelvis is quieter; `walk.z_sd_mm ≤ 1.15×+0.3` added as a guard; set B must not exceed the
   baseline's transient pitch by more than 1.1×.
 
-_Diagnostics pending: `wbc_diag.py` output for `wb_s1_soft`, `wb_s1_pd50`, `wbs_s1_soft`, `wb_s1`, `wbs_s1`._
+### Diagnostics (`wbc_diag.py`, same case data)
+
+Layer health in every case: active on 100 % of policy ticks, KKT residual ≤ 1e-7, wrench clips on
+1–4.5 % of ticks (mostly 1–2 components), zero invalid solves, gains fully residual ~0.5 s after
+Locomotion. The problems below are formulation, not implementation.
+
+**Where the +15 % torque HF is (steady, soft set vs baseline, 4–40 Hz Nm, |peak|):**
+
+| joint | baseline total (cmd / pd) | peak | `wb_s1_soft` total (cmd / pd) | peak |
+| --- | --- | --- | --- | --- |
+| hip pitch | 8.43 (9.20 / 1.80) | 33 | **10.65 (10.5 / 0.8)** | **86** |
+| hip roll | 4.34 (5.38 / 2.31) | 37 | 5.08 (5.3 / 0.4) | 40 |
+| ankle pitch | 4.08 (1.85 / 3.70) | **50 (limit)** | **3.68 (3.7 / 0.9)** | **26** |
+| knee | 2.85 (2.42 / 2.15) | 33 | 3.30 (3.2 / 0.6) | 33 |
+| hip yaw | 2.12 (2.64 / 1.35) | 21 | 2.81 (2.9 / 0.3) | 35 |
+
+The ankles got what the layer promised (HF down, peak 50 → 26 Nm, no saturation). The increase is
+at the **hips, in the layer's own command**, with a hip-pitch peak 2.6× the baseline's.
+
+**Pitch is the weak axis:** base pitch obs−plan rms 0.081° → 0.235° (soft) / 0.167° (pd50), max
+0.53° → 1.7–2.1°; the *plan's* pitch excursion doubles (p-p 1.0° → 2.7°) because the MPC re-plans
+around a pelvis that is no longer rigidly held. Roll is unaffected (0.097° → 0.086°). z tracking
+improves (0.47 → 0.29 mm rms).
+
+**The falls — last second of `wb_s1` (original gains):** plan and body pitch *together* −5° → −40°,
+with `waist_pitch` error 18.5°, hip pitch 15.7°, the waist actuator pinned at its 50 Nm limit and
+hip roll at 93 Nm. `wbs_s1` is the same picture (waist 23.8°, hips 17–18°). The stops event table
+for the survivor `wbs_s1_soft` shows the step-down transient is a 5.08° *plan* pitch with a 4.15°
+plan-vs-body disagreement — the body and the plan fight, the plan follows.
+
+**Root cause (hypothesis for sweep 2):** the base task acts on the **pelvis**, but the mass is the
+torso above a 3-DoF waist, and the waist posture rows carry weight 1 against the base task's 10.
+When the stance leg cannot deliver the demanded pelvis pitch acceleration, the least squares
+realises it by rotating the pelvis against the torso — folding at the waist. The torso tilts the
+other way, the CoM moves, the MPC re-plans the pitch, and the loop drifts; stiffer base gains make
+it drift faster (the ladder). The kp 200 joint PD never had this failure mode because it held the
+waist rigid, so pelvis and torso moved as one body. The same mechanism explains the hip-pitch peaks
+(pelvis pitch corrections react through the hips) and the pitch-only degradation.
+
+## Sweep 2 — declared 2026-11-24 (`tests/tuning/run_wbc_sweep2.sh`)
+
+One change per candidate from the soft (now default) set:
+
+| case | change | tests |
+| --- | --- | --- |
+| `wb2_soft` | none | noise floor vs sweep 1's `wb_s1_soft` |
+| `wb2_waist` | waist posture rows weight 50 | "hold the waist and the pelvis task is fine" |
+| `wb2_torso` | `torso_link` orientation task (kp 100/100/25, kd 20/20/10, w 10) **replaces** pelvis pitch/roll (base kp/kd pitch, roll = 0) | "the task was on the wrong body" — matches the MPC's own `torsoTiltCost` link |
+| `wb2_lowbase` | pelvis pitch/roll kp 25 / kd 10 | ladder direction without changing structure |
+
+Gates (set A): primaries as sweep 1 (`acc_hf ≤0.92×`, `meas_tau_hf ≤0.85×`, `tau_sat_pct ≤0.5×+0.02`,
+`roll_track ≤0.85×`); guards as sweep 1 **plus** `walk.pitch_rms_deg ≤1.15×+0.05`,
+`base.pitch_track_err_deg ≤1.2×+0.05`, `walk.z_sd_mm ≤1.15×+0.3`. Set B (`wb2_waist`, `wb2_torso`):
+transient pitch is a primary (≤0.85×, not-worse 1.1×) and `transient_z_pp_mm_max ≤1.15×+2`.
+Note `meas_tau_hf ≤0.85×` is demanding — the baseline's ankles are already quiet below the hips —
+so a candidate can be a non-winner on that primary while being correct on everything else; the
+not-worse limit (1.1×) is the real bar and the result will be read that way, in writing, before
+any gate is touched.
+
+Implementation added for it: per-joint posture weights (`control.wholeBody.jointWeights`) and a
+link orientation task (`orientationLink/Kp/Kd/Weight`, world-frame `log3(R_plan Rᵀ)` error on the
+LOCAL_WORLD_ALIGNED angular rows); both inert by default (`[]`, `""`). Core test covers the generic
+task under stance constraints.

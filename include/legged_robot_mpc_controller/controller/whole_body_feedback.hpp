@@ -29,6 +29,13 @@ struct Settings
   double jointKp{0.0};
   double jointKd{0.0};
   double jointWeight{1.0};
+  Eigen::VectorXd jointWeights;  //!< per joint; empty = jointWeight for all
+  //! Optional link orientation task (e.g. the torso): world-frame angular acceleration
+  //! = plan + kp log(R_plan R_measᵀ) + kd (ω_plan − ω). Empty linkName = off.
+  std::string orientationLink;
+  Eigen::Vector3d orientationKp{Eigen::Vector3d::Zero()};
+  Eigen::Vector3d orientationKd{Eigen::Vector3d::Zero()};
+  double orientationWeight{0.0};
   Eigen::Vector3d swingKp{Eigen::Vector3d::Zero()};
   Eigen::Vector3d swingKd{Eigen::Vector3d::Zero()};
   double swingWeight{0.0};
@@ -69,6 +76,8 @@ public:
 private:
   Settings settings_;
   std::array<std::size_t, kContacts> frameIds_{};
+  std::size_t orientationFrameId_{0};
+  bool hasOrientationTask_{false};
   Problem problem_;  //!< reused allocation
 };
 

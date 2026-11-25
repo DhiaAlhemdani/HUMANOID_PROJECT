@@ -184,6 +184,16 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
       settings.jointKp = wb.jointKp;
       settings.jointKd = wb.jointKd;
       settings.jointWeight = wb.jointWeight;
+      if (!wb.jointWeights.empty()) {
+        if (static_cast<Eigen::Index>(wb.jointWeights.size()) != joint_dim) {
+          throw std::invalid_argument("control.wholeBody.jointWeights needs one entry per robot.jointNames (or none)");
+        }
+        settings.jointWeights = Eigen::Map<const vector_t>(wb.jointWeights.data(), joint_dim);
+      }
+      settings.orientationLink = wb.orientationLink;
+      settings.orientationKp = Eigen::Map<const Eigen::Vector3d>(wb.orientationKp.data());
+      settings.orientationKd = Eigen::Map<const Eigen::Vector3d>(wb.orientationKd.data());
+      settings.orientationWeight = wb.orientationWeight;
       settings.swingKp = Eigen::Map<const Eigen::Vector3d>(wb.swingKp.data());
       settings.swingKd = Eigen::Map<const Eigen::Vector3d>(wb.swingKd.data());
       settings.swingWeight = wb.swingWeight;
@@ -200,10 +210,11 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
       whole_body_written_kd_ = joint_kd_;
       RCLCPP_INFO(get_node()->get_logger(),
                   "%s whole-body feedback layer on: residual servo kp %.1f kd %.1f (ramp %.2f s), base kp [%.0f %.0f %.0f | %.0f %.0f %.0f], "
-                  "joint kp %.0f, swing kp %.0f, weights base/joint/swing/wrench %.1f/%.2f/%.1f/%.3f",
+                  "joint kp %.0f, swing kp %.0f, weights base/joint/swing/wrench %.1f/%.2f/%.1f/%.3f, orientation task %s (w %.1f)%s",
                   kTag, wb.residualKp, wb.residualKd, wb.gainRampSeconds, wb.baseKp[0], wb.baseKp[1], wb.baseKp[2],
                   wb.baseKp[3], wb.baseKp[4], wb.baseKp[5], wb.jointKp, wb.swingKp[2], wb.baseWeight[2], wb.jointWeight,
-                  wb.swingWeight, wb.wrenchWeight);
+                  wb.swingWeight, wb.wrenchWeight, wb.orientationLink.empty() ? "off" : wb.orientationLink.c_str(),
+                  wb.orientationWeight, wb.jointWeights.empty() ? "" : ", per-joint weights");
     }
 
     stand_up_trajectory_.reset();

@@ -26,6 +26,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <vector>
 
 namespace legged_robot_mpc_controller::wbc
 {
@@ -53,6 +54,17 @@ struct SwingTask
   Eigen::Vector3d desiredAcc;     //!< ẍ_plan + Kp (x_plan − x) + Kd (ẋ_plan − ẋ)
 };
 
+//! Any further least-squares task linear in the generalized acceleration:
+//! ‖J a + drift − desired‖²_weight (e.g. a link orientation).
+struct LinearTask
+{
+  bool active{false};
+  Eigen::MatrixXd jacobian;     //!< k x nv
+  Eigen::VectorXd driftAcc;     //!< k
+  Eigen::VectorXd desiredAcc;   //!< k
+  double weight{0.0};
+};
+
 struct Problem
 {
   Eigen::MatrixXd massMatrix;      //!< nv x nv, symmetric
@@ -61,6 +73,7 @@ struct Problem
   Eigen::VectorXd accWeight;       //!< nv, > 0
   std::array<ContactTask, kContacts> contacts;
   std::array<SwingTask, kContacts> swings;
+  std::vector<LinearTask> tasks;
   double swingWeight{0.0};
   double wrenchWeight{0.0};
   //! Tikhonov term on the constraint multipliers: keeps the KKT system solvable when the
@@ -150,6 +163,13 @@ inline Solution solve(const Problem& p, const WrenchLimits& limits)
     if (sw.active && p.swingWeight > 0.0 && sw.jacobian.cols() == nv) {
       H.topLeftCorner(nv, nv).noalias() += p.swingWeight * sw.jacobian.transpose() * sw.jacobian;
       g.head(nv).noalias() += p.swingWeight * sw.jacobian.transpose() * (sw.desiredAcc - sw.driftAcc);
+    }
+  }
+  for (const auto& task : p.tasks) {
+    if (task.active && task.weight > 0.0 && task.jacobian.cols() == nv && task.jacobian.rows() == task.driftAcc.size() &&
+        task.jacobian.rows() == task.desiredAcc.size()) {
+      H.topLeftCorner(nv, nv).noalias() += task.weight * task.jacobian.transpose() * task.jacobian;
+      g.head(nv).noalias() += task.weight * task.jacobian.transpose() * (task.desiredAcc - task.driftAcc);
     }
   }
   // Equalities A x = b.

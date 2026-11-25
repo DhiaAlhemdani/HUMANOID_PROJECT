@@ -125,6 +125,30 @@ void testSingleSupportAndSwingTask()
   std::puts("single support: swing task tracked under the stance constraint");
 }
 
+void testLinearTaskTracked()
+{
+  // A 3-row orientation-like task with a large weight is met under the stance constraints.
+  Rig rig;
+  Problem& p = rig.p;
+  p.contacts[1].inContact = false;  // single support: 14 - 6 = 8 free acceleration directions for a 3-row task
+  LinearTask task;
+  task.active = true;
+  task.jacobian = rig.randomMatrix(3, kNv);
+  task.driftAcc = rig.randomMatrix(3, 1);
+  task.desiredAcc = Eigen::Vector3d(0.5, -0.25, 2.0);
+  task.weight = 1e4;  // large but keeps the KKT conditioning realistic (production weights are <= 100)
+  p.tasks.push_back(task);
+  const Solution s = solve(p, kLoose);
+  checkConstraints(p, s, 1e-4);  // the multiplier regularisation (1e-8) times the task weight bounds the violation
+  const Eigen::Vector3d got = task.jacobian * s.acc + task.driftAcc;
+  assert((got - task.desiredAcc).norm() < 1e-2);
+  // An inactive or mis-sized task is ignored, not fatal.
+  p.tasks.front().active = false;
+  p.tasks.push_back(LinearTask{true, rig.randomMatrix(3, kNv + 1), rig.randomMatrix(3, 1), rig.randomMatrix(3, 1), 1.0});
+  assert(solve(p, kLoose).valid);
+  std::puts("linear task: tracked under constraints; inactive/mis-sized ignored");
+}
+
 void testFlight()
 {
   Rig rig;
@@ -170,6 +194,7 @@ int main()
   testDoubleSupportConstraints();
   testRecoversConsistentPlan();
   testSingleSupportAndSwingTask();
+  testLinearTaskTracked();
   testFlight();
   testClip();
   testRejectsBadSizes();

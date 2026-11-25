@@ -79,6 +79,18 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
       jointKd: {type: double, default_value: 20.0, description: "Joint posture task damping [1/s]", validation: {gt_eq: [0.0]}}
       jointWeight: {type: double, default_value: 1.0, description: "Least-squares weight of the joint acceleration
           rows", validation: {gt: [0.0]}}
+      jointWeights: {type: double_array, default_value: [], description: "Per-joint least-squares weights,
+          index-aligned with robot.jointNames; empty = jointWeight for every joint. Lets the waist posture outweigh
+          the base task so pelvis corrections do not fold the torso.", validation: {lower_element_bounds<>: [0.0]}}
+      orientationLink: {type: string, default_value: "", description: "URDF link whose world orientation gets its own
+          task (the torso: the mass the base task is really about, while the base pose is the pelvis). Empty = off."}
+      orientationKp: {type: double_array, default_value: [100.0, 100.0, 25.0], description: "Orientation task
+          stiffness on log(R_plan R^T), world axes [roll pitch yaw] [1/s^2]", validation: {fixed_size<>: [3],
+          lower_element_bounds<>: [0.0]}}
+      orientationKd: {type: double_array, default_value: [20.0, 20.0, 10.0], description: "Orientation task damping
+          on the world angular-velocity error [1/s]", validation: {fixed_size<>: [3], lower_element_bounds<>: [0.0]}}
+      orientationWeight: {type: double, default_value: 10.0, description: "Least-squares weight of the orientation task
+          (3 rows); 0 disables it even with a link set", validation: {gt_eq: [0.0]}}
       swingKp: {type: double_array, default_value: [100.0, 100.0, 100.0], description: "Swing-foot position task
           stiffness, world axes [1/s^2]", validation: {fixed_size<>: [3], lower_element_bounds<>: [0.0]}}
       swingKd: {type: double_array, default_value: [20.0, 20.0, 20.0], description: "Swing-foot task damping [1/s]",

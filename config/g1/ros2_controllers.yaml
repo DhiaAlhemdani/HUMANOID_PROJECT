@@ -267,6 +267,11 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         jointKp: 100.0
         jointKd: 20.0
         jointWeight: 1.0
+        jointWeights: []
+        orientationLink: ""
+        orientationKp: [100.0, 100.0, 25.0]
+        orientationKd: [20.0, 20.0, 10.0]
+        orientationWeight: 10.0
         swingKp: [100.0, 100.0, 100.0]
         swingKd: [20.0, 20.0, 20.0]
         swingWeight: 5.0

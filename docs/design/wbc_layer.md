@@ -16,6 +16,10 @@ will be HPIPM, which `ocs2_sqp` already links through `hpipm_catkin` / `blasfeo_
 | Tests | `tests/whole_body_feedback_core_test.cpp` (Eigen, in `BUILD_TESTING`; passes in the sandbox), `tests/whole_body_feedback_contract_test.py` |
 | Sweep | `tests/tuning/run_wbc_sweep.sh`; new metric `legs.meas_tau_hf` in `plot_tracking.py` (total applied torque HF — `pd_tau_hf` is not comparable once the feedback moves into `cmd_tau`) |
 
+Sweep 1 (`docs/results/wbc_s1_sweep.md`): −35 % pelvis acc_hf and no ankle saturation with soft
+gains, but the pelvis base task folds the torso at the waist (3 falls at the original gains).
+Added for sweep 2: per-joint posture weights and a link-orientation task (`torso_link`), see §2.
+
 Behavioural notes that differ from the sketch below: the swing-foot task uses the plan's foot
 position/velocity from forward kinematics of the policy state and the measured-configuration
 Jacobian for the planned acceleration; the residual servo gains are smooth-stepped from
@@ -72,6 +76,7 @@ Weighted least-squares cost (single-level, weights are parameters)
 - base task: `‖a_base − a_base^des‖²_{W_b}`, with `a_base^des = a_base^plan + K_p,b ⊖(pose_plan, pose) + K_d,b (twist_plan − twist)`
 - swing-foot task: `‖J_sw a + J̇_sw v − ẍ_sw^des‖²_{W_sw}`, `ẍ_sw^des = ẍ_plan + K_p,sw e + K_d,sw ė` (position only, 3 rows)
 - joint posture: `‖a_j − (a_j^plan + K_p,j (q*−q) + K_d,j (v*−v))‖²_{W_j}` — the role the kp 200 PD plays today, now inertia-weighted
+- link orientation (optional, `orientationLink`): `‖J_ω a + J̇_ω v − ω̇^des‖²_{W_o}`, `ω̇^des = ω̇_plan + K_p log3(R_plan Rᵀ) + K_d (ω_plan − ω)` in world axes — puts the attitude task on the torso (the mass) instead of the pelvis
 - wrench tracking: `‖F − F^plan‖²_{W_F}` — keeps the MPC's load distribution in double support
 - regularisation on `a`, `F`
 
