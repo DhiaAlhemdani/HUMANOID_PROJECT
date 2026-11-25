@@ -74,7 +74,25 @@ WalkingVelocityCommand WalkingVelocityTarget::scaleCommand(WalkingVelocityComman
   if (std::isfinite(postureHeight) && postureHeight > 0.0) {
     command.desired_pelvis_height = postureHeight;
   }
+  const scalar_t minWalkSpeed = minWalkSpeed_.load();
+  if (minWalkSpeed > 0.0) {
+    const scalar_t speed = std::hypot(command.linear_velocity_x, command.linear_velocity_y);
+    if (speed < standBelow_.load()) {
+      command.linear_velocity_x = command.linear_velocity_y = 0.0;
+    } else if (speed > 0.0 && speed < minWalkSpeed) {
+      command.linear_velocity_x *= minWalkSpeed / speed;
+      command.linear_velocity_y *= minWalkSpeed / speed;
+    }
+  }
   return command;
+}
+
+/******************************************************************************************************/
+/******************************************************************************************************/
+/******************************************************************************************************/
+void WalkingVelocityTarget::setMinimumWalkSpeed(scalar_t standBelow, scalar_t minWalkSpeed) {
+  standBelow_.store(std::max(standBelow, 0.0));
+  minWalkSpeed_.store(std::max(minWalkSpeed, 0.0));
 }
 
 /******************************************************************************************************/

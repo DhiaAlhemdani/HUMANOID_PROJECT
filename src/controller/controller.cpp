@@ -281,6 +281,7 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
       std::move(velocity_target_to_target_trajectories),
       std::move(base_pose_target_to_target_trajectories),
       parameters_.target.defaultMode);
+    motion_manager->setContinuousGaitConfig(common::buildContinuousGaitConfig(parameters_));
     if (!parameters_.ocs2.gait.stairClimbingFile.empty()) {
       motion_manager->setStairClimbingConfig(common::loadStairClimbingConfig(parameters_.ocs2.gait.stairClimbingFile));
     }

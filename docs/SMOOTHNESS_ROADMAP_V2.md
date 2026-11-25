@@ -67,6 +67,22 @@ below 0.45 (jerk 62–68, acc_hf 1.5–1.7) and the run at 0.8 (263 / 5.7) are n
 suite segment at the trot's level, jerk ≤ 35 and acc_hf ≤ 0.5.** Transitions score like the gait
 they lead into, so step B's first question is the contact pattern per speed, not the splice.
 
+### Low-speed experiments and the human target (2026-11-25)
+
+`docs/results/lowspeed_gait.md`: the trot everywhere (`trotlow`) wins every metric (steady jerk 58 → 17,
+transition max 164 → 38, no falls), but the owner's eye ranks the trot by step length — 0.8 > 0.6 > 0.5
+> 0.3 ≈ 0.2 — the opposite of pelvis jerk. Step length = speed × step time, and below ~0.4 m/s there
+is no contact pattern that gives human-length steps without pauses. **Target restated: walk like a
+human** — human gait regressions scaled to the G1 (0.36 m / 0.72 s at 0.45 m/s with 0.25 s double
+support, 0.44 m / 0.55 s at 0.8, 0.56 m / 0.48 s at 1.15), a minimum walking speed of 0.4 m/s
+(slower commands round up, < 0.15 stands), natural walking extended to ~1.2 m/s, no flight gait.
+`score_suite.py` now reports step_t / step_l / ds per segment next to jerk.
+
+**Implemented: `ocs2.gait.continuous`** (`ContinuousGaitLaw.{h,cpp}`, `ProceduralMpcMotionManager::
+applyContinuousGait`, `WalkingVelocityTarget::setMinimumWalkSpeed`): step time, double support and
+swing height interpolated at the conditioned command's speed and re-tiled from the start of the next
+single support at every solve; the ladder only decides standing vs walking. Default off.
+
 ## 2. Step B — continuous gait adaptation
 
 **Replace the four-rung ladder with a continuous gait law** in the reference manager: cadence,

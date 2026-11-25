@@ -152,6 +152,25 @@ ocs2::humanoid::GaitMap buildGaitMap(const Params& params)
   return gaitMap;
 }
 
+/// Builds the speed-continuous gait law from `ocs2.gait.continuous` (validated by the motion manager).
+template <typename Params>
+ocs2::humanoid::ContinuousGaitConfig buildContinuousGaitConfig(const Params& params)
+{
+  const auto& c = params.ocs2.gait.continuous;
+  ocs2::humanoid::ContinuousGaitConfig config;
+  config.enabled = c.enabled;
+  config.speedKnots.assign(c.speedKnots.begin(), c.speedKnots.end());
+  config.stepTime.assign(c.stepTime.begin(), c.stepTime.end());
+  config.doubleSupport.assign(c.doubleSupport.begin(), c.doubleSupport.end());
+  config.swingHeight.assign(c.swingHeight.begin(), c.swingHeight.end());
+  config.yawLever = c.yawLever;
+  config.minDoubleSupport = c.minDoubleSupport;
+  config.spliceDelay = c.spliceDelay;
+  config.standBelow = c.standBelow;
+  config.minWalkSpeed = c.minWalkSpeed;
+  return config;
+}
+
 /// Builds the velocity-based gait selection from `ocs2.gait.transitions`: the ladder
 /// (slowest to fastest, starting at the rest gait) and its switching timing, validated
 /// against the templates in `gaitMap`.

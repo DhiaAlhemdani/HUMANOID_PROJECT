@@ -208,7 +208,8 @@ if(BUILD_TESTING)
   target_compile_options(whole_body_feedback_core_test PRIVATE -UNDEBUG)
   add_test(NAME whole_body_feedback_core_test COMMAND whole_body_feedback_core_test)
   foreach(test_name IN ITEMS wheel_contact_kinematics_test arm_body_collision_test
-      swing_flight_test gait_swing_height_test running_gait_transition_test wb_id_torque_window_test)
+      swing_flight_test gait_swing_height_test running_gait_transition_test wb_id_torque_window_test
+      continuous_gait_law_test)
     add_executable(${test_name} tests/${test_name}.cpp)
     target_link_libraries(${test_name} PRIVATE legged_robot_humanoid_wb_id_core)
     # These regression executables use assert; keep their checks active in Release builds.

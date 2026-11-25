@@ -44,6 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <legged_robot_mpc_controller/mpc/common/command/WalkingVelocityCommand.h>
 #include <legged_robot_mpc_controller/mpc/common/command/BasePoseCommand.h>
+#include <legged_robot_mpc_controller/mpc/common/gait/ContinuousGaitLaw.h>
 #include <legged_robot_mpc_controller/mpc/common/gait/GaitSchedule.h>
 #include <legged_robot_mpc_controller/mpc/common/gait/ModeSequenceTemplate.h>
 
@@ -153,6 +154,15 @@ class ProceduralMpcMotionManager : public SolverSynchronizedModule {
 
   TargetMode getTargetMode() const { return targetMode_.load(std::memory_order_acquire); }
 
+  /// Speed-continuous walking gait (ocs2.gait.continuous). While enabled and the ladder is on a walking
+  /// rung, the step time / double support / swing height of the law replace the rung's template from
+  /// the next step boundary on, at every solve. Validated; also installs the law's minimum walking speed
+  /// on the command path. Call before the first solve.
+  void setContinuousGaitConfig(ContinuousGaitConfig config);
+
+  /// The law's phases at the last solve (swing 0 when it did not run); for diagnostics.
+  ContinuousGaitPhases getContinuousGaitPhases() const { return continuousGaitPhases_; }
+
   static bool transitionToFasterGait(const vector4_t& velCommandVec, const vector6_t& baseVelocity, const GaitModeStateConfig& cfg);
 
   static bool transitionToSlowerGait(const vector4_t& velCommandVec, const vector6_t& baseVelocity, const GaitModeStateConfig& cfg);
@@ -196,6 +206,14 @@ class ProceduralMpcMotionManager : public SolverSynchronizedModule {
 
   /// Handles TargetMode::StairClimb inside preSolverRun (solver thread).
   void runStairClimbing(scalar_t initTime, const vector_t& initState);
+
+  /// Re-tiles the gait schedule with the continuous law's phases for the conditioned command (solver thread).
+  void applyContinuousGait(scalar_t initTime, scalar_t finalTime, const vector4_t& filteredVelCommand);
+
+  ContinuousGaitConfig continuousGait_;
+  ContinuousGaitPhases continuousGaitPhases_{0.0, 0.0, -1.0};
+  ContinuousGaitPhases lastSplicedPhases_{0.0, 0.0, -1.0};
+  scalar_t lastSpliceTime_{-1.0};
 };
 
 }  // namespace ocs2::humanoid

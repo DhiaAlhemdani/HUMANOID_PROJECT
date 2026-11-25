@@ -581,6 +581,32 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
               validation: {subset_of<>: [["STANCE", "LF", "RF", "FLY"]]}}
           switchingTimes: {type: double_array, default_value: [], description: "N+1 increasing switching times of the
               template's N modes [s]; the template repeats with period last - first"}
+      continuous:
+        enabled: {type: bool, default_value: false, description: "Speed-continuous walking gait: while the ladder is
+            on its first walking rung, the step time, double support and swing clearance below (interpolated at the
+            conditioned command's speed, re-tiled from the next step boundary at every solve) replace the rung's
+            template. The ladder then only decides standing vs walking; higher rungs are ignored. Needs
+            gait.phaseTransitionStanceTime 0."}
+        speedKnots: {type: double_array, default_value: [0.0, 0.45, 0.8, 1.15], description: "Increasing gait speeds
+            [m/s] (planar speed + yawLever x |yaw rate|) the tables are given at; clamped outside the range"}
+        stepTime: {type: double_array, default_value: [0.72, 0.72, 0.55, 0.48], description: "Lift-off to the other
+            foot's lift-off [s] per knot. Step length = speed x stepTime; the defaults are human regressions scaled to
+            the G1's leg length (docs/results/lowspeed_gait.md)"}
+        doubleSupport: {type: double_array, default_value: [0.25, 0.25, 0.12, 0.09], description: "Double-support time
+            inside each step [s] per knot; the swing is stepTime - doubleSupport"}
+        swingHeight: {type: double_array, default_value: [0.05, 0.05, 0.05, 0.06], description: "Swing clearance [m]
+            per knot"}
+        yawLever: {type: double, default_value: 0.15, description: "Lever arm [m] converting the yaw-rate command into
+            gait speed, so turning in place steps at a sensible cadence", validation: {gt_eq: [0.0]}}
+        minDoubleSupport: {type: double, default_value: 0.03, description: "Double supports shorter than this [s] are
+            not planned (alternating single supports instead)", validation: {gt_eq: [0.0]}}
+        spliceDelay: {type: double, default_value: 0.1, description: "The schedule is re-tiled from the first step
+            boundary later than initTime + this [s]; the step in progress is never changed", validation: {gt_eq: [0.0]}}
+        standBelow: {type: double, default_value: 0.15, description: "Planar commands slower than this [m/s] are
+            rounded to standing", validation: {gt_eq: [0.0]}}
+        minWalkSpeed: {type: double, default_value: 0.4, description: "Planar commands between standBelow and this
+            [m/s] are raised to it (direction kept): the slowest speed at which the gait looks like walking. 0 disables
+            the rounding", validation: {gt_eq: [0.0]}}
       transitions:
         minDwellTime: {type: double, default_value: 0.2, description: "Minimum time between two gait changes [s]",
             validation: {gt_eq: [0.0]}}

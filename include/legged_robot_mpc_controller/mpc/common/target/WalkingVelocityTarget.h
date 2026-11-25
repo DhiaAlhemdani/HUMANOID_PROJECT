@@ -84,6 +84,11 @@ class WalkingVelocityTarget {
   /// Controller-only kneeling target, outside the operator's height range; NaN removes the override.
   void setPostureHeightOverride(scalar_t height) { postureHeightOverride_.store(height); }
 
+  /// Round the scaled planar command [m/s]: magnitudes below standBelow become zero, those between standBelow
+  /// and minWalkSpeed are raised to minWalkSpeed with the direction kept (ocs2.gait.continuous: a person does
+  /// not walk slower than that; the slew limiter still ramps the result). 0, 0 disables. Thread-safe.
+  void setMinimumWalkSpeed(scalar_t standBelow, scalar_t minWalkSpeed);
+
  private:
   WalkingVelocityCommand scaleCommand(WalkingVelocityCommand command) const;
 
@@ -108,6 +113,8 @@ class WalkingVelocityTarget {
   std::atomic_bool filterResetRequested_{true};
   std::atomic<scalar_t> resetHeight_{std::numeric_limits<scalar_t>::quiet_NaN()};
   std::atomic<scalar_t> postureHeightOverride_{std::numeric_limits<scalar_t>::quiet_NaN()};
+  std::atomic<scalar_t> standBelow_{0.0};
+  std::atomic<scalar_t> minWalkSpeed_{0.0};
 };
 
 }  // namespace ocs2::humanoid

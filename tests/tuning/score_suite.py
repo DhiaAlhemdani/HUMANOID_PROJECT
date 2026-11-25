@@ -17,7 +17,10 @@ Per segment (ground truth at 100 Hz, ~/tracking at 500 Hz):
   roll_pp / pitch_pp   peak-to-peak roll and pitch [deg]
   tau_rate     leg measured torque rate RMS, 0-40 Hz [Nm/s]: the hardware-side proxy of torque steps
   tau_hf       leg measured torque, 4-40 Hz band RMS [Nm]
-  v_err        command tracking error RMS (|v_cmd - v_pelvis| planar, after the ramp) [m/s]
+  v_err        command tracking error RMS (|v_cmd - v_pelvis| planar, after the ramp) [m/s]; the command is
+               rounded like the controller does when <case>/config.yaml enables ocs2.gait.continuous
+  step_t/l     mean time between step starts [s] and pelvis travel per step [m] (plan_mode; the leg proxy:
+               human-scaled targets 0.36 m at 0.45 m/s, 0.44 m at 0.8, 0.56 m at 1.15), ds = double-support fraction
   gaits        templates seen (from plan_mode)
 Aggregate (SUITE line / suite.json "agg"): mean over steady segments, max over transitions, for
 jerk, acc_hf, tau_rate; falls disqualify (fell_at recorded).
@@ -84,6 +87,45 @@ legs = [n.split("/", 1)[1] for n in TN if n.startswith("meas_tau/") and any(k in
 jt = tc("t")
 yaw_tr = tc("obs_base/yaw")
 
+# ---- steps from plan_mode: a step starts when a single support begins -------------------------
+# step_t = time to the next step start, step_l = planar pelvis displacement over it (the leg proxy: what the
+# eye reads as walking is the step length, pelvis jerk does not see it), ds = planned double-support fraction.
+pm_all = tc("plan_mode")
+step_t0, step_len = np.array([]), np.array([])
+if pm_all is not None and jt is not None:
+    ok = np.isfinite(pm_all)
+    pmv, pmt = pm_all[ok].astype(int), jt[ok]
+    starts = pmt[1:][(np.isin(pmv[1:], (1, 2))) & (pmv[1:] != pmv[:-1])]
+    if len(starts) > 1:
+        px = np.interp(starts, gt[:, 0], gt[:, 2])
+        py = np.interp(starts, gt[:, 0], gt[:, 3])
+        step_t0 = starts[:-1]
+        step_dur = np.diff(starts)
+        step_len = np.hypot(np.diff(px), np.diff(py))
+
+# ---- the command the controller tracks: the continuous law rounds slow commands ------------------
+ROUND = None
+cfg_path = OUT("config.yaml")
+if os.path.isfile(cfg_path):
+    try:
+        import yaml
+        c = yaml.safe_load(open(cfg_path))["humanoid_whole_body_inverse_dynamics_mpc_controller"]["ros__parameters"]["ocs2"]["gait"].get("continuous", {})
+        if c.get("enabled") and float(c.get("minWalkSpeed", 0)) > 0:
+            ROUND = (float(c.get("standBelow", 0)), float(c["minWalkSpeed"]))
+    except Exception as e:  # noqa: BLE001
+        print(f"config.yaml not parsed ({e}); v_err against the raw command")
+
+
+def tracked_cmd(cmd):
+    if ROUND is None:
+        return cmd
+    v = math.hypot(cmd[0], cmd[1])
+    if v < ROUND[0]:
+        return [0.0, 0.0, cmd[2]]
+    if 0 < v < ROUND[1]:
+        return [cmd[0] * ROUND[1] / v, cmd[1] * ROUND[1] / v, cmd[2]]
+    return cmd
+
 rows = []
 for s in segs:
     s0, s1 = w2s(SETTLE + s["t0"]), w2s(SETTLE + s["t1"])
@@ -107,7 +149,16 @@ for s in segs:
              z_pp_mm=1000 * float(np.ptp(g[:, 4])))
     # command tracking after the ramp (steady: whole segment; transition: last 2 s)
     tail = tt >= (s0 if s["kind"] == "steady" else s1 - 2.0)
-    cmd = s["cmd"]
+    cmd = tracked_cmd(s["cmd"])
+    if len(step_t0):
+        inseg = (step_t0 >= s0) & (step_t0 <= s1) & (step_dur < 3.0)
+        if inseg.sum() >= 2:
+            r["step_t"] = float(np.mean(step_dur[inseg]))
+            r["step_l"] = float(np.mean(step_len[inseg]))
+    if pm_all is not None:
+        mm = (jt >= s0) & (jt <= s1) & np.isfinite(pm_all)
+        if mm.sum() > 50:
+            r["ds"] = float(np.mean(pm_all[mm] == 3))
     r["v_err"] = float(np.sqrt(np.mean((fwd_v[tail] - cmd[0]) ** 2 + (lat_v[tail] - cmd[1]) ** 2))) if tail.sum() > 5 else float("nan")
     yaw_rate = deriv(tt, np.unwrap(yaw))
     r["w_err"] = float(np.sqrt(np.mean((yaw_rate[tail] - cmd[2]) ** 2))) if tail.sum() > 5 else float("nan")
@@ -127,7 +178,7 @@ steady = [r for r in rows if r["kind"] == "steady"]
 trans = [r for r in rows if r["kind"] == "transition"]
 agg = {"survived": bool(np.isnan(fell)), "fell_at": None if np.isnan(fell) else round(fell - SETTLE, 1),
        "n_steady": len(steady), "n_transition": len(trans)}
-for key in ("jerk", "acc_hf", "lat_acc_hf", "tau_rate", "ang_jerk", "v_err"):
+for key in ("jerk", "acc_hf", "lat_acc_hf", "tau_rate", "ang_jerk", "v_err", "step_t", "step_l"):
     sv = [r[key] for r in steady if np.isfinite(r.get(key, np.nan))]
     tv = [r[key] for r in trans if np.isfinite(r.get(key, np.nan))]
     agg[f"steady_{key}_mean"] = round(float(np.mean(sv)), 4) if sv else None
@@ -144,10 +195,11 @@ print(f"SUITE {TITLE} | survived={agg['survived']} fell_at={agg['fell_at']} | st
       f"acc_hf {agg['steady_acc_hf_mean']} tau_rate {agg['steady_tau_rate_mean']} v_err {agg['steady_v_err_mean']} | "
       f"transitions ({len(trans)}): jerk max {agg['transition_jerk_max']} acc_hf max {agg['transition_acc_hf_max']} "
       f"tau_rate max {agg['transition_tau_rate_max']} | worst: {agg.get('worst_transition')}")
-print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err  modes")
+print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err step_t step_l   ds  modes")
 for r in rows:
     print(f"SEG {r['label']:36s} {r['kind']:10s} {r['jerk']:6.2f} {r['acc_hf']:6.3f} {r['lat_acc_hf']:6.3f} {r['ang_jerk']:7.2f} "
-          f"{r['roll_pp']:6.2f} {r['pitch_pp']:7.2f} {r.get('tau_rate', float('nan')):9.1f} {r['v_err']:6.3f}  {r.get('modes', '')}"
+          f"{r['roll_pp']:6.2f} {r['pitch_pp']:7.2f} {r.get('tau_rate', float('nan')):9.1f} {r['v_err']:6.3f} "
+          f"{r.get('step_t', float('nan')):6.2f} {r.get('step_l', float('nan')):6.2f} {r.get('ds', float('nan')):5.2f}  {r.get('modes', '')}"
           + ("  FELL" if r["fell"] else ""))
 
 # ---- figure ------------------------------------------------------------------------------------

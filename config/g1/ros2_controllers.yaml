@@ -763,6 +763,26 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           jump:           {modeSequence: [STANCE, FLY],              switchingTimes: [0.0, 0.3, 0.5]}
           terrain_walk:   {modeSequence: [LF, STANCE, RF, STANCE],   switchingTimes: [0.0, 0.6, 0.7, 1.3, 1.4]}
 
+        # ---- Speed-continuous gait (roadmap v2 step B) --------------------------------------
+        # Off: the ladder below selects whole templates. On: the ladder only decides standing vs
+        # walking (rungs beyond the first walking one are ignored) and the step time, double
+        # support and swing clearance are interpolated at the command's speed and re-tiled from
+        # the next step boundary at every solve. Step length = speed x stepTime. The knots are
+        # human gait scaled to the G1's leg length: 0.36 m steps at 0.45 m/s (0.72 s, 0.25 s of
+        # double support) to 0.55 m steps at 1.15 m/s (0.48 s, 0.09 s). Planar commands below
+        # standBelow stand, those below minWalkSpeed are raised to it: nobody walks slower.
+        continuous:
+          enabled: false
+          speedKnots:    [0.0, 0.45, 0.8, 1.15]
+          stepTime:      [0.72, 0.72, 0.55, 0.48]
+          doubleSupport: [0.25, 0.25, 0.12, 0.09]
+          swingHeight:   [0.05, 0.05, 0.05, 0.06]
+          yawLever: 0.15
+          minDoubleSupport: 0.03
+          spliceDelay: 0.1
+          standBelow: 0.15
+          minWalkSpeed: 0.4
+
         # ---- Gait selection: which template runs, and when ------------------------------
         # ProceduralMpcMotionManager picks a template from `ladder` once per MPC solve,
         # from the commanded velocity (scaled to m/s, rate limited and filtered) and the
