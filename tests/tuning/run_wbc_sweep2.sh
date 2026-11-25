@@ -50,11 +50,19 @@ run() {
   local tag=$1 profile=$2; shift 2
   echo "== config $tag"
   python3 "$HERE/make_config.py" "$OUT/$tag.yaml" --in "$REPO/config/g1/ros2_controllers.yaml" "$@" || exit 1
-  echo "== run $tag ($profile)"
-  OUT=$OUT PROFILE=$profile bash "$HERE/run_case.sh" "$tag" "$OUT/$tag.yaml" "$VX" || exit 1
-  if [ ! -f "$OUT/$tag/metrics.json" ] || [ ! -f "$OUT/$tag/diag.json" ]; then
-    echo "WARN: $tag missing metrics.json/diag.json:"; diag "$OUT/$tag"
-  fi
+  local attempt
+  for attempt in 1 2; do
+    echo "== run $tag ($profile) attempt $attempt"
+    OUT=$OUT PROFILE=$profile bash "$HERE/run_case.sh" "$tag" "$OUT/$tag.yaml" "$VX" || exit 1
+    [ -f "$OUT/$tag/metrics.json" ] && [ -f "$OUT/$tag/diag.json" ] && break
+    echo "WARN: $tag produced no metrics (sim did not come up?):"; diag "$OUT/$tag"
+    if [ $attempt = 1 ]; then
+      # A stale simulator / controller manager from the previous case is the usual cause.
+      pkill -9 -f "ros2 launch legged_robot_mpc_controller" 2>/dev/null; pkill -9 -x mujoco_ros2_con 2>/dev/null
+      pkill -9 -f controller_manager 2>/dev/null; pkill -9 -f robot_state_publisher 2>/dev/null; sleep 5
+      echo "== retrying $tag"
+    fi
+  done
   [ -f "$OUT/$tag/sim.log" ] && grep -aE "whole-body feedback (layer on|solve invalid)" "$OUT/$tag/sim.log" | tail -2
 }
 

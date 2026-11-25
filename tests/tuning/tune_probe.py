@@ -108,6 +108,12 @@ def main():
     ex.shutdown()
     with node.lock:
         gt_map = np.array(node.gt_map)
+    if gt_map.ndim != 2 or len(gt_map) == 0:
+        # The simulator never published ground truth: the sim did not come up (or is paused).
+        # Leave a 1-row map so bag_to_npz/plot_tracking fail loudly on the data, not here.
+        print(f"PROBE no ground truth received in {time.time() - t0:.0f} s: simulator not running or not stepping "
+              f"(see sim.log); tracking_names {'received' if node.track_names else 'absent'}")
+        gt_map = np.zeros((1, 2))
     gt_map = gt_map[np.argsort(gt_map[:, 0])]
     np.savez(OUT + "_meta.npz", gt_map=gt_map, track_names=np.array(node.track_names), solver_names=np.array(node.solver_names),
              phases=np.array([SETTLE, RAMP, HOLD, STOP, VX]), profile=np.array(PROFILE), fell=np.array(np.nan if node.fell is None else node.fell))

@@ -28,8 +28,13 @@ setsid nohup timeout 240 bash -c "cd $WS && $SRC && ros2 launch legged_robot_mpc
   rviz:=${RVIZ:-false} ${RVIZCFG:+rvizconfig:=$RVIZCFG} mujoco_headless:=true baseCommandDevice:=none controllersFile:=$D/config.yaml ${LAUNCH_ARGS:-}" > "$D/sim.log" 2>&1 < /dev/null &
 w=0
 until grep -qE -- "-> locomotion|first MPC advance:|bring-up FAULT|on_configure failed|init failed" "$D/sim.log" 2>/dev/null; do
-  sleep 1; w=$((w+1)); [ $w -gt 120 ] && { echo "RUN: no locomotion after 120 s" | tee -a "$D/summary.txt"; break; }
-done
+  sleep 1; w=$((w+1)); [ $w -gt 120 ] && { echo "RUN: no locomotion after 120 s"; break; }
+done > "$D/summary.txt"
+if grep -q "no locomotion" "$D/summary.txt"; then
+  # Why: the launch's last lines, and anything that died, in the summary (sim.log is long).
+  { echo "--- sim.log: process exits / errors"; grep -aE "process has died|exited with code|died|Segmentation|what\(\)|error|Error" "$D/sim.log" | grep -v simulation_reset | head -12;
+    echo "--- sim.log: tail"; tail -15 "$D/sim.log"; } >> "$D/summary.txt"
+fi
 sleep 2
 # PROFILE (env): vx | vy | yaw | stops, see tune_probe.py; the command scale of that axis.
 KEY=maxDisplacementVelocityX; [ "${PROFILE:-vx}" = vy ] && KEY=maxDisplacementVelocityY; [ "${PROFILE:-vx}" = yaw ] && KEY=maxRotationVelocity
@@ -47,7 +52,7 @@ sleep 2
   [ -f "$D/run_data.npz" ] && python3 "$HERE/plot_tracking.py" "$D/run" "$TAG" 2>&1 | grep -E "SUMMARY|DIAG|Traceback|Error"
   grep -aoE "MPC_TIMING\].*utilization=[0-9.]+%|MPC_HEALTH\] equality SSE mean=[^|]*" "$D/sim.log" | tail -2 | sed -E 's/latest advance.*target period=[0-9.]+ ms, //'
   grep -aoE "bring-up FAULT: trunk tilt [0-9.]+|on_configure failed.*" "$D/sim.log" | head -1
-} | tee "$D/summary.txt"
+} | tee -a "$D/summary.txt"
 pkill -INT -f "ros2 launch legged_robot_mpc_controller" 2>/dev/null; sleep 4
 pkill -9 -x mujoco_ros2_con 2>/dev/null; pkill -9 -x rviz2 2>/dev/null; pkill -9 -x static_transfor 2>/dev/null; pkill -9 -x robot_state_pub 2>/dev/null
 for f in "$D"/run_shot*.xwd; do [ -s "$f" ] && python3 "$HERE/xwd2png.py" "$f" "${f%.xwd}.png" && rm -f "$f"; done
