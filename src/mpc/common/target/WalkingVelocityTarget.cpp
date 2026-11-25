@@ -47,6 +47,7 @@ WalkingVelocityTarget::WalkingVelocityTarget(const ReferenceConfig& referenceCon
       minBaseHeight_(referenceConfig.minBaseHeight),
       maxBaseHeight_(referenceConfig.maxBaseHeight),
       commandRateLimits_(referenceConfig.commandRateLimits),
+      commandJerkLimits_(referenceConfig.commandJerkLimits),
       takeoverHeightRate_(referenceConfig.takeoverHeightRate),
       previousCommand_(0.0, 0.0, referenceConfig.defaultBaseHeight, 0.0),
       velocityCommandFilter_(5, vector4_t(0.0, 0.0, referenceConfig.defaultBaseHeight, 0.0)) {}
@@ -101,6 +102,7 @@ WalkingVelocityTarget::Output WalkingVelocityTarget::evaluate(scalar_t initTime,
       risingFromResetHeight_ = takeoverHeightRate_ > 0.0;
     }
     previousTime_ = initTime;
+    previousRate_.setZero();
     velocityCommandFilter_.reset(previousCommand_);
   }
   vector4_t conditionedCommand = velocityCommandFilter_.getFilteredVector(scaledCommand.toVector(), initTime);
@@ -109,11 +111,14 @@ WalkingVelocityTarget::Output WalkingVelocityTarget::evaluate(scalar_t initTime,
   for (int i = 0; i < 4; ++i) {
     const scalar_t rateLimit = (i == 2 && risingFromResetHeight_) ? takeoverHeightRate_ : commandRateLimits_(i);
     if (rateLimit > 0.0) {
-      const scalar_t increment = rateLimit * dt;
       const scalar_t unlimited = conditionedCommand(i);
-      conditionedCommand(i) = std::clamp(unlimited, previousCommand_(i) - increment, previousCommand_(i) + increment);
+      // The takeover rise keeps the plain rate clamp (a constant-rate rise is its definition).
+      const scalar_t jerkLimit = (i == 2 && risingFromResetHeight_) ? 0.0 : commandJerkLimits_(i);
+      conditionedCommand(i) = slewLimitStep(unlimited, previousCommand_(i), previousRate_(i), dt, rateLimit, jerkLimit);
       // The takeover rise ends once the height reference reaches the command without being limited.
       if (i == 2 && risingFromResetHeight_ && dt > 0.0 && conditionedCommand(i) == unlimited) risingFromResetHeight_ = false;
+    } else {
+      previousRate_(i) = 0.0;
     }
   }
   previousCommand_ = conditionedCommand;
