@@ -198,9 +198,9 @@ switch[1:] = np.diff(t0) != 0
 switch &= walk
 # A planned contact change steps the plan's torque by design (the fade hands the switch to the
 # plan); a policy swap landing on that tick would count that step here. Exclude those ticks.
+mode_change = np.zeros(len(t), bool)
 if "plan_mode" in names:
     _pm = np.nan_to_num(c("plan_mode"), nan=-1.0)
-    mode_change = np.zeros(len(t), bool)
     mode_change[1:] = np.diff(_pm) != 0
     switch &= ~mode_change
 dtau = {j: np.abs(np.diff(c("cmd_tau/" + j), prepend=np.nan)) for j in J}
@@ -210,6 +210,18 @@ for gname, group in (("legs", LEGS), ("arms", ARMS)):
     diag[gname]["cmd_tau_jump_at_switch"] = round(float(at), 3)
     diag[gname]["cmd_tau_step_otherwise"] = round(float(off), 3)
 diag["policy_switch_hz"] = round(float(switch.sum() / max(1e-6, t[walk][-1] - t[walk][0])), 1)
+# The plan's own torque step at a planned contact change (the leg goes swing <-> stance in one node;
+# ~60 Nm hip pitch in the trot, docs/results/touchdown_timing_sweep.md): per contact-change tick in
+# the walk window, leg-mean |delta plan_tau| and |delta cmd_tau| (what reached the hardware).
+if "plan_mode" in names and all(("plan_tau/" + j) in names for j in LEGS):
+    _mc = mode_change & walk
+    if _mc.any():
+        dplan = np.column_stack([np.abs(np.diff(c("plan_tau/" + j), prepend=np.nan)) for j in LEGS])
+        dcmd = np.column_stack([dtau[j] for j in LEGS])
+        diag["legs"]["plan_tau_step_at_contact_change"] = round(float(np.nanmean(np.nanmean(dplan[_mc], axis=1))), 3)
+        diag["legs"]["cmd_tau_step_at_contact_change"] = round(float(np.nanmean(np.nanmean(dcmd[_mc], axis=1))), 3)
+        diag["legs"]["plan_tau_step_at_contact_change_max"] = round(float(np.nanmax(dplan[_mc])), 2)
+        diag["contact_changes_per_s"] = round(float(_mc.sum() / max(1e-6, t[walk][-1] - t[walk][0])), 2)
 
 
 # ---------------- gait templates & transitions (roadmap #1.5) ----------------
