@@ -37,7 +37,13 @@ if "script" not in d.files or d["script"].size == 0:
     sys.exit(f"{P}: no script in data.npz (run with PROFILE=script)")
 K = d["script"]                                   # [t, vx, vy, yaw] on the script clock
 SETTLE = float(d["phases"][0])
-gt = d["gt"]                                      # t_sim, t_wall, x, y, z, vx, vy, vz, roll, pitch, yaw
+gt = d["gt"].copy()                               # t_sim, t_wall, x, y, z, vx, vy, vz, roll, pitch, yaw
+# The odometry twist's frame has differed between simulator builds (docs/h2_wb_id_mpc.md); derive the
+# world-frame velocity from the pose instead, so every rotation below is well defined.
+gt = gt[np.argsort(gt[:, 0])]
+gt = gt[np.concatenate([[True], np.diff(gt[:, 0]) > 1e-6])]
+for c in (5, 6, 7):
+    gt[:, c] = np.gradient(gt[:, c - 3], gt[:, 0])
 fell = float(d["fell"]) if "fell" in d.files else float("nan")
 w2s = lambda w: float(np.interp(w, gt[:, 1], gt[:, 0]))   # probe wall clock -> sim time
 TN = list(d["track_names"]) if "track_names" in d.files else []
@@ -138,9 +144,9 @@ print(f"SUITE {TITLE} | survived={agg['survived']} fell_at={agg['fell_at']} | st
       f"acc_hf {agg['steady_acc_hf_mean']} tau_rate {agg['steady_tau_rate_mean']} v_err {agg['steady_v_err_mean']} | "
       f"transitions ({len(trans)}): jerk max {agg['transition_jerk_max']} acc_hf max {agg['transition_acc_hf_max']} "
       f"tau_rate max {agg['transition_tau_rate_max']} | worst: {agg.get('worst_transition')}")
-print("  segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err  modes")
+print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err  modes")
 for r in rows:
-    print(f"  {r['label']:36s} {r['kind']:10s} {r['jerk']:6.2f} {r['acc_hf']:6.3f} {r['lat_acc_hf']:6.3f} {r['ang_jerk']:7.2f} "
+    print(f"SEG {r['label']:36s} {r['kind']:10s} {r['jerk']:6.2f} {r['acc_hf']:6.3f} {r['lat_acc_hf']:6.3f} {r['ang_jerk']:7.2f} "
           f"{r['roll_pp']:6.2f} {r['pitch_pp']:7.2f} {r.get('tau_rate', float('nan')):9.1f} {r['v_err']:6.3f}  {r.get('modes', '')}"
           + ("  FELL" if r["fell"] else ""))
 

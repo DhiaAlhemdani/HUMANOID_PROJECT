@@ -53,7 +53,7 @@ sleep 2
   bash -c "$SRC && python3 $HERE/bag_to_npz.py $D/bag $D/run_meta.npz $D/run_data.npz" 2>&1 | grep -E "^bag:|Traceback|Error"
   [ -f "$D/run_data.npz" ] && rm -rf "$D/bag" "$D/run_meta.npz"
   if [ "${PROFILE:-vx}" = script ]; then
-    [ -f "$D/run_data.npz" ] && python3 "$HERE/score_suite.py" "$D/run" "$TAG" 2>&1 | grep -E "SUITE|segment|Traceback|Error"
+    [ -f "$D/run_data.npz" ] && python3 "$HERE/score_suite.py" "$D/run" "$TAG" 2>&1 | grep -E "SUITE|^SEG|Traceback|Error"
   else
     [ -f "$D/run_data.npz" ] && python3 "$HERE/plot_tracking.py" "$D/run" "$TAG" 2>&1 | grep -E "SUMMARY|DIAG|Traceback|Error"
   fi
