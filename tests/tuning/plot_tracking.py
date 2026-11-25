@@ -367,6 +367,43 @@ diag["command"] = {
     "transient_pitch_max_deg": _cagg("pitch_max_deg"),
     "transient_roll_max_deg": _cagg("roll_max_deg"),
 }
+# ---------------- touchdown events (roadmap 2.C) ----------------
+# Per planned touchdown in the walk window (plan wrench fz of a foot 0 -> >1 N): how far the
+# measured robot departs from the plan right after impact. The plan has no impact model, so its
+# base vertical velocity is continuous across touchdown while the robot's is not; the mismatch
+# over the first 60 ms is what the servo/whole-body layer must then absorb.
+TD_WIN = 0.06
+_fz = {f: np.nan_to_num(c(f"plan_wrench/{f}/fz"), nan=0.0) > 1.0 for f in FEET}
+_leg = lambda f: [j for j in LEGS if j.startswith("left_" if ("_l_" in f or "left" in f) else "right_")]
+td_events = []
+for f in FEET:
+    idx = np.flatnonzero(np.diff(_fz[f].astype(int)) > 0) + 1
+    for k in idx:
+        if not walk[k]:
+            continue
+        w = (t >= t[k]) & (t <= t[k] + TD_WIN)
+        pre = (t >= t[k] - 0.01) & (t < t[k])
+        if w.sum() < 5 or pre.sum() < 2:
+            continue
+        ev = {"t": round(float(t[k]), 3), "foot": f,
+              "base_vz_mismatch": float(np.sqrt(np.mean((c("obs_base/vz") - c("plan_base/vz"))[w] ** 2))),
+              "base_vz_drop": float(c("obs_base/vz")[pre].mean() - c("obs_base/vz")[w].min()),
+              "foot_vz_obs_pre": float(np.mean(c(f"obs_foot/{f}/vz")[pre])),
+              "foot_vz_plan_pre": float(np.mean(c(f"plan_foot/{f}/vz")[pre])),
+              "leg_tau_peak": float(max(np.max(np.abs(c("meas_tau/" + j)[w])) for j in _leg(f))),
+              "leg_cmd_minus_plan_peak": float(max(np.max(np.abs((c("cmd_tau/" + j) - c("plan_tau/" + j))[w])) for j in _leg(f)))}
+        td_events.append(ev)
+_tdm = lambda key: (round(float(np.median([ev[key] for ev in td_events])), 4) if td_events else None)
+diag["touchdown"] = {
+    "count": len(td_events),
+    "window_s": TD_WIN,
+    "base_vz_mismatch": _tdm("base_vz_mismatch"),        # rms(obs - plan base vz) over the window, median over events [m/s]
+    "base_vz_drop": _tdm("base_vz_drop"),                # measured base vz loss at impact, median [m/s]
+    "foot_vz_obs_pre": _tdm("foot_vz_obs_pre"),          # measured landing speed (plan: swingTrajectory.touchDownVelocity)
+    "foot_vz_plan_pre": _tdm("foot_vz_plan_pre"),
+    "leg_tau_peak": _tdm("leg_tau_peak"),                # median over events of the landing leg's |tau| peak [Nm]
+    "leg_cmd_minus_plan_peak": _tdm("leg_cmd_minus_plan_peak"),
+}
 json.dump(diag, open(OUT("diag.json"), "w"), indent=1)
 
 # ---------------- figures ----------------
