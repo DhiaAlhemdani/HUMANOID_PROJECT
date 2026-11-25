@@ -59,6 +59,14 @@ ground-truth base, side camera following the pelvis, command/mode overlay) — `
 `run_suite.sh`. The baseline suite of the shipped controller is the first deliverable; its videos
 are the owner's reference for "before".
 
+### Baseline and calibration (done 2026-11-25)
+
+`docs/results/command_space_baseline.md`: the owner's video verdict and the jerk ranking agree —
+the trot segments (0.5–0.7 m/s; jerk 28–36, acc_hf 0.33–0.50) are smooth, the walk-gait segments
+below 0.45 (jerk 62–68, acc_hf 1.5–1.7) and the run at 0.8 (263 / 5.7) are not. **Target: every
+suite segment at the trot's level, jerk ≤ 35 and acc_hf ≤ 0.5.** Transitions score like the gait
+they lead into, so step B's first question is the contact pattern per speed, not the splice.
+
 ## 2. Step B — continuous gait adaptation
 
 **Replace the four-rung ladder with a continuous gait law** in the reference manager: cadence,
