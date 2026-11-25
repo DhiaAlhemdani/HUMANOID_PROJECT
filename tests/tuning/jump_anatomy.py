@@ -38,11 +38,35 @@ def anatomy(P):
     near = np.nanmean(dtau[switch & contact], axis=1); far = np.nanmean(dtau[switch & ~contact], axis=1)
     top = np.sort(per)[::-1][:max(1, len(per) // 100)]
     name = P.rstrip("/").split("/")[-1]
+    # The largest jumps, one line each: when, which joint, how far from the nearest planned contact
+    # change, and whether the re-solve flipped the planned contact mode at that very tick (the new
+    # policy puts "now" on the other side of a contact event the old one had elsewhere).
+    changes = []
+    for f in feet:
+        fz = np.nan_to_num(c(f"plan_wrench/{f}/fz"), nan=0.0) > 1.0
+        for k in np.flatnonzero(np.diff(fz.astype(int)) != 0) + 1:
+            changes.append((t[k], f, "td" if fz[k] else "lo"))
+    changes.sort()
+    ct = np.array([x[0] for x in changes]) if changes else np.array([np.inf])
+    mode = c("plan_mode") if "plan_mode" in names else None
+    sw_idx = np.flatnonzero(switch)
+    vals = np.nanmean(dtau[sw_idx], axis=1)
+    order = np.argsort(np.nan_to_num(vals, nan=-1))[::-1][:8]
+    lines = []
+    for o in order:
+        i = sw_idx[o]
+        jw = int(np.nanargmax(dtau[i]))
+        n = int(np.argmin(np.abs(ct - t[i]))) if changes else -1
+        where = f"{1e3 * (t[i] - changes[n][0]):+5.0f} ms from {changes[n][2]} {changes[n][1]}" if changes else "-"
+        flip = "" if mode is None else (f" mode {int(mode[i - 1])}->{int(mode[i])}" if mode[i] != mode[i - 1] else f" mode {int(mode[i])}")
+        lines.append(f"      t={t[i]:7.3f}  {vals[o]:6.2f} Nm  {legs[jw].replace('_joint', ''):18s} {dtau[i, jw]:6.1f} Nm  {where}{flip}")
     print(f"=== {name}: {len(per)} policy switches | mean {per.mean():.3f} (the metric) median {np.median(per):.3f} "
           f"p90 {np.percentile(per, 90):.3f} p99 {np.percentile(per, 99):.3f} max {per.max():.2f} Nm | "
           f"top 1 % of switches carry {100 * top.sum() / per.sum():.0f} % of the mean | "
           f"within 40 ms of a planned contact change: {np.nanmean(near):.3f} (n {np.isfinite(near).sum()}), "
           f"elsewhere {np.nanmean(far):.3f} (n {np.isfinite(far).sum()})")
+    print("    largest jumps: t | leg-mean | worst joint | distance to nearest planned contact change (td/lo) | plan mode at the tick")
+    print("\n".join(lines))
 
 
 if __name__ == "__main__":

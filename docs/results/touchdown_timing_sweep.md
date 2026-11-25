@@ -295,6 +295,44 @@ right value if the foot is on the spline. Fallback if the seam survives: blend t
 to the stance value over the last ~40 ms of swing, planner side (`getImpactProximityFactor` is
 already available in the constraint's parameter path), rather than returning to the shared gain.
 
+### Sweep 4 result: offsets rejected, the seam is a rare-event phenomenon
+
+| case | set | early (p25/p75) | landing | acc_hf | jump mean | near-contact | max jump | pitch_tr |
+|---|---|---|---|---|---|---|---|---|
+| so_base (swing 200, −1 mm) | G | 8 (4/10) | 0.201 | **0.442** | 0.148 | 0.547 | 21.2 | — |
+| so_off0 | G | 3 (−3/6) | 0.170 | 0.502 (1.14×) ✗ | 0.095 | 0.212 | **2.0** | — |
+| so_offp05 | G | 2 (−18/4) | 0.143 | 0.542 (1.23×) ✗ | 0.091 | 0.197 | **2.1** | — |
+| sos_base | H | 9 (6/12) | 0.223 | 0.963 | 0.082 | 0.191 | 7.1 | 0.971 |
+| sos_off0 | H | 6 (2/8) | 0.214 | 0.936 | 0.119 (1.45×) ✗ | 0.385 | 21.4 | 0.851 |
+
+- **The shipped config repeats**: `so_base` acc_hf 0.442 vs `sk200` 0.448 (fk_base 0.617: −28 %
+  twice), early 8 ms, landing 0.20 m/s. Its jump mean is 0.148 on this run — *inside* the sweep-3
+  guard (≤ 0.159) that the first run (0.190) failed; the near-contact excess is 1.5× the base here
+  vs 2.2× there.
+- **Offsets rejected under the gates.** In the walk, 0 / +0.5 mm move a quarter of the landings
+  late (p25 −3 / −18 ms) and acc_hf rises monotonically 0.44 → 0.50 → 0.54: the plan loads a foot
+  that is still in the air. In the stops, 0 mm wins nothing (pitch 0.88×, inside noise) and the
+  jump mean rises 1.45×. The −1 mm margin earns its keep once the foot is on the spline: an
+  early landing by 1 mm costs a seam, a late one costs the base.
+- **The jump metric is dominated by rare ~20 Nm events.** Every run's `max` is either ≈ 20 Nm
+  (fk_base 22.8, fk200 18.6, sk200 21.7, so_base 21.2, fks_base 24.0, sos_off0 21.4) or ≈ 2–7 Nm
+  (so_off0 2.0, so_offp05 2.1, sos_base 7.1), and the top 1 % of switches carry 10–54 % of the mean
+  accordingly. Which runs have them does not follow the offset (walk: −1 mm yes, 0 no; stops:
+  −1 mm no, 0 yes) — they are sporadic, and the whole offset-vs-jump story above is their
+  presence or absence. A mean over 1100 switches cannot gate on them; `cmd_tau_jump_at_switch`
+  joins `base_vz_mismatch` as show-only until the events are understood.
+
+**Decision: swing 200 / stance 50 / offset −1 mm stands as shipped.** 2.C-timing closes with
+−28 % acc_hf, landing 20 → 8 ms early and 0.26 → 0.20 m/s, stops not-worse (pitch 0.75–0.97 vs
+0.95 across three runs).
+
+**Open (no runs needed): what are the ~20 Nm single-switch torque jumps?** `jump_anatomy.py`
+now lists each run's eight largest with the joint, the distance to the nearest planned contact
+change and whether the re-solve flipped the planned contact mode at that tick. If they sit at
+re-solves that move a contact event across "now" (mode flip), the 2.B fade — keyed to the
+schedule, not to policy-induced flips — has a hole, and that is a contained controller fix with
+a precise trigger; if they are elsewhere, it is a different item.
+
 ## Follow-up 2: repeat runs
 
 The first repeat attempt (`td_off0`, `tds_off0`) produced no data: the single-case command omitted
