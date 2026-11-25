@@ -1,9 +1,17 @@
 # Phase 2.C — touchdown impact model in the MPC (jump map at contact events)
 
-Status: **design, awaiting go/no-go** (2026-11-25). Roadmap Phase 2 #3, re-sequenced to 2.C.
-Brief sharpened by 2.B: the whole remaining torque transient of the shipped controller sits at the
-touchdown event (hip-pitch |max| 39 Nm vs 33 baseline, the residual 6 Nm leg HF; `docs/results/
-wbc_s1_sweep.md`), and the planned torque itself carries ~30 Nm at that instant.
+Status: **jump map deferred; superseded for now by a timing finding** (2026-11-25, §7). Roadmap
+Phase 2 #3, re-sequenced to 2.C. Brief sharpened by 2.B: the whole remaining torque transient of the
+shipped controller sits at the touchdown event (hip-pitch |max| 39 Nm vs 33 baseline, the residual
+6 Nm leg HF; `docs/results/wbc_s1_sweep.md`), and the planned torque itself carries ~30 Nm there.
+
+> **Read §7 first.** The baseline measurements taken for this design (new `touchdown.*` block in
+> `plot_tracking.py`) show the robot lands **14–20 ms before the plan's contact event at every
+> step**, because the shipped swing planner aims the touchdown 1 mm below the ground
+> (`swingTrajectory.touchDownHeightOffset: -0.001`, inherited from upstream, never swept). An
+> impulse model at the planned event cannot represent a contact that has already happened; the
+> timing is fixed first, by config (`tests/tuning/run_touchdown_sweep.sh`), and the jump map is
+> re-evaluated on the corrected baseline.
 
 ## 0. What the plan assumes at touchdown today (code facts)
 
@@ -138,3 +146,38 @@ If `base_vz_mismatch` and `foot_vz_obs_pre` (measured landing speed vs the plann
 both small, the plan-side impact is a small target and 2.C should be demoted behind 2.D; if the
 landing speed is well above 0.05 m/s or the vz mismatch is a sizeable fraction of the planned vz
 rms (`base.plan_vz_rms`), the item is worth its ~300 lines.
+
+## 7. Baseline measurement (2026-11-25) — the plan's touchdown is 14–20 ms late, by construction
+
+`touchdown.*` on the sweep-3 recordings (34 touchdowns per `vx` run, 26 per `stops` run):
+
+| case | early_ms | plan vz at the measured stop | obs−plan foot z, 30 ms before stop | rest height obs / plan [mm] | base vz mismatch (60 ms) / plan vz rms |
+| --- | --- | --- | --- | --- | --- |
+| `wb3_base` (PD) | **+20** | −0.075 m/s | +0.28 mm | 0.13 / 0.43 | 0.017 / 0.030 (57 %) |
+| `wb3_fade30` (shipped) | **+20** | −0.081 m/s | +0.18 mm | −0.28 / −0.15 | 0.012 / 0.029 (42 %) |
+| `wbs3_base` (walk gait) | **+14** | −0.067 m/s | +0.24 mm | 0.01 / 0.02 | 0.024 |
+
+What this rules out: a resting-height offset (the foot rests where the plan rests, ±0.3 mm) and a
+descent tracking lag (the foot is slightly *above* the plan during the descent). What remains:
+`SwingTrajectoryPlanner::update` sets the touchdown node at `terrainHeight + touchDownHeightOffset`
+= −1 mm (`SwingTrajectoryPlanner.cpp:91,143`), so the planned foot crosses the real ground while it
+still has ~1 mm and 13–20 ms of planned descent left (1 mm at the 0.05–0.075 m/s terminal approach;
+the walk's 0.75× velocity scaling gives its 14 ms). During those milliseconds the plan constrains the
+loaded foot to **zero wrench** (`swingFootZeroWrench`) and the other leg to carry everything; the
+servo drives the planned joints a further millimetre into the ground; the base decelerates against a
+foot the optimiser is not allowed to use; at `t_e` the load transfers in one node. That is the
+measured base-vz mismatch and, plausibly, much of the switch-tick transient the 2.B fade hides.
+
+The item therefore splits:
+
+1. **2.C-timing (config, now):** `touchDownHeightOffset` ∈ {0.0, +0.001, −0.0005} vs shipped −0.001,
+   with the shipped controller otherwise — `tests/tuning/run_touchdown_sweep.sh`. Primaries
+   `touchdown.abs_early_ms ≤ 0.4×` (|20| → ≤ 8 ms; a *late* landing must not pass as fixed — hence
+   the absolute value), `base_vz_mismatch ≤ 0.80×`, `acc_hf ≤ 0.92×`, `meas_tau_hf ≤ 0.90×`; guards
+   the sweep-3 set plus foot z tracking ≤ 1.2×+0.3 mm. The expected failure mode of a positive offset
+   is the mirror image (plan loads a foot still 1 mm in the air) — the ladder shows which side the
+   simulator prefers. Set B checks the stops.
+2. **2.C-impact (the jump map above):** re-decided on the corrected baseline. If `base_vz_mismatch`
+   drops to a small fraction of the planned vz rms once the timing is right, the impulse is not
+   worth 300 lines and the item closes; if a sizeable mismatch remains *with* `abs_early_ms` small,
+   it is a genuine impact and the design in §1–§5 applies unchanged.

@@ -437,6 +437,8 @@ diag["touchdown"] = {
     "count": len(td_events),
     "window_s": TD_WIN,
     "early_ms": _tdm("early_ms"),                        # planned event minus measured foot stop, median [ms] (>0: landed early)
+    "abs_early_ms": (round(float(np.median([abs(ev["early_ms"]) for ev in td_events if np.isfinite(ev["early_ms"])])), 1)
+                     if any(np.isfinite(ev["early_ms"]) for ev in td_events) else None),  # scorable: late must not pass as fixed
     "impact_vz_obs": _tdm("impact_vz_obs"),              # measured foot vz just before it stopped [m/s]
     "plan_vz_at_stop": _tdm("plan_vz_at_stop"),          # planned foot vz at that instant
     "foot_z_err_descent_mm": _tdm("foot_z_err_descent_mm"),  # obs - plan foot height 30 ms before the stop
