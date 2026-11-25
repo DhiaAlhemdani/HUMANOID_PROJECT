@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Compare command-space suite results of candidate tags against a baseline tag, per script and segment.
+
+usage: compare_suite.py <results_root> <baseline_tag> <candidate_tag> [more candidates] [--scripts a b ...]
+                        [--primary KEY:RATIO ...] [--guard KEY:max|min:RATIO:SLACK ...]
+
+Reads <root>/<tag>__<script>/suite.json. Aggregates over the whole suite (all scripts):
+  steady_jerk_mean, steady_acc_hf_mean, steady_tau_rate_mean      (means over steady segments)
+  transition_jerk_max, transition_acc_hf_max, transition_tau_rate_max (max over transitions)
+  transition_jerk_mean, transition_acc_hf_mean
+  v_err_max (worst command tracking of any segment), falls
+Default gates -- a candidate WINS when every guard holds and at least one primary improves by its
+ratio while no primary gets worse than 1.10x:
+  primaries: transition_jerk_max 0.8, transition_acc_hf_max 0.8, steady_jerk_mean 0.85, steady_acc_hf_mean 0.85
+  guards:    falls == 0, v_err_max <= 1.2x + 0.03, steady_tau_rate_mean <= 1.15x, transition_tau_rate_max <= 1.15x
+The per-segment table prints every segment of every script side by side (jerk | acc_hf | tau_rate).
+"""
+import argparse
+import json
+import math
+from pathlib import Path
+
+import numpy as np
+
+AGG_KEYS = ["steady_jerk_mean", "steady_acc_hf_mean", "steady_tau_rate_mean", "transition_jerk_max",
+            "transition_acc_hf_max", "transition_tau_rate_max", "transition_jerk_mean", "transition_acc_hf_mean", "v_err_max", "falls"]
+
+
+def load(root: Path, tag: str, scripts):
+    out = {}
+    for s in scripts:
+        f = root / f"{tag}__{s}" / "suite.json"
+        if f.is_file():
+            out[s] = json.loads(f.read_text())
+    return out
+
+
+def aggregate(runs):
+    steady = [r for j in runs.values() for r in j["segments"] if r["kind"] == "steady"]
+    trans = [r for j in runs.values() for r in j["segments"] if r["kind"] == "transition"]
+    vals = lambda rows, k: [r[k] for r in rows if isinstance(r.get(k), (int, float)) and math.isfinite(r[k])]
+    agg = {
+        "steady_jerk_mean": np.mean(vals(steady, "jerk")) if steady else math.nan,
+        "steady_acc_hf_mean": np.mean(vals(steady, "acc_hf")) if steady else math.nan,
+        "steady_tau_rate_mean": np.mean(vals(steady, "tau_rate")) if vals(steady, "tau_rate") else math.nan,
+        "transition_jerk_max": max(vals(trans, "jerk"), default=math.nan),
+        "transition_acc_hf_max": max(vals(trans, "acc_hf"), default=math.nan),
+        "transition_tau_rate_max": max(vals(trans, "tau_rate"), default=math.nan),
+        "transition_jerk_mean": np.mean(vals(trans, "jerk")) if trans else math.nan,
+        "transition_acc_hf_mean": np.mean(vals(trans, "acc_hf")) if trans else math.nan,
+        "v_err_max": max(vals(steady + trans, "v_err"), default=math.nan),
+        "falls": sum(0 if j["agg"]["survived"] else 1 for j in runs.values()),
+        "scripts": len(runs),
+    }
+    return {k: (float(v) if isinstance(v, (np.floating, float)) else v) for k, v in agg.items()}
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("root", type=Path); ap.add_argument("base"); ap.add_argument("cands", nargs="+")
+    ap.add_argument("--scripts", nargs="+", default=["speeds", "turns", "lateral", "stops", "omni"])
+    ap.add_argument("--primary", action="append", default=None)
+    ap.add_argument("--guard", action="append", default=None)
+    a = ap.parse_args()
+    cands = [c for c in a.cands if not c.startswith("--")]
+    primaries = [(p.split(":")[0], float(p.split(":")[1])) for p in (a.primary or
+                 ["transition_jerk_max:0.8", "transition_acc_hf_max:0.8", "steady_jerk_mean:0.85", "steady_acc_hf_mean:0.85"])]
+    guards = []
+    for g in (a.guard or ["v_err_max:max:1.2:0.03", "steady_tau_rate_mean:max:1.15:0", "transition_tau_rate_max:max:1.15:0"]):
+        k, kind, ratio, slack = g.split(":"); guards.append((k, kind, float(ratio), float(slack)))
+
+    base_runs = load(a.root, a.base, a.scripts)
+    if not base_runs:
+        raise SystemExit(f"no suite.json for baseline {a.base} under {a.root}")
+    B = aggregate(base_runs)
+    print(f"baseline {a.base}: " + " | ".join(f"{k} {B[k]:.3f}" if isinstance(B[k], float) else f"{k} {B[k]}" for k in AGG_KEYS))
+    print(f"{'candidate':14s} " + " ".join(f"{k[:12]:>12s}" for k in AGG_KEYS) + "  verdict")
+    verdicts = {}
+    for c in cands:
+        R = aggregate(load(a.root, c, a.scripts))
+        fails, improved = [], []
+        if R["falls"] > 0:
+            fails.append(f"falls {R['falls']}")
+        for k, kind, ratio, slack in guards:
+            if not (isinstance(R[k], float) and math.isfinite(R[k])):
+                continue
+            lim = B[k] * ratio + slack
+            if (kind == "max" and R[k] > lim) or (kind == "min" and R[k] < lim):
+                fails.append(f"guard {k}: {B[k]:.3f} -> {R[k]:.3f} (limit {kind} {lim:.3f})")
+        for k, ratio in primaries:
+            if not (isinstance(R[k], float) and math.isfinite(R[k]) and math.isfinite(B[k])):
+                continue
+            if R[k] <= B[k] * ratio:
+                improved.append(k)
+            elif R[k] > B[k] * 1.10:
+                fails.append(f"primary {k}: {B[k]:.3f} -> {R[k]:.3f} (worse than 1.10x)")
+        verdict = ("WINNER (" + ", ".join(improved) + ")") if improved and not fails else ("guards-fail" if fails else "no gain")
+        verdicts[c] = (verdict, fails)
+        print(f"{c:14s} " + " ".join(f"{R[k]:12.3f}" if isinstance(R[k], float) else f"{R[k]:12d}" for k in AGG_KEYS) + f"  {verdict}")
+    for c, (v, fails) in verdicts.items():
+        for f in fails:
+            print(f"  [FAIL] {c}: {f}")
+    # per-segment table
+    print("\nper segment (jerk | acc_hf | tau_rate):")
+    tags = [a.base] + cands
+    runs = {t: load(a.root, t, a.scripts) for t in tags}
+    for s in a.scripts:
+        if s not in base_runs:
+            continue
+        print(f"-- {s}")
+        for i, seg in enumerate(base_runs[s]["segments"]):
+            cells = []
+            for t in tags:
+                segs = runs[t].get(s, {}).get("segments", [])
+                r = segs[i] if i < len(segs) else None
+                cells.append(f"{r['jerk']:6.2f} {r['acc_hf']:6.3f} {r.get('tau_rate', float('nan')):7.0f}" if r else " " * 21)
+            print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells) + ("  FELL" if seg.get("fell") else ""))
+    print("\nwinners: " + (", ".join(c for c, (v, _) in verdicts.items() if v.startswith("WINNER")) or "NONE"))
+
+
+if __name__ == "__main__":
+    main()

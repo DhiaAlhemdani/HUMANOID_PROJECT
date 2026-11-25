@@ -1,5 +1,9 @@
 # Locomotion Quality Improvements (Smoothness, Gait, Learning)
 
+> **Superseded 2026-11-25 for execution order by [`SMOOTHNESS_ROADMAP_V2.md`](SMOOTHNESS_ROADMAP_V2.md)**
+> (full command space, jerk/torque-rate proxies judged by video, continuous gait → force-rate state →
+> residual RL). This file remains the record of Phases 1–2.D and the gait sweep.
+
 Scope: **control/algorithm** improvements — walking smoothness, naturalness, robustness, and
 learning-based methods. (Repo engineering hygiene is tracked separately in `IMPROVEMENTS.md`.)
 

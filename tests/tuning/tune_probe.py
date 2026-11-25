@@ -3,7 +3,10 @@
 
 usage: tune_probe.py <out_prefix> [speed] [vmax] [height]
 env PROFILE: vx (default) | vy | yaw (speed in m/s or rad/s on that axis, vmax its command scale) |
-             stops (vx with 4 s walk / 3 s stand cycles during the hold)
+             stops (vx with 4 s walk / 3 s stand cycles during the hold) |
+             script (SCRIPT=<json>: {"knots": [[t, vx, vy, yaw_rate], ...]} in physical units, linearly
+             interpolated, held after the last knot; VMAX_X/VMAX_Y/VMAX_YAW env give the command scales;
+             the schedule is saved in the meta for score_suite.py -- tests/tuning/suite/*.json)
 
 Publishes the walking command on a wall-clock schedule (4 s stand, 3 s ramp, 20 s hold, 3 s ramp
 down, 5 s stop), watches ground truth for a fall, and writes <out_prefix>_meta.npz: the live
@@ -34,6 +37,12 @@ VMAX = float(sys.argv[3]) if len(sys.argv) > 3 else 0.75
 HEIGHT = float(sys.argv[4]) if len(sys.argv) > 4 else 0.795
 SETTLE, RAMP, HOLD, STOP = 4.0, 3.0, float(os.environ.get("HOLD_SECONDS", "20")), 5.0
 PROFILE = os.environ.get("PROFILE", "vx")
+SCRIPT = None
+if PROFILE == "script":
+    import json
+    SCRIPT = np.array(json.load(open(os.environ["SCRIPT"]))["knots"], float)  # [t, vx, vy, yaw]
+    assert SCRIPT.ndim == 2 and SCRIPT.shape[1] == 4 and (np.diff(SCRIPT[:, 0]) >= 0).all(), "knots: [[t, vx, vy, yaw], ...] with t ascending"
+    VMAX3 = [float(os.environ.get("VMAX_X", VMAX)), float(os.environ.get("VMAX_Y", 0.5)), float(os.environ.get("VMAX_YAW", 1.5708))]
 SHOT_TIMES = [SETTLE + RAMP + 8.0 + 0.2 * k for k in range(4)] if os.environ.get("SHOTS") else []
 CTRL = "/humanoid_whole_body_inverse_dynamics_mpc_controller"
 
@@ -63,7 +72,10 @@ class Probe(Node):
 
     def command(self, v):
         c = WalkingVelocityCommand()
-        if PROFILE == "vy":
+        if PROFILE == "script":
+            c.linear_velocity_x = float(v[0] / VMAX3[0]); c.linear_velocity_y = float(v[1] / VMAX3[1])
+            c.angular_velocity_z = float(v[2] / VMAX3[2])
+        elif PROFILE == "vy":
             c.linear_velocity_y = v / VMAX
         elif PROFILE == "yaw":
             c.angular_velocity_z = v / VMAX
@@ -81,13 +93,18 @@ def main():
     threading.Thread(target=ex.spin, daemon=True).start()
     t0 = time.time()
     total = SETTLE + 2 * RAMP + HOLD + STOP
+    if SCRIPT is not None:
+        total = SETTLE + SCRIPT[-1, 0] + STOP
     shots = list(SHOT_TIMES)
     while True:
         t = time.time() - t0
         node.wall_now = t
         if t > total or (node.fell is not None and t > node.fell + 1.5):
             break
-        if t < SETTLE:
+        if SCRIPT is not None:
+            # The script's own clock starts after the settle; three axes at once.
+            vx = [float(np.interp(t - SETTLE, SCRIPT[:, 0], SCRIPT[:, k])) if t >= SETTLE else 0.0 for k in (1, 2, 3)]
+        elif t < SETTLE:
             vx = 0.0
         elif t < SETTLE + RAMP:
             vx = VX * (t - SETTLE) / RAMP
@@ -116,7 +133,8 @@ def main():
         gt_map = np.zeros((1, 2))
     gt_map = gt_map[np.argsort(gt_map[:, 0])]
     np.savez(OUT + "_meta.npz", gt_map=gt_map, track_names=np.array(node.track_names), solver_names=np.array(node.solver_names),
-             phases=np.array([SETTLE, RAMP, HOLD, STOP, VX]), profile=np.array(PROFILE), fell=np.array(np.nan if node.fell is None else node.fell))
+             phases=np.array([SETTLE, RAMP, HOLD, STOP, VX]), profile=np.array(PROFILE), fell=np.array(np.nan if node.fell is None else node.fell),
+             script=SCRIPT if SCRIPT is not None else np.zeros((0, 4)))
     print(f"PROBE {'FELL at %.1f s after the command started' % (node.fell - SETTLE) if node.fell is not None else 'survived'}")
 
 

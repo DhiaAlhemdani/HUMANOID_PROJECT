@@ -39,6 +39,9 @@ sleep 2
 # PROFILE (env): vx | vy | yaw | stops, see tune_probe.py; the command scale of that axis.
 KEY=maxDisplacementVelocityX; [ "${PROFILE:-vx}" = vy ] && KEY=maxDisplacementVelocityY; [ "${PROFILE:-vx}" = yaw ] && KEY=maxRotationVelocity
 VMAX=$(python3 -c "import yaml; c=yaml.safe_load(open('$D/config.yaml')); print(c['humanoid_whole_body_inverse_dynamics_mpc_controller']['ros__parameters']['ocs2']['reference']['$KEY'])")
+# PROFILE=script (SCRIPT=<json>, tests/tuning/suite/*.json): all three command scales, scored by score_suite.py.
+read -r VMAX_X VMAX_Y VMAX_YAW < <(python3 -c "import yaml; r=yaml.safe_load(open('$D/config.yaml'))['humanoid_whole_body_inverse_dynamics_mpc_controller']['ros__parameters']['ocs2']['reference']; print(r['maxDisplacementVelocityX'], r['maxDisplacementVelocityY'], r['maxRotationVelocity'])")
+export VMAX_X VMAX_Y VMAX_YAW SCRIPT=${SCRIPT:-}
 C=/humanoid_whole_body_inverse_dynamics_mpc_controller
 setsid bash -c "$SRC && exec ros2 bag record -s mcap -o $D/bag --topics /joint_states /mujoco/ground_truth/odom $C/tracking $C/solver $C/tracking_names $C/solver_names" > "$D/bag.log" 2>&1 < /dev/null &
 sleep 2
@@ -49,7 +52,11 @@ sleep 2
   for i in $(seq 1 30); do kill -0 $BP 2>/dev/null || break; sleep 1; done
   bash -c "$SRC && python3 $HERE/bag_to_npz.py $D/bag $D/run_meta.npz $D/run_data.npz" 2>&1 | grep -E "^bag:|Traceback|Error"
   [ -f "$D/run_data.npz" ] && rm -rf "$D/bag" "$D/run_meta.npz"
-  [ -f "$D/run_data.npz" ] && python3 "$HERE/plot_tracking.py" "$D/run" "$TAG" 2>&1 | grep -E "SUMMARY|DIAG|Traceback|Error"
+  if [ "${PROFILE:-vx}" = script ]; then
+    [ -f "$D/run_data.npz" ] && python3 "$HERE/score_suite.py" "$D/run" "$TAG" 2>&1 | grep -E "SUITE|segment|Traceback|Error"
+  else
+    [ -f "$D/run_data.npz" ] && python3 "$HERE/plot_tracking.py" "$D/run" "$TAG" 2>&1 | grep -E "SUMMARY|DIAG|Traceback|Error"
+  fi
   grep -aoE "MPC_TIMING\].*utilization=[0-9.]+%|MPC_HEALTH\] equality SSE mean=[^|]*" "$D/sim.log" | tail -2 | sed -E 's/latest advance.*target period=[0-9.]+ ms, //'
   grep -aoE "bring-up FAULT: trunk tilt [0-9.]+|on_configure failed.*" "$D/sim.log" | head -1
 } | tee -a "$D/summary.txt"
