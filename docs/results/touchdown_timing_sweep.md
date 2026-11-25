@@ -74,3 +74,46 @@ No config change ships. Two follow-ups, in this order:
   the swing-end tracking (WBC `swingKd` / `swingWeight`), which attacks the remaining 10–14 ms and
   is independent of the offset; the jump map stays deferred until a run shows a sizeable
   post-touchdown mismatch *with* the landing on time.
+
+## Follow-up 1: approach-velocity back-fill (2026-11-24)
+
+`approach_vz_obs/plan` back-filled with `41f8073` on the sweep-1 recordings (median over events,
+foot vz over [−25, −5] ms before the measured stop):
+
+| case | early_ms | approach_vz_obs | approach_vz_plan | obs/plan | base_vz_mismatch |
+|---|---|---|---|---|---|
+| td_base (−1 mm, trot) | 21 | −0.120 | −0.204 | 0.59 | 0.0106 |
+| td_off0 (0, trot) | 14 | −0.079 | −0.148 | 0.54 | 0.0099 |
+| td_offp1 (+1 mm, trot) | 10 | −0.071 | −0.123 | 0.58 | 0.0115 |
+| tds_base (−1 mm, walk) | 16 | −0.164 | −0.227 | 0.72 | 0.0113 |
+
+**The velocity-lag hypothesis is refuted in the form it was stated.** The foot is *slower* than the
+plan over the final approach (0.54–0.72×), not faster, for every offset and both gaits. The
+swing-end-tracking sweep (raise `swingKd`/`swingWeight` so the foot follows the plan's terminal
+deceleration) is therefore *not* the next step — the foot already decelerates more than planned.
+
+But the numbers do not fit together with a foot that merely tracks the spline: 30 ms before the stop
+the foot is +0.2 mm *above* the plan (`foot_z_err_descent_mm`), it then descends ~1.6 mm less than
+the plan over the next 20 ms (0.08 m/s slower), yet it ends at the ground while the plan is still
+~0.3 mm above its endpoint. Those three facts are only compatible if the foot's deceleration begins
+*before* the detected stop — i.e. the real ground contact is earlier than the "stop" (vz ≥ −5 mm/s
+after the descent minimum) and the `approach` window straddles a soft, already-in-contact
+deceleration (`impact_vz_obs` of only −0.010 m/s at 2–4 ms before the stop says the same thing).
+The MuJoCo model gives no pre-contact force (default `margin` 0, foot = four r = 5 mm spheres,
+`solref 0.001 1.0`), so a deceleration before the geometric contact would have to come from the
+controller; a deceleration *at* contact followed by 10–20 ms of creep to vz ≈ 0 would mean the
+real earliness is larger than `early_ms` reports and the stop detector is late.
+
+`tests/tuning/touchdown_trace.py <case>` decides this without another run: it prints the median
+obs/plan height (above the foot's resting height) and vz at 5 ms steps over [−80, +20] ms around
+the detected stop, plus `decel_onset` — the height at which the measured vz first leaves the plan's
+by > 0.05 m/s. Onset at ~1–2 mm above rest = contact (geometry / detector lag); onset at 5+ mm =
+the controller slows the foot in the air; onset only after the stop = the metric window itself is
+wrong.
+
+## Follow-up 2: repeat runs
+
+The first repeat attempt (`td_off0`, `tds_off0`) produced no data: the single-case command omitted
+`WS=$HOME/Documents/GitHub/humanoid_ws`, so `run_case.sh` sourced the default container workspace,
+the launch never started and both cases ended at "no locomotion after 120 s". The sweep-1 runs
+were kept as `td_off0_r1` / `tds_off0_r1`. Repeat pending with `WS=` set.
