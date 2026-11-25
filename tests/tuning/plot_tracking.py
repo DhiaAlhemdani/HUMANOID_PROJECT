@@ -388,7 +388,26 @@ for f in FEET:
         if w.sum() < 5 or pre.sum() < 2:
             continue
         legs_f = _leg(f)
+        # Measured landing, from kinematics (G1 logs no contact sensors): the real landing speed is the
+        # most negative foot vz in the 100 ms before the planned event; the foot "stopped" at the first
+        # tick after that minimum where vz >= -5 mm/s (window [-150, +60] ms); early_ms > 0 = the
+        # robot landed before the plan said so.
+        look = np.flatnonzero((t >= t[k] - 0.15) & (t <= t[k] + TD_WIN))
+        fz_obs = _cs(f"obs_foot/{f}/z")
+        vz_obs = _cs(f"obs_foot/{f}/vz")
+        early_ms = float("nan")
+        if len(look) and np.isfinite(vz_obs[look]).all():
+            i_min = look[np.argmin(vz_obs[look])]
+            after = look[look >= i_min]
+            stopped = after[vz_obs[after] >= -5e-3]
+            if len(stopped):
+                early_ms = 1e3 * (t[k] - t[stopped[0]])
+        pre100 = (t >= t[k] - 0.10) & (t < t[k])
         ev = {"t": round(float(t[k]), 3), "foot": f,
+              "early_ms": early_ms,
+              "foot_vz_obs_min_pre": float(np.min(_cs(f"obs_foot/{f}/vz")[pre100])),
+              "foot_z_err_pre_mm": 1e3 * float(np.mean((fz_obs - _cs(f"plan_foot/{f}/z"))[pre])),
+              "base_z_err_pre_mm": 1e3 * float(np.mean((_cs("obs_base/z") - _cs("plan_base/z"))[pre])),
               "base_vz_mismatch": float(np.sqrt(np.mean((_cs("obs_base/vz") - _cs("plan_base/vz"))[w] ** 2))),
               "base_vz_drop": float(_cs("obs_base/vz")[pre].mean() - _cs("obs_base/vz")[w].min()),
               "foot_vz_obs_pre": float(np.mean(_cs(f"obs_foot/{f}/vz")[pre])),
@@ -403,6 +422,10 @@ def _tdm(key):
 diag["touchdown"] = {
     "count": len(td_events),
     "window_s": TD_WIN,
+    "early_ms": _tdm("early_ms"),                        # planned event minus measured foot stop, median [ms] (>0: landed early)
+    "foot_vz_obs_min_pre": _tdm("foot_vz_obs_min_pre"),  # real landing speed: min measured foot vz in the 100 ms before [m/s]
+    "foot_z_err_pre_mm": _tdm("foot_z_err_pre_mm"),      # obs - plan foot height 10 ms before the event
+    "base_z_err_pre_mm": _tdm("base_z_err_pre_mm"),
     "base_vz_mismatch": _tdm("base_vz_mismatch"),        # rms(obs - plan base vz) over the window, median over events [m/s]
     "base_vz_drop": _tdm("base_vz_drop"),                # measured base vz loss at impact, median [m/s]
     "foot_vz_obs_pre": _tdm("foot_vz_obs_pre"),          # measured landing speed (plan: swingTrajectory.touchDownVelocity)
