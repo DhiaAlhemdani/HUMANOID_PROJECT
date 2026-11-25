@@ -181,3 +181,9 @@ The item therefore splits:
    drops to a small fraction of the planned vz rms once the timing is right, the impulse is not
    worth 300 lines and the item closes; if a sizeable mismatch remains *with* `abs_early_ms` small,
    it is a genuine impact and the design in §1–§5 applies unchanged.
+
+Sweep-1 outcome (2026-11-25, `docs/results/touchdown_timing_sweep.md`): offset 0/+1 mm win the
+steady walk on acc_hf (0.84× / 0.75×) but fail the stops' not-worse rule on the post-touchdown vz
+mismatch; the offset accounts for only ~a third of the early landing (21 → 10 ms across −1…+1 mm)
+and the mismatch is insensitive to timing — so the residual earliness is a terminal-approach
+velocity lag, and the jump map remains deferred.

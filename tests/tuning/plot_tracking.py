@@ -395,7 +395,7 @@ for f in FEET:
         look = np.flatnonzero((t >= t[k] - 0.15) & (t <= t[k] + TD_WIN))
         fz_obs = _cs(f"obs_foot/{f}/z")
         vz_obs = _cs(f"obs_foot/{f}/vz")
-        early_ms = impact_vz = plan_vz_at_stop = z_err_descent = float("nan")
+        early_ms = impact_vz = plan_vz_at_stop = z_err_descent = approach_vz_obs = approach_vz_plan = float("nan")
         if len(look) and np.isfinite(vz_obs[look]).all():
             i_min = look[np.argmin(vz_obs[look])]
             after = look[look >= i_min]
@@ -411,6 +411,12 @@ for f in FEET:
                 # tracking during the descent, 30 ms before the stop: obs - plan foot height (< 0: foot low = lag)
                 dsc = (t >= t[i_stop] - 0.032) & (t <= t[i_stop] - 0.028)
                 z_err_descent = 1e3 * float(np.mean((fz_obs - _cs(f"plan_foot/{f}/z"))[dsc])) if dsc.any() else float("nan")
+                # final approach, [-25, -5] ms before the stop: does the foot follow the plan's terminal
+                # deceleration, or arrive faster than planned (velocity lag -> early landing)?
+                app = (t >= t[i_stop] - 0.025) & (t <= t[i_stop] - 0.005)
+                if app.any():
+                    approach_vz_obs = float(np.mean(vz_obs[app]))
+                    approach_vz_plan = float(np.mean(_cs(f"plan_foot/{f}/vz")[app]))
         # resting height of the contact frame in mid-stance vs the plan's (geometric offset if constant)
         mid = (t >= t[k] + 0.10) & (t <= t[k] + 0.20)
         ev = {"t": round(float(t[k]), 3), "foot": f,
@@ -418,6 +424,8 @@ for f in FEET:
               "impact_vz_obs": impact_vz,
               "plan_vz_at_stop": plan_vz_at_stop,
               "foot_z_err_descent_mm": z_err_descent,
+              "approach_vz_obs": approach_vz_obs,
+              "approach_vz_plan": approach_vz_plan,
               "stance_z_obs_mm": 1e3 * float(np.median(fz_obs[mid])) if mid.any() else float("nan"),
               "stance_z_plan_mm": 1e3 * float(np.median(_cs(f"plan_foot/{f}/z")[mid])) if mid.any() else float("nan"),
               "foot_z_err_pre_mm": 1e3 * float(np.mean((fz_obs - _cs(f"plan_foot/{f}/z"))[pre])),
@@ -442,6 +450,8 @@ diag["touchdown"] = {
     "impact_vz_obs": _tdm("impact_vz_obs"),              # measured foot vz just before it stopped [m/s]
     "plan_vz_at_stop": _tdm("plan_vz_at_stop"),          # planned foot vz at that instant
     "foot_z_err_descent_mm": _tdm("foot_z_err_descent_mm"),  # obs - plan foot height 30 ms before the stop
+    "approach_vz_obs": _tdm("approach_vz_obs"),          # measured vs planned foot vz over [-25, -5] ms before the stop
+    "approach_vz_plan": _tdm("approach_vz_plan"),
     "stance_z_obs_mm": _tdm("stance_z_obs_mm"),          # contact-frame height at rest (mid-stance) vs the plan's
     "stance_z_plan_mm": _tdm("stance_z_plan_mm"),
     "foot_z_err_pre_mm": _tdm("foot_z_err_pre_mm"),      # obs - plan foot height 10 ms before the event
