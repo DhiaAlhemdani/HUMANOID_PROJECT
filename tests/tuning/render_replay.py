@@ -61,7 +61,8 @@ def main():
         if jid < 0:
             missing.append(n); continue
         jmap.append((k, m.jnt_qposadr[jid]))
-    t0 = max(gt[0, 0], jt[0]) if a.start is None else t_script0 + a.start
+    # Default window: from 1 s before the script starts (the settle is not interesting) to the end.
+    t0 = max(gt[0, 0], jt[0], t_script0 - 1.0) if a.start is None else t_script0 + a.start
     t1 = min(gt[-1, 0], jt[-1]) if a.end is None else t_script0 + a.end
     frames_t = np.arange(t0, t1, a.speed / a.fps)
     print(f"{a.case}: {len(jn)} recorded joints, {len(jmap)} mapped, missing {missing or 'none'}; "
@@ -74,6 +75,9 @@ def main():
         cr, sr, cp, sp, cy, sy = np.cos(roll / 2), np.sin(roll / 2), np.cos(pitch / 2), np.sin(pitch / 2), np.cos(yaw / 2), np.sin(yaw / 2)
         return np.array([cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy])
 
+    # The model's offscreen framebuffer defaults to 640x480; size it to the frame before the context exists.
+    m.vis.global_.offwidth = max(int(m.vis.global_.offwidth), a.width)
+    m.vis.global_.offheight = max(int(m.vis.global_.offheight), a.height)
     renderer = mujoco.Renderer(m, a.height, a.width)
     cam = mujoco.MjvCamera()
     cam.type = mujoco.mjtCamera.mjCAMERA_FREE
