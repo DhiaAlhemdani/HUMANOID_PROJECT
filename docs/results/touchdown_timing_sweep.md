@@ -230,6 +230,39 @@ the swing side itself is the limit and 200 stands. Not covered by either sweep: 
 for the original reduction) — the stance gain is untouched precisely so that result is not at risk,
 but the swing gain on ramps is unmeasured.
 
+## Sweep 3: the split gain (2026-11-25)
+
+`run_touchdown_sweep3.sh`, built, `SETS="E F"`, against sweep-2's `fk_base`/`fks_base`.
+
+| case (swing / stance) | set | early_ms | landing_speed | acc_hf | pitch_tr | cmd_tau_jump | z_sd | verdict |
+|---|---|---|---|---|---|---|---|---|
+| fk_base (50/50) | E | 20 | 0.261 | 0.617 | — | 0.121 | 2.00 | — |
+| sk200 (200/50) | E | **6** | **0.192** | **0.448** | — | **0.190 ✗** (1.57×) | 2.22 | guard |
+| sk400 (400/50) | E | 4 | 0.160 | 0.427 | — | 0.124 | 2.19 | **WIN** (all 3) |
+| fks_base (50/50) | F | 18 | 0.323 | 0.989 | 0.952 | 0.11 | 7.9 | — |
+| sks200 (200/50) | F | **8** | 0.239 | 0.985 | **0.747 (0.78×)** | 0.146 | 8.6 | **WIN** (early, pitch) |
+| sks400 (400/50) | F | 6 | 0.204 | 0.999 | **1.297 (1.36×) ✗** | 0.12 | 9.7 | FAIL |
+
+- **The split reproduces the physics**: sk200 ≈ fk200 (6 vs 8 ms, 0.192 vs 0.194 m/s, 0.448 vs
+  0.455 acc_hf) — the stance gain was irrelevant to the landing, as the trace predicted.
+- **400 is out for good**: the stops' pitch regression is 1.33× with the shared gain and 1.36× with
+  the swing-only gain — it is the swing side, twice. 200 is the ceiling.
+- **sks200 wins the stops outright** (pitch transient 0.952 → 0.747) where fks200 was 0.968: that
+  pair also says the stops' pitch transient is ±15 % noisy for identical landing behaviour, so the
+  0.78× is suggestive, not established.
+- **Open: `legs.cmd_tau_jump_at_switch` 0.121 → 0.190 on sk200.** The shared-gain runs were
+  0.104 / 0.147 / 0.108 (kp 200/400/625) and sk400 0.124, so there is no gain trend; but both split
+  200 runs (0.190 walk, 0.146 stops) sit above their shared-gain twins (0.104, 0.12), two for two.
+  A mechanism exists: at a planned contact change the hard equality switches from the swing form
+  (kp 200 on the spline) to the stance form (kp 50 on the terrain height), and a policy update near
+  that instant can carry the resulting acceleration step into the torque command. The metric is a
+  mean over ~1000 policy switches, so `tests/tuning/jump_anatomy.py` splits it: outliers vs a shift,
+  and near-contact switches vs elsewhere. Decided by one repeat of `sk200` plus that anatomy —
+  noise (repeat ≤ 0.14, no near-contact excess) leaves the ship as is; a repeat near 0.19 with the
+  excess concentrated near contact changes means the split has a seam cost, and the fix is to
+  blend the swing gain to the stance value over the last ~40 ms of swing (planner side) rather than
+  to go back to the shared gain.
+
 ## Follow-up 2: repeat runs
 
 The first repeat attempt (`td_off0`, `tds_off0`) produced no data: the single-case command omitted
