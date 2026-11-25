@@ -135,5 +135,14 @@ any gate is touched.
 
 Implementation added for it: per-joint posture weights (`control.wholeBody.jointWeights`) and a
 link orientation task (`orientationLink/Kp/Kd/Weight`, world-frame `log3(R_plan Rᵀ)` error on the
-LOCAL_WORLD_ALIGNED angular rows); both inert by default (`[]`, `""`). Core test covers the generic
-task under stance constraints.
+LOCAL_WORLD_ALIGNED angular rows); both inert by default (uniform weights, `""`). Core test covers the
+generic task under stance constraints.
+
+**First sweep-2 run (invalid, harness):** 6 of 8 cases — both baselines included — never reached
+locomotion. Cause: the shipped G1 block carried `jointWeights: []`; ROS 2's YAML parameter parser
+cannot type an empty list, so the `double_array` declaration threw at load, `controller_sequence.py`
+exited 1 and the probe saw no ground truth. Only the two cases that overrode the key with a real list
+(`wb2_waist`, `wbs2_waist`) ran. Fixed by shipping the uniform default as an explicit 23×1.0 list,
+plus a contract test that rejects empty lists in any `config/*/ros2_controllers.yaml`; `run_case.sh`
+now keeps the "no locomotion" verdict and the launch's error lines in `summary.txt`. Sweep 2 is re-run
+in full (the two surviving cases are kept for consistency checks only).

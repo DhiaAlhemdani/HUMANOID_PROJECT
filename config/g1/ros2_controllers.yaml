@@ -267,7 +267,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         jointKp: 100.0
         jointKd: 20.0
         jointWeight: 1.0
-        jointWeights: []
+        # ROS 2's YAML parameter parser cannot type an empty list, so the uniform default is spelled out
+        # (23 entries, robot.jointNames order; the controller rejects any other length).
+        jointWeights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
         orientationLink: ""
         orientationKp: [100.0, 100.0, 25.0]
         orientationKd: [20.0, 20.0, 10.0]

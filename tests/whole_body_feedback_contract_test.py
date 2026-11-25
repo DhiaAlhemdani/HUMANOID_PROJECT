@@ -29,8 +29,13 @@ class WholeBodyFeedbackContract(unittest.TestCase):
         self.assertFalse(block["enabled"])
         self.assertFalse(schema["enabled"]["default_value"])
         self.assertEqual(set(block), set(schema), "G1 block must carry every schema key (make_config edits in place)")
+        names = g1[CTRL]["ros__parameters"]["robot"]["jointNames"]
         for key, spec in schema.items():
             if key == "enabled":
+                continue
+            if key == "jointWeights":
+                # Schema default [] (= uniform) cannot be written in a ROS parameter file (see test below).
+                self.assertEqual(block[key], [1.0] * len(names))
                 continue
             self.assertEqual(block[key], spec["default_value"], f"{key}: shipped value differs from the schema default")
         for key in ("baseKp", "baseKd", "baseWeight"):
@@ -39,6 +44,18 @@ class WholeBodyFeedbackContract(unittest.TestCase):
             self.assertEqual(len(block[key]), 3)
         # Horizontal base position is left to the MPC (no fight with its footholds / velocity tracking).
         self.assertEqual(block["baseKp"][:2], [0.0, 0.0])
+
+    def test_no_empty_lists_in_controller_configs(self):
+        # rcl_yaml_param_parser cannot assign a type to `[]`; declaring such a key as double_array makes the
+        # controller fail to load (controller_sequence.py exit 1, no locomotion) -- this cost WBC sweep 2 6/8 cases.
+        def walk(node, path):
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    walk(v, path + [str(k)])
+            elif isinstance(node, list):
+                self.assertTrue(node, f"empty list at {'.'.join(path)}")
+        for cfg in sorted(ROOT.glob("config/*/ros2_controllers.yaml")):
+            walk(yaml.safe_load(cfg.read_text()), [cfg.parent.name])
 
     def test_h2_untouched(self):
         h2 = yaml.safe_load((ROOT / "config/h2/ros2_controllers.yaml").read_text())
