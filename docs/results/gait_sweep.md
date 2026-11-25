@@ -1,6 +1,6 @@
 # Gait sweep: double support against the contact-switch torque step
 
-Status: **planned, not yet run** (2026-11-25). Script `tests/tuning/run_gait_sweep.sh`.
+Status: **run 2026-11-25, 0/4 walk + 0/2 stops — double support rejected; the plan does not use it to spread the load.** Script `tests/tuning/run_gait_sweep.sh`.
 
 ## Why
 
@@ -41,4 +41,42 @@ stops guards of sweep 4.
 
 ## Results
 
-_(to be filled from `tuning_results/gait_sweep_report.txt`)_
+Set I, 0.5 m/s (the compare_ab scoring step crashed on a `--show` of a top-level key — fixed — so
+the table is from the per-case SUMMARY/DIAG lines; no candidate is within any gate):
+
+| case | gait run | vx | acc_hf | z_sd mm | roll° | leg meas_tau_hf | landing early ms | contact changes /s | plan τ step / change (max) | cmd jump@switch |
+|---|---|---|---|---|---|---|---|---|---|---|
+| gw_base | trot | 0.458 | **0.48** | **2.2** | 0.27 | **4.19** | 9 | 2.0 | 18.1 (74) | 0.092 |
+| gw_walk | walk 0.3+0.1 | 0.441 | 1.73 | 5.3 | 0.34 | 5.80 | 18 | 5.0 | 12.2 (65) | 0.150 |
+| gw_walk41 | walk 0.4+0.1 | 0.437 | 1.71 | 7.8 | 0.48 | 5.49 | 12 | 4.0 | 12.5 (71) | 0.117 |
+| gw_walk3515 | walk 0.35+0.15 | 0.424 | 1.28 | 8.4 | 0.52 | 6.13 | 16 | 4.0 | 13.9 (75) | 0.126 |
+
+Set J, stops: `gws_walk` / `gws_walk41` fail every primary (pitch transient 0.84 → 1.21 / 1.23°,
+roll 0.52 → 0.77 / 1.09°, acc_hf 1.04 → 1.44 / 1.28) and the landing-speed guard (0.26 → 0.48 /
+0.32 m/s).
+
+**Reading.**
+
+1. **The double support is not used to transfer the load.** The per-event step in `plan_tau`
+   drops only from 18 to 12–14 Nm leg-mean — and there are twice as many events (touchdown into
+   STANCE and lift-off out of it are now separate), so the total stepping per second goes *up*
+   (36 → 50–61 Nm/s). The largest-jump trace of `gw_walk41` shows it directly: left hip pitch
+   −23 → +20 Nm in one tick at touchdown into double support (mode 1 → 3), with 100 ms of double
+   support ahead in which the weight could have moved gradually. The plan has no reason to: nothing
+   in the cost charges for a force or torque *rate*, so an instantaneous transfer is free and the
+   solver takes it. The contact-switch step is a property of the formulation (instantaneous contact
+   activation + no rate penalty), not of the gait.
+2. **The walk template is much rougher than the trot at this speed**, independent of the step:
+   acc_hf ×2.7–3.6, pelvis z sd 2.2 → 5–8 mm, roll ×1.3–1.9, leg torque HF +31–46 %, speed −4–7 %.
+   The trot's 0.5 s supports at 0.5 m/s are a near-passive pendulum (2.D's finding); shortening
+   the swing to the same step length raises the swing-foot speed (landing 0.26 → 0.32–0.48 m/s in
+   the stops set) and the STANCE phases add a vertical bounce the trot does not have.
+3. **The cmd_tau_jump definition fix holds**: `gw_base` 0.092 with 2 policy swaps on a
+   contact-change tick excluded; the anatomy's "excluding" mean 0.092, max 0.82 Nm — no 20 Nm
+   events left in the metric.
+
+**Decision: trot stays at 0.5 m/s; gait bands unchanged.** The only remaining lever on the
+contact-switch torque step is the one the roadmap has as 2.E — a rate penalty on the contact forces,
+i.e. forces as states and their rates as inputs — and this sweep is the evidence that nothing
+cheaper reaches it: timing (2.C), gait (here), load-share cost in DS (1.3) and fades (2.B) have all
+been tried.

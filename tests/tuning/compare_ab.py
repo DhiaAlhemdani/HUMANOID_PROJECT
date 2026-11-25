@@ -59,6 +59,8 @@ def load(d: Path) -> tuple[dict | None, str | None]:
             for k, v in body.items():
                 if not isinstance(v, (dict, list)):
                     flat[f"{section}.{k}"] = v
+        elif not isinstance(body, list):
+            flat[section] = body  # top-level scalars (policy_switch_hz, contact_changes_per_s)
     return flat, None
 
 
@@ -139,9 +141,9 @@ def main(argv: list[str]) -> int:
         return 2
     cols = [p[0] for p in primaries] + [s for s in args.show if s not in {p[0] for p in primaries}]
     print(f"baseline: {args.baseline}")
-    print("  " + " | ".join(f"{c.split('.', 1)[1]} {base.get(c)}" for c in cols) +
+    print("  " + " | ".join(f"{c.split('.', 1)[-1]} {base.get(c)}" for c in cols) +
           f" | acc_hf {base.get('walk.pelvis_acc_hf')} | vx {base.get('walk.vx_mean')} | solve {base.get('solver.solve_hz')} Hz\n")
-    short = [c.split(".", 1)[1][:8] for c in cols]
+    short = [c.split(".", 1)[-1][:8] for c in cols]
     hdr = f"{'candidate':14s} " + " ".join(f"{s:>8s}" for s in short) + f" {'acc_hf':>8s} {'vx':>8s}  verdict"
     print(hdr)
     print("-" * len(hdr))
@@ -157,7 +159,7 @@ def main(argv: list[str]) -> int:
         detail.append((name, rows))
         if wins:
             winners.append(name)
-        verdict = ("WINNER (" + ", ".join(p.split(".", 1)[1] for p in improved) + ")") if wins else (
+        verdict = ("WINNER (" + ", ".join(p.split(".", 1)[-1] for p in improved) + ")") if wins else (
             "no gain" if all(r[1] for r in rows if not r[0].startswith("primary")) and not improved else "guards-fail")
         print(f"{name:14s} " + " ".join(fmt(cand.get(c)) for c in cols) +
               f" {fmt(cand.get('walk.pelvis_acc_hf'))} {fmt(cand.get('walk.vx_mean'))}  {verdict}")
