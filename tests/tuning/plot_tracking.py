@@ -396,6 +396,7 @@ for f in FEET:
         fz_obs = _cs(f"obs_foot/{f}/z")
         vz_obs = _cs(f"obs_foot/{f}/vz")
         early_ms = impact_vz = plan_vz_at_stop = z_err_descent = approach_vz_obs = approach_vz_plan = float("nan")
+        i_impact = None
         if len(look) and np.isfinite(vz_obs[look]).all():
             i_min = look[np.argmin(vz_obs[look])]
             after = look[look >= i_min]
@@ -417,10 +418,23 @@ for f in FEET:
                 if app.any():
                     approach_vz_obs = float(np.mean(vz_obs[app]))
                     approach_vz_plan = float(np.mean(_cs(f"plan_foot/{f}/vz")[app]))
+                # Real landing speed (touchdown_trace.py): the foot tracks the plan to within 0.2 mm until
+                # the ground starts stopping it ~1.5 mm above its rest height, then creeps to vz 0 over
+                # ~20 ms, so the speed just before the "stop" is the creep. Model-free alternative: the
+                # measured descent speed where the foot passes 2 mm above its mid-stance rest height
+                # (the last downward crossing before the stop); plan: swingTrajectory.touchDownVelocity.
+                mid = (t >= t[k] + 0.10) & (t <= t[k] + 0.20)
+                rest = float(np.median(fz_obs[mid])) if mid.any() else float("nan")
+                hz = fz_obs - rest - 0.002
+                cross = [j for j in look if j < i_stop and j > 0 and hz[j - 1] > 0 >= hz[j]]
+                if cross and np.isfinite(rest):
+                    i_impact = cross[-1]
         # resting height of the contact frame in mid-stance vs the plan's (geometric offset if constant)
         mid = (t >= t[k] + 0.10) & (t <= t[k] + 0.20)
         ev = {"t": round(float(t[k]), 3), "foot": f,
               "early_ms": early_ms,
+              "landing_speed": float(-vz_obs[i_impact]) if i_impact is not None else float("nan"),
+              "impact_early_ms": 1e3 * float(t[k] - t[i_impact]) if i_impact is not None else float("nan"),
               "impact_vz_obs": impact_vz,
               "plan_vz_at_stop": plan_vz_at_stop,
               "foot_z_err_descent_mm": z_err_descent,
@@ -447,7 +461,9 @@ diag["touchdown"] = {
     "early_ms": _tdm("early_ms"),                        # planned event minus measured foot stop, median [ms] (>0: landed early)
     "abs_early_ms": (round(float(np.median([abs(ev["early_ms"]) for ev in td_events if np.isfinite(ev["early_ms"])])), 1)
                      if any(np.isfinite(ev["early_ms"]) for ev in td_events) else None),  # scorable: late must not pass as fixed
-    "impact_vz_obs": _tdm("impact_vz_obs"),              # measured foot vz just before it stopped [m/s]
+    "landing_speed": _tdm("landing_speed"),              # measured descent speed 2 mm above the foot's rest height [m/s, > 0]
+    "impact_early_ms": _tdm("impact_early_ms"),          # planned event minus that 2 mm crossing [ms] (> early_ms by the creep)
+    "impact_vz_obs": _tdm("impact_vz_obs"),              # measured foot vz just before it stopped [m/s] (creep; superseded)
     "plan_vz_at_stop": _tdm("plan_vz_at_stop"),          # planned foot vz at that instant
     "foot_z_err_descent_mm": _tdm("foot_z_err_descent_mm"),  # obs - plan foot height 30 ms before the stop
     "approach_vz_obs": _tdm("approach_vz_obs"),          # measured vs planned foot vz over [-25, -5] ms before the stop

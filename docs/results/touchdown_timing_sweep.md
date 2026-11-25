@@ -111,6 +111,70 @@ by > 0.05 m/s. Onset at ~1–2 mm above rest = contact (geometry / detector lag)
 the controller slows the foot in the air; onset only after the stop = the metric window itself is
 wrong.
 
+### Trace result: the plan, not the foot, reaches the ground early
+
+`touchdown_trace.py` on `td_base` (34 touchdowns, medians, heights above the foot's mid-stance
+rest height, times relative to the measured stop; `t_e` = stop + 21 ms):
+
+| ms | obs z | plan z | obs vz | plan vz |
+|---|---|---|---|---|
+| −80 | 26.9 | 26.8 | −0.618 | −0.635 |
+| −40 | 6.3 | 6.2 | −0.410 | −0.404 |
+| −30 | 2.8 | 2.6 | −0.342 | −0.325 |
+| −25 | 1.8 | 1.3 | −0.242 | −0.284 |
+| −20 | 1.1 | **0.1** | −0.164 | −0.243 |
+| −10 | 0.4 | −1.8 | −0.075 | −0.167 |
+| 0 | 0.3 | **−2.2** | 0.000 | −0.087 |
+| +20 (≈ t_e) | 0.9 | −0.2 | 0.033 | −0.019 |
+
+`decel_onset` 22 ms before the stop at 1.5 mm above rest (p25/p75 1.1/1.7; 31/34 events).
+`td_offp1`: onset 23 ms, 1.5 mm; `tds_base` (walk): onset 16 ms, 0.6 mm (0.3/1.4).
+
+Reading, in order of certainty:
+
+1. **Tracking is not the problem.** Measured and planned foot height agree to ≤ 0.2 mm and vz to
+   ≤ 0.02 m/s from 27 mm all the way down to 2.6 mm (−30 ms). The WBC/servo layer does what the
+   plan says; the swing-end gain sweep is off the table.
+2. **The ground stops the foot, 1.5 mm above its rest height, while the plan keeps going.** From
+   −25 ms the measured vz collapses (−0.34 → 0 over 20 ms: the contact compliance of four r = 5 mm
+   spheres), while the plan passes 0 mm at −20 ms at −0.24 m/s and continues to **−2.2 mm below
+   the foot's rest height** at the stop, 21 ms before its own contact event. The real landing speed
+   is therefore ≈ 0.3 m/s (the plan's speed at 2–3 mm), not the planned 0.05 m/s and not the
+   0.010 m/s the old `impact_vz_obs` reported (that was the creep). `approach_vz_obs/plan` was
+   measuring the same creep: superseded.
+3. **The plan's descent runs ahead of the reference spline it is supposed to follow.** The MPC
+   foot plan (`plan_foot` = kinematics of the planned state) is still at −0.24 m/s when it crosses
+   the ground 41 ms before `t_e`; a quintic ending at `t_e` with `touchDownVelocity` −0.05 is at
+   +3 to +5 mm at that instant (fitting the observed velocities at 27 mm and 6 mm to the planner's
+   `MinimumJerkSplineCpg` gives a half-swing of ~0.2 s). Position leads the spline by ~25 ms /
+   2–5 mm while velocity leads by ~10 ms — a *sag*, not a time shift. After the stop the plan jumps
+   back up (−2.2 → −0.2 mm with plan vz still negative): each re-solve restarts from the measured,
+   now stationary, foot.
+
+Mechanism (hypothesis, testable by config): the swing foot follows its spline through the hard
+acceleration equality `a_z = a_ref − kd (v − v_ref) − kp (z − z_ref)`
+(`constraints.footMotionEquality`, kp = kd = 50). Its error dynamics have poles at −1 and
+−49 rad/s: velocity errors die in 20 ms, **height errors decay with a 1 s time constant** — never
+within a 0.2 s descent. The MPC's accelerations are zero-order-held over 20 ms nodes; on a
+decelerating spline the node-start acceleration under-decelerates, each step leaves the plan a
+fraction of a millimetre low, and nothing pulls it back. The −1 mm offset explained a third of the
+earliness because it is one more millimetre of the same sag. The −2.2 mm the plan reaches is
+what the plan would dig into the ground if the ground were not there.
+
+## Sweep 2 (planned): `footMotionEquality.positionErrorGain_z`
+
+`tests/tuning/run_touchdown_sweep2.sh`: `fk_base` (50) / `fk200` / `fk400` / `fk625` (critical
+damping with kd 50), set C = vx 0.5, set D = stops with 200 and 400. Primaries
+`touchdown.abs_early_ms` ≤ 0.5×, **`touchdown.landing_speed`** ≤ 0.7× (new: measured descent
+speed at 2 mm above the rest height, model-free; `impact_early_ms` is the 2 mm crossing vs `t_e`),
+`walk.pelvis_acc_hf` ≤ 0.92×; guards sweep-1 set A + `meas_tau_hf`/`tau_sat` not-worse (the gain
+also scales the stance height correction — shared parameter — covered by the stance z guards).
+Prediction if the mechanism is right: early_ms 21 → ≤ 8, landing speed 0.3 → ≤ 0.15 m/s at kp 400,
+and the plan trace no longer dives below 0 before the stop. If kp 400/625 move neither, the sag
+is not feedback-limited and the next step is the C++ diagnostic (log `z_ref`/`vz_ref` from the
+swing planner next to `plan_foot` — MPC-thread side, the planner's trajectories are rebuilt there)
+before any further tuning.
+
 ## Follow-up 2: repeat runs
 
 The first repeat attempt (`td_off0`, `tds_off0`) produced no data: the single-case command omitted

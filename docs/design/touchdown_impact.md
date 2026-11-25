@@ -187,3 +187,13 @@ steady walk on acc_hf (0.84× / 0.75×) but fail the stops' not-worse rule on th
 mismatch; the offset accounts for only ~a third of the early landing (21 → 10 ms across −1…+1 mm)
 and the mismatch is insensitive to timing — so the residual earliness is a terminal-approach
 velocity lag, and the jump map remains deferred.
+Correction after the trace (`tests/tuning/touchdown_trace.py`, same recordings): there is no
+tracking lag — the robot follows the MPC's foot plan to ≤ 0.2 mm down to 2.6 mm above the ground.
+The *plan itself* crosses the ground 41 ms before its contact event at 0.24 m/s and continues to
+−2.2 mm (it would dig in if the ground were not there); the ground stops the foot early, at
+≈ 0.3 m/s instead of the planned 0.05 m/s. Candidate mechanism: the swing-foot acceleration
+equality `a_z = a_ref − kd (v − v_ref) − kp (z − z_ref)` (`constraints.footMotionEquality`,
+kp = kd = 50) has error poles −1 / −49 rad/s, so a height sag accumulated from zero-order-held
+node accelerations on a decelerating spline is never corrected within a swing. 2.C-timing sweep 2
+(`run_touchdown_sweep2.sh`, kp 200/400/625) tests it; a real impact model only becomes relevant
+once the plan and the ground agree on where the foot lands.

@@ -90,6 +90,7 @@ def trace(P):
         # deceleration onset: last grid time before the stop where |obs - plan| vz <= 0.05 m/s,
         # scanning backwards from the stop (so it is the start of the final departure, not a blip)
         dv = np.abs(g["obs_vz"] - g["plan_vz"])
+        dv = np.convolve(dv, np.ones(10) / 10, mode="full")[9:9 + len(dv)]  # mean over the following 10 ms
         pre = GRID_MS <= 0
         bad = dv > 0.05
         j = None
