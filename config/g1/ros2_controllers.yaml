@@ -497,7 +497,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           # Hard equalities, not cost weights or inequalities.
           # Stance: keep the foot still and correct height/tilt.
           # Swing: follow the vertical foot path.
-          positionErrorGain_z: 50.0              # Height correction; lower gains give slower correction.
+          positionErrorGain_z: 50.0              # Stance height correction; lower gains give slower correction (ramps).
+          swingPositionErrorGain_z: 200.0        # Swing height tracking: 50 lands 20 ms early at 0.26 m/s (plan sags
+                                                 # below its spline, -1 rad/s pole); 200 -> 8 ms / 0.19 m/s, acc_hf -26 %
+                                                 # (docs/results/touchdown_timing_sweep.md sweep 2/3). Stance stays 50.
           orientationErrorGain: 100.0            # Tilt correction; lower gains avoid fighting shallow inclines.
           linearVelocityErrorGain_z: 50.0        # Vertical speed damping.
           linearVelocityErrorGain_xy: 50.0       # Horizontal speed damping in stance.

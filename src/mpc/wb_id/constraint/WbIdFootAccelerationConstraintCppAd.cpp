@@ -69,7 +69,8 @@ vector_t WbIdFootAccelerationConstraintCppAd::getParameters(scalar_t time, const
   parameters << swing.getZpositionConstraint(contactIndex_, time),  //
       swing.getZvelocityConstraint(contactIndex_, time),            //
       swing.getZaccelerationConstraint(contactIndex_, time),        //
-      gains_.positionZ, gains_.orientation,                         //
+      (type_ == Type::SwingVertical && gains_.swingPositionZ >= 0.0) ? gains_.swingPositionZ : gains_.positionZ,
+      gains_.orientation,                                           //
       gains_.linearVelocityXY, gains_.linearVelocityZ, gains_.angularVelocity,  //
       gains_.linearAccelerationXY, gains_.linearAccelerationZ, gains_.angularAcceleration,
       referenceManagerPtr_->getContactNormal(contactIndex_, time);

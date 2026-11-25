@@ -82,6 +82,7 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
 
   auto& foot = model.footConstraintConfig;
   foot.positionErrorGain_z = p.constraints.footMotionEquality.positionErrorGain_z;
+  foot.swingPositionErrorGain_z = p.constraints.footMotionEquality.swingPositionErrorGain_z;
   foot.orientationErrorGain = p.constraints.footMotionEquality.orientationErrorGain;
   foot.linearVelocityErrorGain_z = p.constraints.footMotionEquality.linearVelocityErrorGain_z;
   foot.linearVelocityErrorGain_xy = p.constraints.footMotionEquality.linearVelocityErrorGain_xy;
@@ -158,6 +159,7 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   // Acceleration-level stance/swing constraints in generalized coordinates.
   auto& gains = config.footAccelerationGains;
   gains.positionZ = foot.positionErrorGain_z;
+  gains.swingPositionZ = foot.swingPositionErrorGain_z;
   gains.orientation = foot.orientationErrorGain;
   gains.linearVelocityXY = foot.linearVelocityErrorGain_xy;
   gains.linearVelocityZ = foot.linearVelocityErrorGain_z;

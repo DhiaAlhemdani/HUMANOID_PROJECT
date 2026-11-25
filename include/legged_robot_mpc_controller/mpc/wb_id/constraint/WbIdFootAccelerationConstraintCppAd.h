@@ -39,7 +39,8 @@ class WbIdFootAccelerationConstraintCppAd final : public StateInputConstraintCpp
   enum class Type { Stance, SwingVertical };
 
   struct Gains {
-    scalar_t positionZ{0.0};       // Kp on the foot height
+    scalar_t positionZ{0.0};       // Kp on the foot height (stance; swing when swingPositionZ < 0)
+    scalar_t swingPositionZ{-1.0}; // Kp on the swing foot height vs its reference spline; < 0 = positionZ
     scalar_t orientation{0.0};     // Kp on the sole tilt
     scalar_t linearVelocityXY{0.0};
     scalar_t linearVelocityZ{0.0};

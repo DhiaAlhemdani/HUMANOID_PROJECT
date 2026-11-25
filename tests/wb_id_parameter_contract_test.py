@@ -93,7 +93,7 @@ def main():
     foot = params["ocs2"]["constraints"]["footMotionEquality"]
     foot_schema = schema["ocs2"]["constraints"]["footMotionEquality"]
     foot_gains = {
-        "positionErrorGain_z", "orientationErrorGain", "linearVelocityErrorGain_z",
+        "positionErrorGain_z", "swingPositionErrorGain_z", "orientationErrorGain", "linearVelocityErrorGain_z",
         "linearVelocityErrorGain_xy", "angularVelocityErrorGain",
         "linearAccelerationErrorGain_z", "linearAccelerationErrorGain_xy", "angularAccelerationErrorGain",
     }

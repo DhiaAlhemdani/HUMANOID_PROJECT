@@ -161,19 +161,74 @@ fraction of a millimetre low, and nothing pulls it back. The −1 mm offset expl
 earliness because it is one more millimetre of the same sag. The −2.2 mm the plan reaches is
 what the plan would dig into the ground if the ground were not there.
 
-## Sweep 2 (planned): `footMotionEquality.positionErrorGain_z`
+## Sweep 2: `footMotionEquality.positionErrorGain_z` 50 → 200 / 400 / 625 (2026-11-25)
 
-`tests/tuning/run_touchdown_sweep2.sh`: `fk_base` (50) / `fk200` / `fk400` / `fk625` (critical
-damping with kd 50), set C = vx 0.5, set D = stops with 200 and 400. Primaries
-`touchdown.abs_early_ms` ≤ 0.5×, **`touchdown.landing_speed`** ≤ 0.7× (new: measured descent
-speed at 2 mm above the rest height, model-free; `impact_early_ms` is the 2 mm crossing vs `t_e`),
-`walk.pelvis_acc_hf` ≤ 0.92×; guards sweep-1 set A + `meas_tau_hf`/`tau_sat` not-worse (the gain
-also scales the stance height correction — shared parameter — covered by the stance z guards).
-Prediction if the mechanism is right: early_ms 21 → ≤ 8, landing speed 0.3 → ≤ 0.15 m/s at kp 400,
-and the plan trace no longer dives below 0 before the stop. If kp 400/625 move neither, the sag
-is not feedback-limited and the next step is the C++ diagnostic (log `z_ref`/`vz_ref` from the
-swing planner next to `plan_foot` — MPC-thread side, the planner's trajectories are rebuilt there)
-before any further tuning.
+`tests/tuning/run_touchdown_sweep2.sh`, `SKIP_BUILD=1 SETS="C D"`, shipped controller otherwise.
+New primary **`touchdown.landing_speed`** = measured descent speed 2 mm above the foot's rest height
+(model-free); `impact_early_ms` = that crossing vs `t_e`. Baseline with the new metric: the foot
+passes 2 mm **46–47 ms** before the planned event at **0.25–0.26 m/s** (5× `touchDownVelocity`).
+
+**Set C — vx 0.5 (trot).** Primaries abs_early_ms ≤ 0.5×, landing_speed ≤ 0.7×, acc_hf ≤ 0.92×.
+
+| case | early_ms | impact_early | landing_speed | acc_hf | meas_tau_hf | cmd_tau_jump | z_sd | solve Hz | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| fk_base (50) | 20 | 47 | 0.261 | 0.617 | 4.092 | 0.121 | 2.00 | 66.6 | — |
+| fk200 | **8** | 36 | 0.194 (0.74×) | **0.455 (0.74×)** | 3.940 | 0.104 | | 66.1 | **WIN** (early, acc_hf) |
+| fk400 | **6** | 34 | 0.187 (0.72×) | **0.425 (0.69×)** | 4.027 | 0.147 | | 64.7 | **WIN** (early, acc_hf) |
+| fk625 | 4 (p25 −12) | 32 | 0.195 | 0.415 | 4.009 | 0.108 | 2.61 ✗ | 64.5 | guard: z_sd 1.30× |
+
+Traces: `decel_onset` 27 ms / 2.1 mm above rest for the base (27/34 events); 20 ms / 1.5 mm at kp 200
+(2/34); **none at 400 and 625** — measured and planned vz agree to within 0.05 m/s all the way to the
+stop; the plan no longer dives below the ground. At 625 a quarter of the landings are *late*
+(p25 −12 ms) and the base z sd grows 30 %: the slow pole is gone and the stiff correction starts to
+show in the base.
+
+**Set D — stops (walk gait).** + transient pitch/roll ≤ 0.85×; not-worse 1.1× on all primaries.
+
+| case | early_ms | impact_early | landing_speed | pitch_tr | roll_tr | acc_hf | z_pp | z_sd | verdict |
+|---|---|---|---|---|---|---|---|---|---|
+| fks_base | 18 | 44 | 0.323 | 0.952 | 1.004 | 0.989 | 30.4 | 7.9 | — |
+| fks200 | 9 (0.5×) | 33 | 0.251 (0.78×) | 0.968 (1.02×) | 0.931 | 0.948 | 32.4 | 8.5 | no gain, **nothing worse** |
+| fks400 | 8 | 31 | 0.214 (0.66×) | **1.267 (1.33×) ✗** | 0.832 | 1.037 | 34.9 | 9.7 | FAIL |
+
+**Mechanism confirmed.** kp alone moves the landing from 20 ms early at 0.26 m/s to 8 / 6 / 4 ms at
+0.19 m/s, monotonically, and removes the plan's dive. The remaining 0.19 m/s at 2 mm is the
+*reference spline's own* speed there (a quintic ending at −0.05 m/s is at ≈ 0.2 m/s 2–3 mm up):
+kp puts the foot back on the spline; anything below 0.19 is the spline's terminal shape
+(`touchDownVelocity`, swing duration), a different lever. `impact_early_ms` 32–36 at kp ≥ 200 is
+likewise the spline's own 2 mm crossing (≈ 30 ms before `t_e`), not residual earliness.
+
+**Costs appear at 400 in the stops** (pitch transient 1.33×, base z sd +23 %, `base_vz_mismatch`
+0.020) and at 625 in the walk (z sd 1.30×). The parameter is shared with the **stance** height
+correction, which was deliberately lowered 250 → 50 earlier for ramp ascent / stopping
+(`docs/humanoid_whole_body_inverse_dynamics_mpc.md` §9.2 #1: "aggressive correction toward the
+assumed flat height"). The touchdown effect is entirely the *swing* equality; the stops/ramp cost
+is plausibly the stance one. Shipping 200 on the shared gain would quietly reverse most of that
+earlier decision on a benchmark (flat ground) that cannot see its downside.
+
+**`base_vz_mismatch` is noise at the level sweep 1 gated on.** Same-config repeats: trot 0.0106
+(td_base) vs 0.013 (fk_base) = 23 % apart; walk 0.0113 (tds_base) vs 0.0165 (fks_base) = 46 %
+apart. Sweep 1's set-B failure of `off0` at 1.26× was within that band — the offset verdict is
+reopened, but moot if the gain fix lands (it addresses the cause the offset was papering over).
+The metric stays show-only.
+
+## Decision: split the gain, ship the swing side
+
+C++ (`56207ca`→this commit): `constraints.footMotionEquality.swingPositionErrorGain_z` (new; < 0 =
+fall back to `positionErrorGain_z`, so h2/upkie and old configs are unchanged) feeds the swing
+vertical acceleration equality's kp; `positionErrorGain_z` keeps the stance one. **g1 ships
+`swingPositionErrorGain_z: 200.0`, `positionErrorGain_z: 50.0`.** 200 not 400: the stops are
+not-worse at 200 on every primary (1.02× pitch) and the walk gain from 200 → 400 is 0.455 → 0.425
+acc_hf (−7 %, inside run-to-run spread) against a 1.33× stops pitch regression whose split
+between the swing and stance sides is unknown until sweep 3.
+
+**Sweep 3 (`run_touchdown_sweep3.sh`, needs a build):** `sk200` (= shipped) and `sk400` (swing 400 /
+stance 50) against sweep-2's `fk_base`/`fks_base`. Expected: `sk200` reproduces `fk200` within
+noise (stance gain was irrelevant on flat ground); if `sks400` is clean where `fks400` failed, the
+stops regression was the stance side and 400 becomes a candidate; if `sks400` fails the same way,
+the swing side itself is the limit and 200 stands. Not covered by either sweep: ramps (the reason
+for the original reduction) — the stance gain is untouched precisely so that result is not at risk,
+but the swing gain on ramps is unmeasured.
 
 ## Follow-up 2: repeat runs
 

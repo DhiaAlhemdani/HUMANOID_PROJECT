@@ -197,3 +197,12 @@ kp = kd = 50) has error poles −1 / −49 rad/s, so a height sag accumulated fr
 node accelerations on a decelerating spline is never corrected within a swing. 2.C-timing sweep 2
 (`run_touchdown_sweep2.sh`, kp 200/400/625) tests it; a real impact model only becomes relevant
 once the plan and the ground agree on where the foot lands.
+
+Sweep 2 confirmed the mechanism (kp 200/400/625: landing 8/6/4 ms early at 0.19 m/s, acc_hf −26 to
+−33 %, no more dive; 400 regresses the stops through the shared stance gain). Shipped as a new
+swing-only `swingPositionErrorGain_z: 200` with the stance gain untouched (sweep 3 confirms the
+split). What remains at touchdown is the reference spline's own terminal speed (≈ 0.19 m/s at
+2 mm, i.e. `touchDownVelocity` and the swing duration), which is a planner lever, not an impact
+model: §1–§5 stay deferred until a run shows a sizeable post-touchdown mismatch with the landing on
+time — and `base_vz_mismatch` itself needs a less noisy replacement first (23–46 % between
+same-config runs).

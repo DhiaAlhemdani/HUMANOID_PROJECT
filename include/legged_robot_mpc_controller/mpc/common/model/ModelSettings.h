@@ -44,6 +44,7 @@ class ModelSettings {
  public:
   struct FootConstraintConfig {
     scalar_t positionErrorGain_z{1.0};
+    scalar_t swingPositionErrorGain_z{-1.0};  // < 0: positionErrorGain_z
     scalar_t orientationErrorGain{1.0};
     scalar_t linearVelocityErrorGain_z{1.0};
     scalar_t linearVelocityErrorGain_xy{1.0};

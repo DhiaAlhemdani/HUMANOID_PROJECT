@@ -358,7 +358,11 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
       footMotionEquality:
         activate: {type: bool, default_value: true, description: "Enable stance and swing foot acceleration equalities; disable only for diagnostic ablation"}
         positionErrorGain_z: {type: double, default_value: 0.5, description: "Stance foot vertical position error
-            feedback gain"}
+            feedback gain (also the swing foot's when swingPositionErrorGain_z < 0)"}
+        swingPositionErrorGain_z: {type: double, default_value: -1.0, description: "Swing foot height error feedback
+            gain in the swing vertical acceleration equality a_z = a_ref - kd (v - v_ref) - kp (z - z_ref); with
+            kd 50 a kp of 50 leaves a height-error pole at -1 rad/s (the plan's descent sags below its spline and
+            lands early and hard), 200 moves it to -4.4 rad/s; < 0 = use positionErrorGain_z"}
         orientationErrorGain: {type: double, default_value: 20.0, description: "Stance foot orientation error feedback
             gain"}
         linearVelocityErrorGain_z: {type: double, default_value: 1.0, description: "Stance foot vertical linear
