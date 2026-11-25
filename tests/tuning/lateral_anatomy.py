@@ -99,7 +99,8 @@ def one(P):
     print(f"    cost of not swaying: stance ankle-roll tau rms {np.nanmean([np.mean(b) for b in bins['ank'] if b]):.2f} Nm, "
           f"hip-roll {np.nanmean([np.mean(b) for b in bins['hip'] if b]):.2f} Nm | roll rms {np.degrees(np.nanstd(c('obs_base/roll')[w])):.2f} deg, "
           f"roll-rate rms {np.degrees(np.sqrt(np.nanmean(c('obs_base/droll')[w] ** 2))):.1f} deg/s | "
-          f"lateral acc hf {band_t(t[w], vy_obs[w]):.3f} (vertical {band_t(t[w], c('obs_base/vz')[w]):.3f})")
+          f"lateral acc hf {band_t(t[w][1:], np.diff(vy_obs[w]) / np.maximum(np.diff(t[w]), 1e-6)):.3f} "
+          f"(vertical {band_t(t[w][1:], np.diff(c('obs_base/vz')[w]) / np.maximum(np.diff(t[w]), 1e-6)):.3f})")
     print("    phase  vy away [m/s]  y vs foot [m]  roll [deg]  ankle-roll [Nm]  hip-roll [Nm]")
     for k in range(NBIN):
         g = lambda key: np.mean(bins[key][k]) if bins[key][k] else np.nan

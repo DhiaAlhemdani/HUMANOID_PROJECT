@@ -1,6 +1,6 @@
 # Phase 2.D — lateral (DCM / LIPM) pelvis reference
 
-Status: **recon done, measurement step pending** (2026-11-25). Roadmap Phase 2 #5. Aimed at the two
+Status: **CLOSED without code — outcome 1 of §1** (2026-11-25, see §4). Roadmap Phase 2 #5. Aimed at the two
 numbers nothing has moved cleanly: steady-walk roll and the start/stop roll–pitch transient
 (2.A capture-point footholds lost on both; `docs/results/capture_point_sweep.md`).
 
@@ -62,3 +62,35 @@ Primaries (any one, others not-worse by the standard guards): walk `roll_rms_deg
 ankle-roll torque RMS ≤ 0.85×, stops `transient_roll_max` ≤ 0.85×. Guards: standard set
 (`acc_hf` ≤ 1.10×, `z_sd`, `q_track`, `vx`, `solve_hz`, falls disqualify) plus `vy_mean` drift
 ≤ 0.02 m/s (a lateral reference must not walk the robot sideways).
+
+## 4. Result of the measurement (closes the item)
+
+`lateral_anatomy.py` on the shipped walk (`so_base`) and the pre-2.C walk (`fk_base`), 33
+single-support intervals each, T_ss 0.500 s, step width 0.10–0.11 m, pelvis z 0.76 m (ω 3.59 /s):
+
+| | so_base | fk_base |
+|---|---|---|
+| pelvis closest approach to the stance foot, observed / LIPM | 0.035 / **0.036** m | 0.039 / **0.038** m |
+| sway per step, observed / LIPM | 16 / **16** mm | 16 / **17** mm |
+| lateral velocity at the switch, observed / LIPM | 0.154 / 0.133 m/s | 0.156 / 0.141 m/s |
+| planned lateral velocity (policy), rms | 0.076 m/s | 0.077 m/s |
+| observed lateral velocity, rms | 0.079 m/s | 0.078 m/s |
+| stance ankle-roll torque rms | 1.6 Nm | 2.1 Nm |
+| hip-roll torque rms (≈ static m·g·d on one leg) | 29.8 Nm | 29.8 Nm |
+| roll rms / roll-rate rms | 0.26° / 3.2°/s | 0.41° / 5.4°/s |
+
+**The pelvis already does the pendulum, to the millimetre.** The MPC's own plan carries the
+lateral sway (planned vs observed vy rms 0.076 vs 0.079), the phase-binned profile is a clean
+cosh/sinh — approach at −0.14 m/s, closest at mid-stance, leave at +0.13 — and the stance ankle
+roll is nearly idle at 1.6–2 Nm. §0's reasoning was right about the code (the reference asks for
+vy = 0) and wrong about its effect: over a 1 s horizon with the full dynamics in the loop, the
+single-support feasibility fixes the lateral motion and a weight of 15 on vy is far too weak to
+distort it. A LIPM reference would ask for what the solver already does — outcome 1, lever inert.
+
+Two by-products: steady-walk roll is already small (0.26°) and 2.C lowered it by 37 % along with
+the roll rate (−41 %); and the 0.5 m/s step width is 0.10 m, not the 0.2 m assumed in §0, which is
+why the natural sway is 16 mm rather than 30.
+
+The start/stop roll transient, the other 2.D target, is therefore not a reference problem either;
+it sits with the first/last step's single-support entry, i.e. the same contact-switch mechanics as
+the walk's torque step.
