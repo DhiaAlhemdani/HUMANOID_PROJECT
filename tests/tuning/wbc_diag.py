@@ -9,6 +9,7 @@ events (plan pitch / z vs observed), and - when the run fell - the last second b
 Reads <case>/data.npz (bag_to_npz.py) and metrics.json; no ROS needed.
 """
 import json
+import os
 import math
 import pathlib
 import sys
@@ -94,6 +95,46 @@ def diag(case: pathlib.Path):
     for gname, g in (("legs", legs), ("arms", arms)):
         if g:
             print(f"  {gname}: mean total {np.mean([r[1] for r in g]):.3f} cmd {np.mean([r[2] for r in g]):.3f} pd {np.mean([r[3] for r in g]):.3f}")
+
+    # 2b. hip-pitch spike anatomy: when do the large commanded torques happen, and on which leg?
+    # Sweep 2 showed |cmd| peaks of ~86 Nm on both hip pitches in every WBC case regardless of the base-task
+    # gains; this tells whether they sit on the swing leg (swing/posture task) or on the stance leg right
+    # after touchdown (stance no-motion rows with an impact velocity), and how much is feedforward.
+    frames = [n.split("/")[1] for n in names if n.startswith("plan_wrench/") and n.endswith("/fz")]
+    side_frame = {}
+    for f in frames:
+        key = f.lower()
+        side_frame["left" if ("_l_" in key or key.startswith("l_") or "left" in key) else "right"] = f
+    thr = float(os.environ.get("SPIKE_NM", "60"))
+    for side in ("left", "right"):
+        j = f"{side}_hip_pitch_joint"
+        if "cmd_tau/" + j not in col or side not in side_frame:
+            continue
+        cmd, plan = c("cmd_tau/" + j), c("plan_tau/" + j)
+        fz_own = c(f"plan_wrench/{side_frame[side]}/fz")
+        other = side_frame["right" if side == "left" else "left"]
+        fz_other = c(f"plan_wrench/{other}/fz")
+        idx = np.where(walk & (np.abs(cmd) > thr))[0]
+        if len(idx) == 0:
+            print(f"  {side} hip_pitch: no |cmd| > {thr:.0f} Nm in walk window")
+            continue
+        # cluster consecutive ticks (one spike = one touchdown / lift-off event)
+        groups = np.split(idx, np.where(np.diff(t[idx]) > 0.1)[0] + 1)
+        peaks = [g[np.argmax(np.abs(cmd[g]))] for g in groups]
+        stance = np.array([fz_own[k] > 1.0 for k in peaks])
+        # time since the own-foot contact state last changed (plan)
+        own_contact = fz_own > 1.0
+        switches = np.where(np.diff(own_contact.astype(int)) != 0)[0] + 1
+        since = []
+        for k in peaks:
+            prev = switches[switches <= k]
+            since.append(t[k] - t[prev[-1]] if len(prev) else np.nan)
+        ds = np.array([fz_other[k] > 1.0 for k in peaks]) & stance
+        print(f"  {side} hip_pitch spikes |cmd|>{thr:.0f} Nm: {len(peaks)} events | median peak {np.median(np.abs(cmd[peaks])):.1f} Nm "
+              f"| on stance leg {100 * np.mean(stance):.0f} % (double support {100 * np.mean(ds):.0f} %) "
+              f"| median time since own contact switch {np.nanmedian(since) * 1e3:.0f} ms "
+              f"| median |cmd-plan_tau| at peak {np.median(np.abs(cmd[peaks] - plan[peaks])):.1f} Nm, "
+              f"|plan_tau| at peak {np.median(np.abs(plan[peaks])):.1f} Nm | median width {np.median([t[g[-1]] - t[g[0]] for g in groups]) * 1e3:.0f} ms")
 
     # 3. base tracking
     def err(axis):
