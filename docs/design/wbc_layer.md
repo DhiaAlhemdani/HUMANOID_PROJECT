@@ -1,6 +1,7 @@
 # Phase 2.B — whole-body feedback layer between the MPC and the joint servos
 
-Status: **S1 implemented, ships disabled, awaiting the closed-loop sweep** (2026-11-24). Roadmap
+Status: **S1 shipped on for G1** (2026-11-25, sweep 3: soft task gains + `contactBlendSeconds 0.03`,
+`docs/results/wbc_s1_sweep.md`; `enabled: false` restores the Phase-1 servo path). Roadmap
 Phase 2 #6, promoted to 2.B by the Phase 1 evidence. Decisions taken: S1 go (user); S2's dense QP
 will be HPIPM, which `ocs2_sqp` already links through `hpipm_catkin` / `blasfeo_catkin` in the
 `wei-hsuan-cheng/ocs2_ros2` stack this repo builds against (no new dependency).
@@ -12,7 +13,7 @@ will be HPIPM, which `ocs2_sqp` already links through `hpipm_catkin` / `blasfeo_
 | Eigen-only least-squares core (KKT solve, wrench clip, joint-row torques) | `include/legged_robot_mpc_controller/controller/whole_body_feedback_core.hpp` |
 | Pinocchio assembly (plan swing targets, measured `M, h, J, J̇v`, task PD) | `include/.../controller/whole_body_feedback.hpp`, `src/controller/whole_body_feedback.cpp` |
 | Controller wiring: replaces the feedforward in `compute_mpc_joint_action`, residual servo gains ramped in Locomotion only, `wbc/*` tracking columns | `src/controller/controller.cpp`, `controller.hpp` |
-| Parameters (`control.wholeBody.*`, shipped `enabled: false`) | `src/controller/parameters.yaml`, `config/g1/ros2_controllers.yaml` |
+| Parameters (`control.wholeBody.*`, G1 ships `enabled: true`; library default off) | `src/controller/parameters.yaml`, `config/g1/ros2_controllers.yaml` |
 | Tests | `tests/whole_body_feedback_core_test.cpp` (Eigen, in `BUILD_TESTING`; passes in the sandbox), `tests/whole_body_feedback_contract_test.py` |
 | Sweep | `tests/tuning/run_wbc_sweep.sh`; new metric `legs.meas_tau_hf` in `plot_tracking.py` (total applied torque HF — `pd_tau_hf` is not comparable once the feedback moves into `cmd_tau`) |
 
@@ -23,7 +24,9 @@ Sweep 2 (0 winners) located the hip-pitch impulses at the plan's contact switch 
 its contact set with the plan mode a few ms before the robot does. Added for sweep 3:
 `contactBlendSeconds`, a smoothstep fade of the layer's torque into the plan's torque around every
 planned switch (previous switch = observed mode change, next = policy `modeSchedule_.eventTimes`),
-logged as `wbc/contact_alpha`. S2 would handle this properly (contact-timing-aware constraints).
+logged as `wbc/contact_alpha`. Sweep 3: the fade removes the impulses entirely (hip_pitch |max|
+86 → 39 Nm) and the layer wins both sets — shipped. S2 would handle the switch properly
+(contact-timing-aware constraints); its expected gain over S1+fade is now small (§7 of the results).
 
 Behavioural notes that differ from the sketch below: the swing-foot task uses the plan's foot
 position/velocity from forward kinematics of the policy state and the measured-configuration

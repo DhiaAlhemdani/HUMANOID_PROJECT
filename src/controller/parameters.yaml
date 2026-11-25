@@ -67,11 +67,11 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
       gainRampSeconds: {type: double, default_value: 0.5, description: "Ramp of the written servo gains from
           jointEffortPd to residualKp/Kd when the layer first engages (the Blend -> Locomotion handover) [s]",
           validation: {gt_eq: [0.0]}}
-      contactBlendSeconds: {type: double, default_value: 0.0, description: "Half-width of a window around every
+      contactBlendSeconds: {type: double, default_value: 0.03, description: "Half-width of a window around every
           planned contact switch in which the layer's torque is faded into the plan's torque (smoothstep on the time to
           the nearest switch). The layer swaps its contact set with the plan mode while the robot is still in the old
           contact state for a few ms; without the fade that routes the support transient through the landing hip as a
-          one-tick torque impulse. 0 = off", validation: {gt_eq: [0.0]}}
+          one-tick torque impulse (2.B sweep 3: 30 ms removes it). 0 = off", validation: {gt_eq: [0.0]}}
       baseKp: {type: double_array, default_value: [0.0, 0.0, 50.0, 25.0, 100.0, 100.0], description: "Base task
           stiffness on the generalized-coordinate error [x y z yaw pitch roll] (world position, Euler ZYX angles)
           [1/s^2]; 0 tracks the planned acceleration only", validation: {fixed_size<>: [6], lower_element_bounds<>: [0.0]}}

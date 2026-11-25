@@ -33,6 +33,8 @@ fi
 
 WB=control.wholeBody
 ON="$WB.enabled=true"
+# Since sweep 3 shipped the layer on for G1, the Phase-1 servo path is the explicit baseline.
+OFF="$WB.enabled=false"
 FADE30=("$WB.contactBlendSeconds=0.03")
 FADE60=("$WB.contactBlendSeconds=0.06")
 
@@ -72,7 +74,7 @@ GUARDS=(--no-default-guards
 
 REPORT="$OUT/wbc_sweep3_report.txt"
 if [[ " $SETS " == *" A "* ]]; then
-  run wb3_base vx
+  run wb3_base vx "$OFF"
   run wb3_soft vx "$ON"
   run wb3_fade30 vx "$ON" "${FADE30[@]}"
   run wb3_fade60 vx "$ON" "${FADE60[@]}"
@@ -88,7 +90,7 @@ if [[ " $SETS " == *" A "* ]]; then
     > "$OUT/wbc_diag3_A.txt" && echo "wrote $OUT/wbc_diag3_A.txt"
 fi
 if [[ " $SETS " == *" B "* ]]; then
-  run wbs3_base stops
+  run wbs3_base stops "$OFF"
   run wbs3_fade30 stops "$ON" "${FADE30[@]}"
   run wbs3_fade60 stops "$ON" "${FADE60[@]}"
   echo; echo "== score set B (start/stop balance)"

@@ -34,6 +34,8 @@ fi
 
 WB=control.wholeBody
 ON="$WB.enabled=true"
+# Since sweep 3 shipped the layer on for G1, the Phase-1 servo path is the explicit baseline.
+OFF="$WB.enabled=false"
 # robot.jointNames order: 6 left leg, 6 right leg, waist yaw/roll/pitch, 4 left arm, 4 right arm.
 WAIST=("$WB.jointWeights=[1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,50.0,50.0,50.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0]")
 TORSO=("$WB.orientationLink=torso_link" "$WB.baseKp=[0.0,0.0,50.0,25.0,0.0,0.0]" "$WB.baseKd=[0.0,0.0,14.0,10.0,0.0,0.0]")
@@ -75,7 +77,7 @@ GUARDS=(--no-default-guards
 
 REPORT="$OUT/wbc_sweep2_report.txt"
 if [[ " $SETS " == *" A "* ]]; then
-  run wb2_base vx
+  run wb2_base vx "$OFF"
   run wb2_soft vx "$ON"
   run wb2_waist vx "$ON" "${WAIST[@]}"
   run wb2_torso vx "$ON" "${TORSO[@]}"
@@ -92,7 +94,7 @@ if [[ " $SETS " == *" A "* ]]; then
     > "$OUT/wbc_diag2_A.txt" && echo "wrote $OUT/wbc_diag2_A.txt"
 fi
 if [[ " $SETS " == *" B "* ]]; then
-  run wbs2_base stops
+  run wbs2_base stops "$OFF"
   run wbs2_waist stops "$ON" "${WAIST[@]}"
   run wbs2_torso stops "$ON" "${TORSO[@]}"
   echo; echo "== score set B (start/stop balance)"

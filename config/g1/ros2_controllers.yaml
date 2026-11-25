@@ -257,11 +257,11 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
       # Base order [x y z yaw pitch roll]; acceleration-space gains (per-joint inertia scales them).
       # Gains = the S1 sweep's 'soft' set: the 2x stiffer original defaults fell (wb_s1 11.7 s, wb_s1_stiff 1.5 s).
       wholeBody:
-        enabled: false
+        enabled: true
         residualKp: 20.0
         residualKd: 3.0
         gainRampSeconds: 0.5
-        contactBlendSeconds: 0.0
+        contactBlendSeconds: 0.03
         baseKp: [0.0, 0.0, 50.0, 25.0, 100.0, 100.0]
         baseKd: [0.0, 0.0, 14.0, 10.0, 20.0, 20.0]
         baseWeight: [1.0, 1.0, 10.0, 10.0, 10.0, 10.0]

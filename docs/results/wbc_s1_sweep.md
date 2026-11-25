@@ -1,7 +1,12 @@
-# Phase 2.B S1 — whole-body feedback layer, first closed-loop sweep (G1)
+# Phase 2.B S1 — whole-body feedback layer, closed-loop sweeps 1–3 (G1)
 
-Design: `docs/design/wbc_layer.md`. Tooling: `tests/tuning/run_wbc_sweep.sh`, `tests/tuning/wbc_diag.py`.
-Gates were fixed before the run (script header) and are not moved here.
+**Outcome (2026-11-25): shipped** — G1 `control.wholeBody.enabled: true`, soft task gains,
+`contactBlendSeconds 0.03`; steady-walk `pelvis_acc_hf` −47 %, ankle saturation 0, stop pitch
+transient −26 % (sweep 3 below). Sweeps 1 and 2 (0 winners each) are kept in full: they are how the
+cause was found.
+
+Design: `docs/design/wbc_layer.md`. Tooling: `tests/tuning/run_wbc_sweep{,2,3}.sh`, `tests/tuning/wbc_diag.py`.
+Gates were fixed before each run (script headers) and are not moved here.
 
 ## Sweep 1 (2026-11-24) — shipped PD vs `control.wholeBody` S1
 
@@ -212,3 +217,62 @@ pitch track may stay above its guard (0.2° vs 0.087°) — that would then be t
 question (the plan pitch p-p itself grows 1.0 → 2.5° under the layer). If the fade does not remove
 the 86 Nm peaks, the diagnosis is wrong and S1 closes as "not shippable without S2's contact
 handling" with this record.
+
+### Sweep 3 result (2026-11-25): 2/3 + 2/2 — **`contactBlendSeconds 0.03` shipped, layer on for G1**
+
+Set A (`vx` 0.5, baseline `wb3_base`, gates as sweep 2):
+
+| case | acc_hf (≤0.92×) | meas_tau_hf (≤0.85×, nw 1.1×) | tau_sat % (≤0.5×+0.02) | roll track (≤0.85×) | pitch track (≤1.2×+0.05) | pitch rms (≤1.15×+0.05) | q track | z_sd (≤1.15×+0.3) | vx | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `wb3_base` | 1.086 | 4.095 | 0.188 | 0.100 | 0.085 | 0.256 | 0.170 | 1.52 | 0.426 | — |
+| `wb3_soft` | 0.628 | 4.245 | 0.012 | 0.079 | 0.221 ✗ | 0.500 ✗ | 0.221 | 1.93 | 0.459 | guards-fail (as sweeps 1–2) |
+| **`wb3_fade30`** | **0.580 (0.53×)** | 3.848 (0.94×) | **0.000** | 0.087 (0.87×) | **0.060 (0.71×)** | 0.245 | 0.181 | 2.04 | 0.455 | **WINNER** (acc_hf, tau_sat) |
+| `wb3_fade60` | 0.678 (0.62×) | 4.002 (0.98×) | 0.000 | 0.099 | 0.066 | 0.238 | 0.190 | 2.01 | 0.455 | WINNER (acc_hf, tau_sat) |
+
+Set B (`stops`, baseline `wbs3_base`):
+
+| case | transient roll (≤0.85×) | transient pitch (≤0.85×) | acc_hf (≤0.92×) | tau_sat % | z p-p max (≤1.15×+2) | meas_tau_hf | verdict |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `wbs3_base` | 1.326 | 1.212 | 1.200 | 0.141 | 28.2 | 3.754 | — |
+| **`wbs3_fade30`** | 1.182 (0.89×) | **0.897 (0.74×)** | **1.006 (0.84×)** | **0.000** | 31.8 | 3.930 (1.05×) | **WINNER** (pitch, acc_hf, tau_sat) |
+| `wbs3_fade60` | 1.183 | 1.212 | 0.985 (0.82×) | 0.000 | 29.2 | 3.885 | WINNER (acc_hf, tau_sat) |
+
+Diagnostics (`wbc_diag3_{A,B}.txt`):
+
+- **The impulses are gone.** `wb3_fade30`/`fade60`: no hip-pitch |cmd| > 60 Nm in the walk window
+  (control `wb3_soft`: 17 per leg at 88 Nm, as before); hip_pitch |max| 86 → **39–40 Nm** (baseline
+  33). Stops: 86 → 50–59 Nm (baseline 42–49). The fade is active on 12 % of walk ticks at 30 ms
+  (α = 0 on 0.0 %), 24 % at 60 ms.
+- Steady walk with `fade30`: legs HF 3.85 vs 4.10 baseline (−6 %), ankle_pitch HF 2.5 vs 4.8 and
+  |max| 23 vs 50 (saturated), pitch tracking 0.060° vs 0.085° — the layer now tracks pitch
+  *better* than the PD, where sweeps 1–2 had it 2.5× worse (the impulse was the pitch error);
+  plan pitch p-p 1.4° vs 1.1° (soft: 2.7°). Ramp-down obs−plan pitch 0.22° (base 0.37°, soft 0.89°).
+- Stops with `fade30`: all five events obs−plan pitch 0.20–0.29° (baseline 0.25–0.50°), ankle
+  26–27 Nm vs 50 saturated at every event; no first-stop fold in either fade case.
+- Layer health unchanged (active 100 %, residual ≤5e-8, clips 1.5 %).
+
+Reading, honestly:
+
+- `fade30` beats `fade60` on acc_hf (0.580 vs 0.678) and roll; equal elsewhere → **ship 0.03**.
+- Non-improved primaries `meas_tau_hf` (0.94×) and `roll_track` (0.87×) miss their 0.85× improvement
+  bars but are better than baseline; the not-worse rule holds. Pitch tracking, the guard that
+  failed in every earlier case, is now a 29 % improvement.
+- Nearest guard: `walk.z_sd_mm` 2.043 vs limit 2.049. This is systematic, not noise — every WBC
+  case over three sweeps sits at 1.87–2.04 mm against 1.52–1.54 mm baselines (+0.5 mm absolute;
+  the plan z p-p is *smaller* under the layer, 8.9 vs 10.1 mm). Recorded as a known cost.
+- Repeatability: baselines across sweeps 1–3 agree (acc_hf 1.072/1.087/1.086, pitch track
+  0.081/0.087/0.085); `wb_s1_soft`/`wb2_soft`/`wb3_soft` agree (acc_hf 0.695/0.629/0.628).
+- Not swept with the layer: `vy`, `yaw` profiles, speeds other than 0.5 m/s, the trot band. The
+  shipped state is G1 `control.wholeBody.enabled: true` with the soft set and `contactBlendSeconds
+  0.03`; `enabled: false` restores the Phase-1 servo path exactly (the block's keys are then inert).
+
+**Shipped (G1 config, same build A/B):** `pelvis_acc_hf` **1.086 → 0.580 (−47 %)**, ankle
+saturation **0.19 % → 0**, pitch track −29 %, stop pitch transient **1.21 → 0.90° (−26 %)**, stop
+acc_hf −16 %, 0 falls in 6 sweep-3 runs. Costs: `meas_tau_hf` on stops +5 %, walk z sd +0.5 mm,
+`cmd_tau_jump_at_switch` within its guard.
+
+What this says about S2: the win came from contact *timing*, not from a better solve. S2's QP would
+replace the fade with contact-timing-aware constraints (measured contact state / soft touchdown
+rows); its expected gain over S1+fade is the residual 6 Nm hip-pitch HF and the 2.5 Nm ankle HF —
+smaller than the step just taken. 2.C (touchdown impact model) attacks the same event from the
+plan side and is next per the roadmap.

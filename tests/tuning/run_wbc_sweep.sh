@@ -33,6 +33,8 @@ fi
 
 WB=control.wholeBody
 ON="$WB.enabled=true"
+# Since sweep 3 shipped the layer on for G1, the Phase-1 servo path is the explicit baseline.
+OFF="$WB.enabled=false"
 SOFT=("$WB.baseKp=[0.0,0.0,50.0,25.0,100.0,100.0]" "$WB.baseKd=[0.0,0.0,14.0,10.0,20.0,20.0]"
       "$WB.swingKp=[100.0,100.0,100.0]" "$WB.swingKd=[20.0,20.0,20.0]")
 STIFF=("$WB.baseKp=[0.0,0.0,200.0,100.0,400.0,400.0]" "$WB.baseKd=[0.0,0.0,28.0,20.0,40.0,40.0]"
@@ -67,7 +69,7 @@ GUARDS=(--no-default-guards
 
 REPORT="$OUT/wbc_sweep_report.txt"
 if [[ " $SETS " == *" A "* ]]; then
-  run wb_base vx
+  run wb_base vx "$OFF"
   run wb_s1 vx "$ON"
   run wb_s1_soft vx "$ON" "${SOFT[@]}"
   run wb_s1_stiff vx "$ON" "${STIFF[@]}"
@@ -81,7 +83,7 @@ if [[ " $SETS " == *" A "* ]]; then
     | tee "$OUT/wbc_sweep_report_A.txt" | tee -a "$REPORT"
 fi
 if [[ " $SETS " == *" B "* ]]; then
-  run wbs_base stops
+  run wbs_base stops "$OFF"
   run wbs_s1 stops "$ON"
   run wbs_s1_soft stops "$ON" "${SOFT[@]}"
   echo; echo "== score set B (start/stop balance)"

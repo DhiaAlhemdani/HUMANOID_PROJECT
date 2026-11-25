@@ -2,8 +2,9 @@
 """Phase 2.B S1 whole-body feedback layer: schema / shipped config / wiring / sweep contract.
 
 Runs without ROS. The C++ core has its own Eigen-only regression (whole_body_feedback_core_test.cpp);
-this pins what the sweep and the docs rely on: the block ships disabled with every key the
-schema defines, the controller reads each key, the layer is built into the library, and the
+this pins what the sweep and the docs rely on: the G1 block ships ON (sweep 3 winner: soft set +
+30 ms contact-switch fade) with every key the schema defines at the schema default, the library
+default stays off (other robots), the controller reads each key, the layer is built into the library, and the
 sweep script only sets keys that exist.
 """
 import pathlib
@@ -22,12 +23,15 @@ def schema_whole_body():
 
 
 class WholeBodyFeedbackContract(unittest.TestCase):
-    def test_shipped_g1_block_is_inert_and_complete(self):
+    def test_shipped_g1_block_is_on_at_schema_defaults_and_complete(self):
         schema = schema_whole_body()
         g1 = yaml.safe_load((ROOT / "config/g1/ros2_controllers.yaml").read_text())
         block = g1[CTRL]["ros__parameters"]["control"]["wholeBody"]
-        self.assertFalse(block["enabled"])
-        self.assertFalse(schema["enabled"]["default_value"])
+        self.assertTrue(block["enabled"], "2.B sweep 3 shipped the layer on for G1 (docs/results/wbc_s1_sweep.md)")
+        self.assertFalse(schema["enabled"]["default_value"], "library default stays off (H2/Upkie carry no block)")
+        self.assertAlmostEqual(block["contactBlendSeconds"], 0.03)
+        # The layer writes the residual servo gains: the shipped config must carry jointEffortPd.
+        self.assertGreater(max(g1[CTRL]["ros__parameters"]["control"]["jointEffortPd"]["kp"]), 0.0)
         self.assertEqual(set(block), set(schema), "G1 block must carry every schema key (make_config edits in place)")
         names = g1[CTRL]["ros__parameters"]["robot"]["jointNames"]
         for key, spec in schema.items():

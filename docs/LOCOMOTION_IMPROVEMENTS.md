@@ -305,12 +305,20 @@ driven, which lowers the expected payoff of plan-level force shaping (items 1–
 | order | item | why here | status |
 | --- | --- | --- | --- |
 | 2.A | **#4 capture-point / Raibert foothold** | config-only; the only lever aimed at lateral sway/roll and start-stop balance (benchmark #3) | **closed 0/6** ✅ — steady: roll +14…22 %, jump@switch +42…83 %; stops: transient roll +32…73 %. Established negative → `docs/results/capture_point_sweep.md`; block stays disabled |
-| 2.B | **#6 whole-body QP layer** (promoted from "optional") | the 1 kHz PD at kp 200 is what turns touchdown error into saturated torque; a high-rate WBC tracking the MPC's wrenches/accelerations with the *measured* state is the largest smoothness step available with the current MPC | S1 implemented (`control.wholeBody`, ships disabled); **sweep 1: 0/4 + 0/2 by gates, 3 falls at the original gains** — soft set survives with **acc_hf −35 %**, ankle saturation −90…100 %, roll track −11…18 %, but `meas_tau_hf` +15 % and stops pitch transient 4.75° → `docs/results/wbc_s1_sweep.md`; defaults lowered to the soft set; **sweep 2: 0/4 + 0/2** — waist weight / torso orientation task / softer pelvis all leave hip_pitch |max| at 86 Nm; spike anatomy: every peak is a 2 ms impulse on the landing leg at the plan's contact switch (layer swaps its contact set before the robot does) → sweep 3 (`run_wbc_sweep3.sh`: `contactBlendSeconds` fade of the layer torque into the plan torque around switches) ⏳ |
-| 2.C | **#3 touchdown impact model** | contained (dynamics jump map at mode events, ocs2 SQP supports event nodes); lets the plan anticipate impact | after 2.B |
+| 2.B | **#6 whole-body QP layer** (promoted from "optional") | the 1 kHz PD at kp 200 is what turns touchdown error into saturated torque; a high-rate WBC tracking the MPC's wrenches/accelerations with the *measured* state is the largest smoothness step available with the current MPC | S1 implemented (`control.wholeBody`, ships disabled); **sweep 1: 0/4 + 0/2 by gates, 3 falls at the original gains** — soft set survives with **acc_hf −35 %**, ankle saturation −90…100 %, roll track −11…18 %, but `meas_tau_hf` +15 % and stops pitch transient 4.75° → `docs/results/wbc_s1_sweep.md`; defaults lowered to the soft set; **sweep 2: 0/4 + 0/2** — waist weight / torso orientation task / softer pelvis all leave hip_pitch |max| at 86 Nm; spike anatomy: every peak is a 2 ms impulse on the landing leg at the plan's contact switch (layer swaps its contact set before the robot does) → **sweep 3: 2/3 + 2/2, SHIPPED** ✅ — `contactBlendSeconds 0.03` fade of the layer torque into the plan torque around planned switches removes the impulses (hip_pitch |max| 86 → 39 Nm): **acc_hf 1.086 → 0.580 (−47 %)**, ankle saturation → 0, pitch track −29 %, stop pitch transient −26 %, 0 falls; G1 ships `control.wholeBody.enabled: true` (soft set + fade); `enabled: false` restores the Phase-1 path. Costs: walk z sd +0.5 mm, stops `meas_tau_hf` +5 %. Not swept: `vy`/`yaw`, other speeds, trot |
+| 2.C | **#3 touchdown impact model** | contained (dynamics jump map at mode events, ocs2 SQP supports event nodes); lets the plan anticipate impact — 2.B located the whole remaining torque transient at this event | **next** |
 | 2.D | **#5 DCM/CoM reference** | moderate; natural lateral weight transfer; measured against 2.A's result | after 2.C |
 | 2.E | **#1 force-rate** | only as *state augmentation* (forces as state, rates as input — the per-stage cost route was tried and rejected in 1.3); value re-assessed once 2.B/2.C land | deferred |
 | 2.F | **#2 contact-timing optimization** | heaviest; last | deferred |
 | — | **#7 terrain anticipatory height** | flat-ground benchmark does not exercise it | out of scope for smoothness |
+
+**Phase 2 scorecard so far (2026-11-25):** 2.A 0/6 (closed), 2.B 2/3 + 2/2 after two 0-winner
+sweeps (shipped) — 22 scored candidates in 5 sweeps, 1 feature shipped, 3 falls (all 2.B sweep 1 at
+the original task gains, none since the soft set).
+
+| change | effect (same-build A/B) | source |
+| --- | --- | --- |
+| `control.wholeBody` S1 layer on, soft gains + `contactBlendSeconds 0.03` (2.B) | `acc_hf` **1.086 → 0.580 (−47 %)**, `tau_sat_pct` 0.19 → 0 %, pitch track 0.085 → 0.060°, stops: pitch transient **1.21 → 0.90°**, acc_hf −16 % | [`wbc_s1_sweep.md`](results/wbc_s1_sweep.md) |
 
 1. **Contact-implicit / force-rate constraints** — replace prescribed wrench continuity with
    explicit `‖f_{k+1} − f_k‖` penalties or rate bounds; directly targets D2/D3 at the plan
