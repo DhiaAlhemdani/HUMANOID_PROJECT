@@ -67,6 +67,19 @@ def anatomy(P):
           f"elsewhere {np.nanmean(far):.3f} (n {np.isfinite(far).sum()})")
     print("    largest jumps: t | leg-mean | worst joint | distance to nearest planned contact change (td/lo) | plan mode at the tick")
     print("\n".join(lines))
+    # Tick-by-tick trace of the largest one: which path steps -- the plan's torque (plan_tau), the
+    # written command (cmd_tau), the contact-switch fade (wbc/contact_alpha) or the policy swap
+    # (policy_t0) -- over +-12 ms, for the worst joint.
+    if len(order) and np.isfinite(vals[order[0]]) and vals[order[0]] > 1.0:
+        i = sw_idx[order[0]]; jw = int(np.nanargmax(dtau[i])); j = legs[jw]
+        win = np.flatnonzero((t >= t[i] - 0.012) & (t <= t[i] + 0.012))
+        alpha = c("wbc/contact_alpha") if "wbc/contact_alpha" in names else np.full(len(t), np.nan)
+        ptau = c("plan_tau/" + j) if ("plan_tau/" + j) in names else np.full(len(t), np.nan)
+        mtau = c("meas_tau/" + j) if ("meas_tau/" + j) in names else np.full(len(t), np.nan)
+        print(f"    trace of the largest ({j.replace('_joint', '')}): ms | cmd_tau | plan_tau | meas_tau | fade alpha | plan_mode | policy_t0")
+        for k in win:
+            print(f"      {1e3 * (t[k] - t[i]):+5.0f}  {c('cmd_tau/' + j)[k]:7.1f}  {ptau[k]:7.1f}  {mtau[k]:7.1f}  {alpha[k]:5.2f}  "
+                  f"{'' if mode is None else int(mode[k]):>3}  {t0[k]:.3f}")
 
 
 if __name__ == "__main__":
