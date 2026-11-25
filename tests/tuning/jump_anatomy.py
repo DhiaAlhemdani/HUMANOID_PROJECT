@@ -36,6 +36,15 @@ def anatomy(P):
         for k in np.flatnonzero(np.diff(fz.astype(int)) != 0) + 1:
             contact |= (t >= t[k] - 0.04) & (t <= t[k] + 0.04)
     near = np.nanmean(dtau[switch & contact], axis=1); far = np.nanmean(dtau[switch & ~contact], axis=1)
+    # Switches that land on the tick of a planned contact change count the plan's own switch step
+    # (plot_tracking excludes them since the 2.C-timing close-out); report the mean without them.
+    if "plan_mode" in names:
+        _pm = np.nan_to_num(c("plan_mode"), nan=-1.0)
+        on_event = np.zeros(len(t), bool); on_event[1:] = np.diff(_pm) != 0
+        clean = np.nanmean(dtau[switch & ~on_event], axis=1); clean = clean[np.isfinite(clean)]
+        cleanstr = f" | excluding switches on a contact-change tick ({int((switch & on_event).sum())}): mean {clean.mean():.3f} max {clean.max():.2f}"
+    else:
+        cleanstr = ""
     top = np.sort(per)[::-1][:max(1, len(per) // 100)]
     name = P.rstrip("/").split("/")[-1]
     # The largest jumps, one line each: when, which joint, how far from the nearest planned contact
@@ -64,7 +73,7 @@ def anatomy(P):
           f"p90 {np.percentile(per, 90):.3f} p99 {np.percentile(per, 99):.3f} max {per.max():.2f} Nm | "
           f"top 1 % of switches carry {100 * top.sum() / per.sum():.0f} % of the mean | "
           f"within 40 ms of a planned contact change: {np.nanmean(near):.3f} (n {np.isfinite(near).sum()}), "
-          f"elsewhere {np.nanmean(far):.3f} (n {np.isfinite(far).sum()})")
+          f"elsewhere {np.nanmean(far):.3f} (n {np.isfinite(far).sum()}){cleanstr}")
     print("    largest jumps: t | leg-mean | worst joint | distance to nearest planned contact change (td/lo) | plan mode at the tick")
     print("\n".join(lines))
     # Tick-by-tick trace of the largest one: which path steps -- the plan's torque (plan_tau), the

@@ -326,12 +326,34 @@ already available in the constraint's parameter path), rather than returning to 
 −28 % acc_hf, landing 20 → 8 ms early and 0.26 → 0.20 m/s, stops not-worse (pitch 0.75–0.97 vs
 0.95 across three runs).
 
-**Open (no runs needed): what are the ~20 Nm single-switch torque jumps?** `jump_anatomy.py`
-now lists each run's eight largest with the joint, the distance to the nearest planned contact
-change and whether the re-solve flipped the planned contact mode at that tick. If they sit at
-re-solves that move a contact event across "now" (mode flip), the 2.B fade — keyed to the
-schedule, not to policy-induced flips — has a hole, and that is a contained controller fix with
-a precise trigger; if they are elsewhere, it is a different item.
+**Resolved: the ~20 Nm single-switch torque jumps are the metric sampling the plan's own
+contact-switch step.** `jump_anatomy.py` lists each run's largest jumps and traces the worst
+tick by tick. All of them (fk_base, so_base, sos_off0) sit at `+0 ms` from a planned contact
+change with the plan mode flipping on that tick, and the trace (so_base, t = 28.801, right hip
+pitch) reads:
+
+| ms | cmd_tau | plan_tau | meas_tau | fade α | plan_mode | policy_t0 |
+|---|---|---|---|---|---|---|
+| −2 | −27.4 | −27.3 | −27.0 | 0.00 | 2 | 28.766 |
+| +0 | 30.6 | **33.1** | 30.6 | 0.00 | 1 | 28.783 |
+| +2 | 31.5 | 31.7 | 30.0 | 0.03 | 1 | 28.783 |
+
+`plan_tau` itself steps 60 Nm: the leg goes from swing to stance and the inverse-dynamics hip
+torque changes sign, as it does at *every* scheduled contact event in every run; the 2.B fade
+(α = 0) hands exactly this tick to the plan by design. `cmd_tau_jump_at_switch` samples only
+the ticks where the policy swaps (`policy_t0` changes), so it sees the step only when a solve
+delivery happens to land on the same 1 ms tick as a 0.5 s-grid gait event — at a ~15 ms solve
+period, a few chance hits per 40 s run or none, which is the presence/absence pattern above
+(walk −1 mm: 3 hits; 0 mm: 0; stops −1 mm: 0; 0 mm: 2). Not a policy-swap or fade artefact,
+nothing to do with the swing gain, and present in the pre-ship baselines.
+
+`plot_tracking.py` now excludes switches on a plan-mode-change tick from the metric (and
+`jump_anatomy.py` reports the mean with and without them), so from here on
+`cmd_tau_jump_at_switch` measures what it was meant to: re-solve inconsistency away from
+contact events. The near-contact column of the anatomy still carries the ±40 ms window and is
+where any residual split-gain seam would show; across the runs with the chance hits removed it
+is ≈ 0.2 (so_off0 0.212, so_offp05 0.197, sos_base 0.191) vs ≈ 0.07 elsewhere for every config,
+including the pre-ship baseline — the contact window simply has larger re-solve steps.
 
 ## Follow-up 2: repeat runs
 

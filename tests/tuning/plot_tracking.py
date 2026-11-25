@@ -196,6 +196,13 @@ t0 = c("policy_t0")
 switch = np.zeros(len(t), bool)
 switch[1:] = np.diff(t0) != 0
 switch &= walk
+# A planned contact change steps the plan's torque by design (the fade hands the switch to the
+# plan); a policy swap landing on that tick would count that step here. Exclude those ticks.
+if "plan_mode" in names:
+    _pm = np.nan_to_num(c("plan_mode"), nan=-1.0)
+    mode_change = np.zeros(len(t), bool)
+    mode_change[1:] = np.diff(_pm) != 0
+    switch &= ~mode_change
 dtau = {j: np.abs(np.diff(c("cmd_tau/" + j), prepend=np.nan)) for j in J}
 for gname, group in (("legs", LEGS), ("arms", ARMS)):
     at = np.nanmean([dtau[j][switch] for j in group])
