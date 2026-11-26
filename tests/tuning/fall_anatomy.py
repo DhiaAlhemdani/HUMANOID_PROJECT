@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Anatomy of a fall (or of any window) from a run_case.sh data.npz: what went wrong first.
 
-usage: fall_anatomy.py <case_dir | data.npz> [--at T_SIM] [--before 2.5] [--after 0.3] [--step 0.05]
+usage: fall_anatomy.py <case_dir | data.npz> [--at T_SIM | --segment 'hold vx +0.0'] [--before 2.5] [--after 0.3] [--step 0.05]
                        [--model description/mujoco/robots/g1/g1_29dof.xml] [--config <controllers.yaml>]
 
 Prints, for the window before the fall (data.npz `fell`, or --at):
@@ -31,6 +31,8 @@ import numpy as np
 ap = argparse.ArgumentParser()
 ap.add_argument("path")
 ap.add_argument("--at", type=float, default=None, help="centre of the window [sim s]; default: the recorded fall")
+ap.add_argument("--segment", default=None,
+                help="instead of --at: analyse the last suite.json segment whose label contains this text (e.g. 'hold vx +0.0')")
 ap.add_argument("--before", type=float, default=2.5)
 ap.add_argument("--after", type=float, default=0.3)
 ap.add_argument("--step", type=float, default=0.05)
@@ -60,7 +62,20 @@ def tc(name):
 
 fell = float(d["fell"]) if "fell" in d.files and np.isfinite(float(d["fell"])) else None
 gt = d["gt"] if "gt" in d.files else None
-if a.at is not None:
+seg = None
+if a.segment is not None:
+    import json
+    sj = os.path.join(case_dir, "suite.json")
+    if not os.path.exists(sj):
+        sys.exit(f"--segment needs {sj} (score_suite.py output)")
+    hits = [x for x in json.load(open(sj))["segments"] if a.segment in x["label"]]
+    if not hits:
+        sys.exit(f"no segment label contains {a.segment!r}")
+    seg = hits[-1]
+if seg is not None:
+    T = seg["t1"]
+    a.before, a.after = seg["t1"] - seg["t0"] + 0.5, 0.0
+elif a.at is not None:
     T = a.at
 elif fell is not None:
     # `fell` is on the probe wall clock; gt maps wall -> sim
@@ -72,7 +87,8 @@ if w.sum() < 10:
     sys.exit(f"window [{T - a.before:.2f}, {T + a.after:.2f}] has {w.sum()} samples (t in [{t[0]:.2f}, {t[-1]:.2f}])")
 tw = t[w]
 print(f"== {os.path.basename(case_dir.rstrip('/'))}: window {tw[0]:.2f} .. {tw[-1]:.2f} s sim"
-      + (f" (fell at {T:.2f} s sim)" if fell is not None and a.at is None else ""))
+      + (f" (fell at {T:.2f} s sim)" if fell is not None and a.at is None and seg is None else "")
+      + (f" (segment: {seg['label']})" if seg is not None else ""))
 
 joints = [n.split("/", 1)[1] for n in TN if n.startswith("meas_tau/")]
 feet = sorted({n.split("/")[1] for n in TN if n.startswith("obs_foot/")})
