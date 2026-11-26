@@ -121,3 +121,27 @@ still recovering through the following stop), as in run 1 where that ramp was th
 isolation runs on the speeds script — `HUMAN_MAXSCALE=0.6` (amplitude frozen at the 0.45 m/s value)
 and `HUMAN_LEGS=false` (arms / waist / pelvis only) — to attribute the high-speed loss to the leg
 amplitude before designing a speed taper.
+
+## Isolation runs (speeds script)
+
+| run | legs | leg cap | swing knots [cm] | 0.2 hold jerk | 0.5 hold jerk | 0.8 m/s |
+|---|---|---|---|---|---|---|
+| baseline `human` | – | – | 5/5/5/6 | 47.0 | 56.6 | 88.7, survives |
+| HV3 | on | 1.2 | 6/6.5/9/11 | 42.7 | 142.7 | fell on the ramp |
+| HV3s | on | 0.6 | 6/6.5/9/11 | 52.1 | 78.2 | fell in the hold |
+| HV3n | off | – | 6/6.5/9/11 | 38.6 | 46.3 | fell in the hold |
+| **HV3nw** | off | – | **5/5/5/6** | **43.2 / 37.1** | 187.6* / **43.7** | **66.4, survives** |
+
+\* one stumble-and-recover episode in the first 0.5 m/s hold (step_l 0.37, leg jerk 2546); the
+second 0.5 m/s hold of the same run is 43.7.
+
+The 0.8 m/s falls were the swing clearance I raised to match the swing-leg curves (9 cm apex in a
+0.43 s swing), not the template: with the shipped 5 cm knots the upper-body template (arms, waist,
+pelvis) survives the whole speeds script and is smoother than the baseline at every hold, 0.8 m/s
+included (66 vs 89), with arm swing 4.8° at 0.2 m/s to 8.5° at 0.8 m/s. The recipe default is back
+to the shipped knots. Solve rate in that run was 38.5 Hz (baseline 45.9) — to be checked on a repeat;
+the other variants were at 43–44 Hz.
+
+Open: `humanHV3w` (full template, shipped swing) decides whether the leg curves can ride along at
+0.8 m/s or need a speed taper; A vs HV3 at 0.5 m/s (78 vs 143) suggests the amplitude matters there,
+but the run-to-run spread at 0.5 m/s (HV3nw: 188 then 44 within one run) is as large as that gap.

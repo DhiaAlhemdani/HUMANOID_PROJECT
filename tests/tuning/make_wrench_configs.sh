@@ -24,8 +24,8 @@
 #            HUMAN_LEGS / HUMAN_ARMS / HUMAN_WAIST=false switch template parts off, HUMAN_MAXSCALE caps
 #            the amplitude scale (1.2; 0.6 freezes the template at its 0.45 m/s amplitude);
 #            HUMAN_SWING="z1 z2 z3 z4" sets the gait law's swing-height knots at 0 / 0.45 / 0.8 /
-#            1.15 m/s (default "0.06 0.065 0.09 0.11": the ankle height the swing-leg curves imply
-#            at those speeds, so the swing-foot task and the knee curve ask for the same leg).
+#            1.15 m/s (default = the shipped "0.05 0.05 0.05 0.06"; 7-11 cm, what the swing-leg
+#            curves imply, made every variant fall at 0.8 m/s, with or without the leg curves).
 #            NOTE the suite COMMANDS the pelvis height (tune_probe.py, default 0.795 = a straight
 #            leg): run the human configs with HEIGHT=0.785 so the height and the 0.3 rad knee agree,
 #            otherwise the height weight (50) and the knee weight pull against each other.
@@ -49,7 +49,7 @@ if has human; then
   # With the leg curves off the leg weights stay at the shipped (weak) values: the posture is then the crouch.
   if [ "${HUMAN_LEGS:-true}" = true ]; then LEGW_DEFAULT="10 10 3"; else LEGW_DEFAULT="0.05 0.1 0.1"; fi
   read -r HP KN AP <<< "$(printf '%.3f %.3f %.3f' ${HUMAN_LEGW:-$LEGW_DEFAULT})"
-  read -r Z1 Z2 Z3 Z4 <<< "$(printf '%.3f %.3f %.3f %.3f' ${HUMAN_SWING:-0.06 0.065 0.09 0.11})"
+  read -r Z1 Z2 Z3 Z4 <<< "$(printf '%.3f %.3f %.3f %.3f' ${HUMAN_SWING:-0.05 0.05 0.05 0.06})"
   LEGP="$HP, 0.2, 15.0, $KN, $AP, 0.1, $HP, 0.2, 15.0, $KN, $AP, 0.1"
   MAXS=$(printf '%.3f' ${HUMAN_MAXSCALE:-1.2})
   EDITS+=("ocs2.reference.humanGait.enabled=true" "ocs2.reference.humanGait.elbowMean=-0.4"
