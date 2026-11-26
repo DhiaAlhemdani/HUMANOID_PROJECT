@@ -590,6 +590,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             first 10 % of swing. The human heel is up for the last quarter of stance; a flat-foot robot cannot be."}
         maxStanceDorsiflexion: {type: double, default_value: 0.44, description: "With stanceAnkleClosure, the stance
             knee is capped so the closed ankle stays within this dorsiflexion [rad] (the heel cannot come up)."}
+        swingClearance: {type: double, default_value: 0.05, description: "Swing-knee flexion is reduced so the
+            template's own foot clearance peaks at this value [m] (the planner's swing path is a hard constraint);
+            <= 0 keeps the human swing knee."}
         heightFromLegs: {type: bool, default_value: true, description: "With `base`, the pelvis height reference is
             the stance legs' template put through planar FK (foot flat), as an offset from the standing posture,
             averaged over both legs in double support; replaces heightOscillation."}

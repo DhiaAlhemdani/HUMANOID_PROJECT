@@ -293,6 +293,11 @@ scalar_t maxOffset = 0.6;
     //! legs are split (the pelvis is 2-5 cm lower at heel strike than at mid stance), so a fixed
     //! reference and the leg curves pull against each other.
     bool heightFromLegs = true;
+    //! Swing-knee flexion is reduced so that the template's own foot clearance (swing-leg FK against the
+    //! stance-leg pelvis height) peaks at this value [m]; <= 0 disables. The swing-foot height is a hard
+    //! constraint on the planner's path (5 cm); the human swing knee implies 5 cm at 0.3 m/s but 7.5 cm at
+    //! 0.5 and 10 cm at 0.8 m/s, and raising the planner's path to match made the robot fall.
+    scalar_t swingClearance = 0.05;
     scalar_t thighLength = 0.3366;  //!< hip pitch axis to knee axis [m] (G1)
     scalar_t shankLength = 0.3;     //!< knee axis to ankle pitch axis [m] (G1)
     scalar_t shoulderAmplitude = 0.35;  //!< shoulder pitch swing at referenceSpeed [rad]

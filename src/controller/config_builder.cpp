@@ -393,6 +393,7 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
     hg.stanceAnkleClosure = h.stanceAnkleClosure;
     hg.maxStanceDorsiflexion = h.maxStanceDorsiflexion;
     hg.heightFromLegs = h.heightFromLegs;
+    hg.swingClearance = h.swingClearance;
     hg.thighLength = h.thighLength;
     hg.shankLength = h.shankLength;
     hg.shoulderAmplitude = h.shoulderAmplitude;

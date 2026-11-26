@@ -753,6 +753,7 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           stanceAnkleClosure: true
           maxStanceDorsiflexion: 0.44
           heightFromLegs: true
+          swingClearance: 0.05
           thighLength: 0.3366
           shankLength: 0.3
           shoulderAmplitude: 0.35

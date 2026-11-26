@@ -145,3 +145,17 @@ the other variants were at 43–44 Hz.
 Open: `humanHV3w` (full template, shipped swing) decides whether the leg curves can ride along at
 0.8 m/s or need a speed taper; A vs HV3 at 0.5 m/s (78 vs 143) suggests the amplitude matters there,
 but the run-to-run spread at 0.5 m/s (HV3nw: 188 then 44 within one run) is as large as that gap.
+
+`humanHV3w` (full template, shipped swing): 0.2 hold 52.1 (base 47.0, knee_ms 19.8, arm 4.7°),
+0.5 hold 79.1 (56.6, knee_ms 23.5), fell in the 0.8 m/s hold (270, v_err 0.59). With the stance
+side made consistent (increment 2), what is left to disagree is the swing side: the human swing knee
+implies a foot clearance of 5.3 cm at scale 0.57 (0.3 m/s) — the planner's 5 cm, hence the clean
+low-speed runs — but 7.5 cm at 0.71 (0.5 m/s) and 10.4 cm at 0.87 (0.8 m/s), against a hard 5 cm
+swing-foot constraint; and the planner cannot be raised (the isolation runs).
+
+## Increment 3
+
+`swingClearance` (0.05 m, default on): the swing-knee curve is scaled down (bisection on the planar
+FK, four swing phases) so the template's own clearance peaks at the planner's value. No change below
+0.4 m/s (factor 0.97 at scale 0.57); 0.83 at 0.5 m/s, 0.68 at 0.8 m/s — the swing knee peaks at 54°
+instead of 71°. Run 4 = `humanHV4`, speeds + omni.

@@ -48,19 +48,49 @@ G1_THIGH = 0.3366  # hip pitch axis to knee axis [m]
 G1_SHANK = 0.300   # knee axis to ankle pitch axis [m]
 
 
-def leg_template_rad(phase, scale, knee_offset=0.3, stance_ankle_closure=True, max_stance_dorsiflexion=0.44):
-    """Robot (G1 convention) hip pitch, knee, ankle pitch reference for one leg at `phase` and `scale`."""
+def _leg_posture(phase, scale, swing_knee, knee_offset, stance_ankle_closure, max_stance_dorsiflexion):
     d2r = math.pi / 180.0
     half = 0.5 * knee_offset
+    w = stance_closure_weight(phase)
     hip = -(scale * human_curve_deg("hip", phase) * d2r) - half
-    knee = scale * human_curve_deg("knee", phase) * d2r + knee_offset
+    knee = scale * human_curve_deg("knee", phase) * d2r * (1.0 - (1.0 - swing_knee) * (1.0 - w)) + knee_offset
     ankle = -(scale * human_curve_deg("ankle", phase) * d2r) - half
     if stance_ankle_closure:
-        w = stance_closure_weight(phase)
         knee_stance = np.minimum(knee, max_stance_dorsiflexion - hip)
         knee = w * knee_stance + (1.0 - w) * knee
         ankle = w * (-hip - knee_stance) + (1.0 - w) * ankle
     return hip, knee, ankle
+
+
+def swing_knee_factor(scale, swing_clearance=0.05, knee_offset=0.3, stance_ankle_closure=True,
+                      max_stance_dorsiflexion=0.44):
+    """Largest factor in [0, 1] on the swing knee curve whose implied foot clearance stays within swing_clearance."""
+    if not swing_clearance > 0.0 or scale <= 0.0:
+        return 1.0
+    phases = np.array([0.65, 0.70, 0.75, 0.80])
+
+    def clearance(f):
+        hs, ks, _ = _leg_posture(phases - 0.5, scale, f, knee_offset, stance_ankle_closure, max_stance_dorsiflexion)
+        hw, kw, _ = _leg_posture(phases, scale, f, knee_offset, stance_ankle_closure, max_stance_dorsiflexion)
+        return float(np.max(leg_height(hs, ks) - leg_height(hw, kw)))
+
+    if clearance(1.0) <= swing_clearance:
+        return 1.0
+    lo, hi = 0.0, 1.0
+    for _ in range(16):
+        mid = 0.5 * (lo + hi)
+        if clearance(mid) > swing_clearance:
+            hi = mid
+        else:
+            lo = mid
+    return lo
+
+
+def leg_template_rad(phase, scale, knee_offset=0.3, stance_ankle_closure=True, max_stance_dorsiflexion=0.44,
+                     swing_clearance=0.05):
+    """Robot (G1 convention) hip pitch, knee, ankle pitch reference for one leg at `phase` and `scale`."""
+    f = swing_knee_factor(scale, swing_clearance, knee_offset, stance_ankle_closure, max_stance_dorsiflexion)
+    return _leg_posture(phase, scale, f, knee_offset, stance_ankle_closure, max_stance_dorsiflexion)
 
 
 def leg_height(hip, knee, thigh=G1_THIGH, shank=G1_SHANK):
