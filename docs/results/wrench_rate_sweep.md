@@ -66,3 +66,23 @@ flywheel away, rescoring the existing runs first for `step_l` / hold `v_err` / l
 length the candidates are a lower weight (5e-4) or a higher base-velocity weight; if neither keeps the
 smoothness, the rate weight moves to a per-phase schedule (priced around the contact handover, free
 mid-stance).
+
+### Rescore with limb metrics (`tuning_results/limbs_rescore.txt`)
+
+| hold | human step_l / v_err / leg_acc / arm_acc | humanW_1e-4 | humanF_1e-3 |
+|---|---|---|---|
+| 0.5 m/s | 0.29 / 0.12 / 19.0 / 3.57 | 0.29 / 0.13 / 17.8 / 4.22 | 0.26 / 0.16 / 15.3 / 4.94 |
+| 0.8 m/s | 0.38 / 0.16 / 32.1 / 5.75 | 0.37 / 0.18 / 29.7 / 6.57 | 0.34 / 0.22 / 24.1 / 8.42 |
+
+- Legs: 1e-3 is the smoothest in the legs too (leg_acc −20 %, leg_jerk −25 %): the steps are not abrupt.
+- Step length: −10 % at every speed with the hold `v_err` up 0.04–0.06 — the robot walks below the
+  command. The velocity error is cheap (30 (m/s)⁻²) next to the force rate, so lagging is the
+  optimizer's preferred way to pay less rate.
+- Arms: arm_pp unchanged (same ~12–16° envelope) but arm_acc +40 % — the arms shake, not swing. The arm
+  posture is unreferenced (armSwing off), so the motion is pure angular-momentum bookkeeping.
+- User at 1e-3: upper body leans slightly back, arms do not swing forward — the torso (waist posture
+  weight 2) and the arms held back are the CoM-behind-the-feet posture of a robot lagging its command.
+
+Next candidates (`make_wrench_configs.sh`, config only): features `arms,swing,waist` (stiff arm/waist
+posture with a human gait-locked arm swing reference, ±11° at 0.5 m/s) and the same plus `vel`
+(base velocity weight ×3) for the step length.

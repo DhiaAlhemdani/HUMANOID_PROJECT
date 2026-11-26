@@ -1,25 +1,46 @@
 #!/bin/bash
 # Step A configs: human gait law + wrench-as-state layout with a uniform wrench-rate weight.
 #
-# usage: make_wrench_configs.sh <out.yaml> <rate weight> [first-node scale (default 0.05)] [arms]
-#   arms: "arms" stiffens the arm posture x10 (q/qFinal jointPositions, q/qFinal jointVelocities and
-#         r.jointAccelerations of the 8 arm joints), to keep the optimizer from using the arms as a
-#         flywheel once the ground-reaction rate is priced (2026-11-25: arm sway at 1e-3).
+# usage: make_wrench_configs.sh <out.yaml> <rate weight> [first-node scale (default 0.05)] [features]
+#   features: comma-separated subset of
+#     arms   stiffen the arm posture x10 (q/qFinal jointPositions, q/qFinal jointVelocities and
+#            r.jointAccelerations of the 8 arm joints): with the ground-reaction rate priced the
+#            optimizer otherwise uses the arms as a flywheel (2026-11-25: arm shake at 1e-3).
+#     swing  reference.armSwing.enabled = true: the arms get a human, gait-locked swing reference
+#            (left arm forward with the right leg) instead of a frozen nominal posture.
+#     waist  waist posture x10 (2 -> 20, velocity 0.2 -> 1.0): the torso is the other cheap flywheel
+#            (upper body leaning back).
+#     vel    base velocity weight x3 (vx 30 -> 100, vy 15 -> 50): with the rate priced the optimizer
+#            lags the command (step_l -10 %, hold v_err 0.12 -> 0.16 at 1e-3) because the velocity
+#            error is cheap next to the force rate.
 # Joint order (robot.jointNames): 6 left leg, 6 right leg, 3 waist, 4 left arm, 4 right arm.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
-OUT=$1; W=$2; SCALE=${3:-0.05}; ARMS=${4:-}
+OUT=$1; W=$2; SCALE=${3:-0.05}; FEAT=",${4:-},"
 R12="[$W, $W, $W, $W, $W, $W, $W, $W, $W, $W, $W, $W]"
 EDITS=("ocs2.gait.continuous.enabled=true" "ocs2.model.wrenchState=true"
        "ocs2.costs.wrenchRateFirstNodeScale=$SCALE" "ocs2.costs.r.contactWrenchRates=$R12")
-if [ "$ARMS" = arms ]; then
-  POS="[0.05, 0.2, 15.0, 0.1, 0.1, 0.1, 0.05, 0.2, 15.0, 0.1, 0.1, 0.1, 2.0, 2.0, 2.0, 50.0, 50.0, 20.0, 40.0, 50.0, 50.0, 20.0, 40.0]"
-  POSF="[0.05, 0.1, 30.0, 0.1, 0.1, 0.1, 0.05, 0.1, 30.0, 0.1, 0.1, 0.1, 2.0, 2.0, 2.0, 50.0, 50.0, 20.0, 40.0, 50.0, 50.0, 20.0, 40.0]"
-  VEL="[0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.2, 0.2, 0.2, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6]"
-  ACC="[0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05]"
-  VELF="[0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2]"
-  EDITS+=("ocs2.costs.q.jointPositions=$POS" "ocs2.costs.qFinal.jointPositions=$POSF"
-          "ocs2.costs.q.jointVelocities=$VEL" "ocs2.costs.qFinal.jointVelocities=$VELF"
-          "ocs2.costs.r.jointAccelerations=$ACC")
+has() { [[ "$FEAT" == *",$1,"* ]]; }
+LEGP="0.05, 0.2, 15.0, 0.1, 0.1, 0.1, 0.05, 0.2, 15.0, 0.1, 0.1, 0.1"
+LEGPF="0.05, 0.1, 30.0, 0.1, 0.1, 0.1, 0.05, 0.1, 30.0, 0.1, 0.1, 0.1"
+LEGV="0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001"
+LEGA="0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005"
+WP="2.0, 2.0, 2.0"; WV="0.2, 0.2, 0.2"
+ARMP="5.0, 5.0, 2.0, 4.0, 5.0, 5.0, 2.0, 4.0"; ARMV="0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06"
+ARMVF="0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02"; ARMA="0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005"
+if has arms; then
+  ARMP="50.0, 50.0, 20.0, 40.0, 50.0, 50.0, 20.0, 40.0"; ARMV="0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6"
+  ARMVF="0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2"; ARMA="0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05"
+fi
+if has waist; then WP="20.0, 20.0, 20.0"; WV="1.0, 1.0, 1.0"; fi
+if has arms || has waist; then
+  EDITS+=("ocs2.costs.q.jointPositions=[$LEGP, $WP, $ARMP]" "ocs2.costs.qFinal.jointPositions=[$LEGPF, $WP, $ARMP]"
+          "ocs2.costs.q.jointVelocities=[$LEGV, $WV, $ARMV]" "ocs2.costs.qFinal.jointVelocities=[$LEGV, $WV, $ARMVF]"
+          "ocs2.costs.r.jointAccelerations=[$LEGA, 0.005, 0.005, 0.005, $ARMA]")
+fi
+if has swing; then EDITS+=("ocs2.reference.armSwing.enabled=true"); fi
+if has vel; then
+  EDITS+=("ocs2.costs.q.baseVelocity=[100.0, 50.0, 5.0, 30.0, 30.0, 30.0]"
+          "ocs2.costs.qFinal.baseVelocity=[100.0, 50.0, 5.0, 30.0, 30.0, 30.0]")
 fi
 python3 "$HERE/make_config.py" "$OUT" "${EDITS[@]}"

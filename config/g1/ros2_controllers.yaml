@@ -707,7 +707,16 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           useEstimate: false
           maxStepPerSolve: 0.002
 
+        # Gait-phase-locked arm swing superimposed on the nominal arm posture (left arm forward while
+        # the right leg swings). Off: the arms only hold the nominal posture, and whatever arm motion
+        # the optimizer finds useful for angular momentum is unreferenced. Amplitudes are per m/s of
+        # commanded forward speed; 0.4 rad/(m/s) is +-11 deg at 0.5 m/s, +-18 deg at 0.8 m/s.
         armSwing:
+          enabled: false
+          shoulderPitchAmplitude: 0.4
+          elbowAmplitude: 0.3
+          phaseOffset: 0.15
+          maxOffset: 0.6
           jointNames:
             - left_shoulder_pitch_joint
             - right_shoulder_pitch_joint
