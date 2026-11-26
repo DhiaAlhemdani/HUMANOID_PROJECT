@@ -18,6 +18,10 @@
 #            curves count (hip pitch 10, knee 10, ankle pitch 3; shipped: 0.05 / 0.1 / 0.1), the
 #            standing pelvis height for kneeOffset 0.3 (0.785 m) and a straighter elbow (elbowMean
 #            -0.4 rad). Combine with `arms,waist` for the arm / trunk weights. Not with `swing`.
+#            env HUMAN_LEGW="hp kn ap" overrides the three leg weights (default "10 10 3").
+#            NOTE the suite COMMANDS the pelvis height (tune_probe.py, default 0.795 = a straight
+#            leg): run the human configs with HEIGHT=0.785 so the height and the 0.3 rad knee agree,
+#            otherwise the height weight (50) and the knee weight pull against each other.
 # Joint order (robot.jointNames): 6 left leg, 6 right leg, 3 waist, 4 left arm, 4 right arm.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -32,7 +36,8 @@ LEGPF="0.05, 0.1, 30.0, 0.1, 0.1, 0.1, 0.05, 0.1, 30.0, 0.1, 0.1, 0.1"
 # terminal leg / arm position weights stay at the shipped values so the last node does not pull back
 # towards the crouch and the unswung arms.
 if has human; then
-  LEGP="10.0, 0.2, 15.0, 10.0, 3.0, 0.1, 10.0, 0.2, 15.0, 10.0, 3.0, 0.1"
+  read -r HP KN AP <<< "${HUMAN_LEGW:-10 10 3}"
+  LEGP="$HP, 0.2, 15.0, $KN, $AP, 0.1, $HP, 0.2, 15.0, $KN, $AP, 0.1"
   EDITS+=("ocs2.reference.humanGait.enabled=true" "ocs2.reference.humanGait.elbowMean=-0.4"
           "ocs2.reference.defaultBaseHeight=0.785")
 fi

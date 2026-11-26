@@ -3,7 +3,7 @@
 # and (optionally) compare against a baseline tag.
 #
 # usage: run_suite.sh <tag> <controllers.yaml | default> [baseline_tag]
-#   env: OUT, WS, SKIP_BUILD=1, SCRIPTS="speeds turns lateral stops omni" (default all), VIDEO=1 (render
+#   env: OUT, WS, SKIP_BUILD=1, HEIGHT (commanded pelvis height, default 0.795), SCRIPTS="speeds turns lateral stops omni" (default all), VIDEO=1 (render
 #        <case>/replay.mp4 with render_replay.py; VIDEO_PY=<python with mujoco imageio imageio-ffmpeg pillow>,
 #        e.g. a venv: python3 -m venv ~/.venvs/replay && ~/.venvs/replay/bin/pip install mujoco imageio imageio-ffmpeg pillow numpy),
 #        RESCORE=1 (no simulation: re-run score_suite.py / videos / comparison on existing case dirs)
@@ -40,7 +40,7 @@ for s in $SCRIPTS; do
       grep -E "^SUITE" "$OUT/$case/suite.txt" > "$OUT/$case/summary.txt.suite" ; break
     fi
     echo "== run $case attempt $attempt"
-    OUT=$OUT PROFILE=script SCRIPT=$HERE/suite/$s.json bash "$HERE/run_case.sh" "$case" "$CFG" 0.5 || exit 1
+    OUT=$OUT PROFILE=script SCRIPT=$HERE/suite/$s.json HEIGHT=${HEIGHT:-0.795} bash "$HERE/run_case.sh" "$case" "$CFG" 0.5 || exit 1
     [ -f "$OUT/$case/suite.json" ] && break
     echo "WARN: $case produced no suite.json:"; [ -f "$OUT/$case/summary.txt" ] && cat "$OUT/$case/summary.txt"
     if [ $attempt = 1 ]; then
