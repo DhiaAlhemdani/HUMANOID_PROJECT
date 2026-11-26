@@ -247,3 +247,17 @@ limit-consistent at the measured state. Alternative knob for comparison: `torque
 (window 70 ms, effective 60) makes the fallback rare at the cost of one more constrained node.
 The baseline `human` run is exposed to the same defect (its ages are shorter at 45.5 Hz), which is
 consistent with its 0.8 m/s hold being its roughest segment (jerk 88.7).
+
+## Run 7 — `humanUB3` x3: hold on torque-window overruns (`d2dc4f8`)
+
+Same upper-body yaml, speeds script, three repeats. **0 falls in 3** (before: 1 fall in 5 holds plus the
+pelvis-off ramp fall). Hold jerk 0.2 / 0.5 / 0.8: 35.4 / 47.0 / 81.8, 36.7 / 47.3 / 84.6, 36.2 / 46.3 / 79.8;
+final stops 0.18 / 3.7 / 1.6; solve 43.7 / 40.5 / 41.5 Hz; v_err 0.19. UB3 had one rough ramp to 0.8
+(91.0 / tau-rate 481, a guard fail); r2 is a clean winner (62.4 ramp, 79.8 hold).
+
+The price: the 0.8 m/s hold is ~15 % rougher than the surviving pre-fix runs (80-85 vs 66-74; baseline
+88.7). On overrun ticks the fade is now skipped entirely, so the support transient the fade was added
+for (2.B sweep 3) comes back on those ticks. The hold removes the fall; it does not remove the cause,
+which is the policy being older than the 40 ms the window honours on ~12 % of ticks (5574 overruns in
+the UB2 log). Next: `torqueConstraintNodes: 4` (window 70 ms, effective 60) on top of the hold, so the
+fade sees the real policy torque on most ticks and the hold only catches the rest.
