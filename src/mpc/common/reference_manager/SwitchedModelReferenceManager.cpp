@@ -305,6 +305,7 @@ void SwitchedModelReferenceManager::setHumanGaitSettings(const HumanGaitSettings
 /******************************************************************************************************/
 /******************************************************************************************************/
 SwitchedModelReferenceManager::StridePhase SwitchedModelReferenceManager::getLegStridePhase(size_t leg, scalar_t time) const {
+  constexpr scalar_t kFadeCycles = 0.4;  // amplitude ramp at walk start / stop, in step times
   StridePhase out;
   const auto& eventTimes = modeSchedule_.eventTimes;
   const auto& modes = modeSchedule_.modeSequence;
@@ -367,6 +368,7 @@ SwitchedModelReferenceManager::StridePhase SwitchedModelReferenceManager::getLeg
     out.valid = true;
     out.stepTime = (t1 - t0) / 0.8;  // the swing is 40 % of the cycle = 0.8 step
     out.phase = std::clamp(0.6 + 0.4 * (time - t0) / (t1 - t0), 0.6, 1.0 - 1e-9);
+    out.fade = std::clamp((time - t0) / (kFadeCycles * out.stepTime), 0.0, 1.0);
     return out;
   }
 
@@ -385,13 +387,44 @@ SwitchedModelReferenceManager::StridePhase SwitchedModelReferenceManager::getLeg
     stepTime = (changeTime(iTo) - hs) / 1.2;
   }
   if (!(stepTime > 0.0)) {
-    return out;  // nobody steps after this heel strike: the robot stops here
+    // Nobody steps after this heel strike: the robot stops here. Hold the heel-strike posture and fade it
+    // out over a fraction of the step time taken from this leg's own swing.
+    size_t toeOff = n;
+    for (size_t i = heelStrike - 1; i > 0; --i) {
+      if (!inContact(i, leg) && inContact(i - 1, leg)) {
+        toeOff = i;
+        break;
+      }
+    }
+    const scalar_t lastStep = toeOff < n ? (hs - changeTime(toeOff)) / 0.8 : 0.0;
+    if (!(lastStep > 0.0)) {
+      return out;
+    }
+    const scalar_t fade = 1.0 - (time - hs) / (kFadeCycles * lastStep);
+    if (fade <= 0.0) {
+      return out;
+    }
+    out.valid = true;
+    out.stepTime = lastStep;
+    out.phase = 0.0;
+    out.fade = std::min(fade, 1.0);
+    return out;
   }
   // Missing boundaries (schedule ends inside the cycle) follow the human proportions.
   const scalar_t tToOther = iToOther < n ? changeTime(iToOther) : hs + 0.2 * stepTime;
   const scalar_t tHsOther = iHsOther < n ? changeTime(iHsOther) : hs + stepTime;
   if (iTo >= n && iHsOther < n && time >= tHsOther) {
-    return out;  // the other leg lands and this one never leaves the ground again: the last step, then standing
+    // The other leg lands and this one never leaves the ground again: the last step, then standing.
+    // Hold the double-support posture (phase 0.5) and fade it out.
+    const scalar_t fade = 1.0 - (time - tHsOther) / (kFadeCycles * stepTime);
+    if (fade <= 0.0) {
+      return out;
+    }
+    out.valid = true;
+    out.stepTime = stepTime;
+    out.phase = 0.5;
+    out.fade = std::min(fade, 1.0);
+    return out;
   }
   const scalar_t tTo = iTo < n ? changeTime(iTo) : hs + 1.2 * stepTime;
   const scalar_t tHsNext = iHsNext < n ? changeTime(iHsNext) : hs + 2.0 * stepTime;
@@ -456,7 +489,7 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
     };
     const auto legReference = [&](size_t leg, const StridePhase& w) {
       const scalar_t phase = w.valid ? w.phase : 0.3;  // standing: the mid-stance point of the curves at scale 0
-      const scalar_t scale = w.valid ? legScale : 0.0;
+      const scalar_t scale = w.valid ? legScale * w.fade : 0.0;
       scalar_t hip, knee, ankle;
       legPosture(phase, scale, hip, knee, ankle);
       q[humanGaitJointIndices_[3 * leg + 0]] = hip;
@@ -483,6 +516,7 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
   // The base and trunk follow the right leg's cycle (the left is the same cycle half a period on).
   const bool cycleValid = right.valid || left.valid;
   const scalar_t cyclePhase = right.valid ? right.phase : (left.valid ? left.phase + 0.5 : 0.0);
+  const scalar_t cycleFade = right.valid ? right.fade : (left.valid ? left.fade : 0.0);
 
   if (g.arms && mpcRobotModelPtr_->modelSettings.hasArmSwingJoints) {
     const ModelSettings& ms = mpcRobotModelPtr_->modelSettings;
@@ -490,7 +524,7 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
     // The arm is back at its own leg's heel strike and forward at the other leg's: cos of the own-leg phase.
     // Shoulder pitch positive = arm back; elbow positive = flexion, largest with the arm forward.
     const auto armReference = [&](size_t shoulder, size_t elbow, const StridePhase& w) {
-      const scalar_t c = w.valid ? std::cos(kTwoPi * w.phase) : 0.0;
+      const scalar_t c = w.valid ? w.fade * std::cos(kTwoPi * w.phase) : 0.0;
       q[shoulder] += clampArm(g.shoulderAmplitude * armScale * c);
       q[elbow] += clampArm(g.elbowMean - g.elbowAmplitude * armScale * c);
     };
@@ -501,7 +535,7 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
   if (g.waist && cycleValid) {
     // Trunk counter-rotation: at right heel strike the pelvis has the right side forward and the
     // shoulders the left side forward, i.e. positive yaw of the trunk relative to the pelvis.
-    q[humanGaitJointIndices_[6]] += g.waistYawAmplitude * legScale * std::cos(kTwoPi * cyclePhase);
+    q[humanGaitJointIndices_[6]] += g.waistYawAmplitude * legScale * cycleFade * std::cos(kTwoPi * cyclePhase);
   }
   mpcRobotModelPtr_->setJointAngles(xNominal, q);
 
@@ -515,12 +549,12 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
       }
     } else {
       // Vertical excursion: high at mid single stance (30 %, 80 %), low in double support (5 %, 55 %).
-      pose[2] += g.heightOscillation * legScale * legScale * (-std::cos(2.0 * kTwoPi * (cyclePhase - 0.05)));
+      pose[2] += g.heightOscillation * legScale * legScale * cycleFade * (-std::cos(2.0 * kTwoPi * (cyclePhase - 0.05)));
     }
     // Pelvis pitch, twice per cycle (sign left to the amplitude).
-    pose[4] += g.pelvisPitchAmplitude * legScale * (-std::cos(2.0 * kTwoPi * cyclePhase));
+    pose[4] += g.pelvisPitchAmplitude * legScale * cycleFade * (-std::cos(2.0 * kTwoPi * cyclePhase));
     // Obliquity: the swing-side hip drops; right swing is centred at 80 % (roll positive = right side down).
-    pose[5] += g.pelvisRollAmplitude * legScale * std::sin(kTwoPi * (cyclePhase - 0.55));
+    pose[5] += g.pelvisRollAmplitude * legScale * cycleFade * std::sin(kTwoPi * (cyclePhase - 0.55));
     mpcRobotModelPtr_->setBasePose(xNominal, pose);
   }
 }

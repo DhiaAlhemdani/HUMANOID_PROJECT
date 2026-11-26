@@ -174,3 +174,24 @@ dictate it.
 Plan: validate the upper-body template alone across omni (`humanUB` = `HUMAN_LEGS=false`, the D
 configuration, already 0 falls and −18 % jerk on speeds), and repeat the full template with soft leg
 weights (`humanHV4L` = `HUMAN_LEGW="3 3 1"`).
+
+## Run 5 — `humanUB` and `humanHV4L`
+
+**`humanUB` (arms / waist / pelvis template, no leg curves): 0 falls in speeds and omni, smoother than
+the baseline on every walking segment** — 0.2 m/s 39.5 (47.0), 0.3 m/s 34.8 (47.8), turning 35.9
+(51.1), 0.5 m/s 42.6 (56.6), 0.6 m/s 65.3 (65.6), 0.8 m/s 67.6 (88.7), diagonal 44.1 (48.1), backward
+42.6 (48.5); transitions likewise (max 69.0 vs 73.6); acc_hf −25 % to −35 %; tracking equal or better
+(v_err max 0.195 vs 0.267); arm swing 4.7° (0.2 m/s) to 8.5° (0.8 m/s), in phase; 41.8 Hz. One
+defect: the stop holds are not quiet (jerk 51 / 17 / 33 against 0.2 / 1.0 / 0.3 for the baseline;
+`humanHV3nw`, the same configuration, had 0.8 once). Cause in the reference: at the last heel strike
+`getLegStridePhase` went invalid in one step, so the arm swing (cos = ±1 at that moment, 0.1 rad at
+weight 50), waist yaw and pelvis roll snapped to zero; the same step happened at the first toe-off.
+Fix: `StridePhase::fade` — amplitude ramps in over the first 0.4 step times of the first swing and out
+over 0.4 step times after the last heel strike (posture held), applied to legs, arms, waist and pelvis.
+
+**`humanHV4L` (full template, leg weights 3/3/1): 2 falls** — 0.8 m/s ramp and the 0.6 m/s ramp in
+omni, with the 0.3 m/s hold after the turn already at 234. Softer weights did not help the legs; the
+low-speed knee is at 17–22° as before. Decision: the leg curves stay experimental (opt-in,
+`HUMAN_LEGS=true`), the recipe default becomes the upper body (`HUMAN_LEGS=false`). The human-like
+lower body needs a different mechanism than a joint-space reference against a flat-foot MPC —
+heel-to-toe contact or a learned residual — and is parked as the next design item.

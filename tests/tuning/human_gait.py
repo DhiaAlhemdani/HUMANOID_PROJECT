@@ -211,7 +211,11 @@ def leg_stride_phase(event_times, modes, leg, time):
 
 
 def phase_series(event_times, modes, leg, times):
-    """Vectorised-by-loop phase for an array of times: (valid mask, phase array, step_time array)."""
+    """Vectorised-by-loop phase for an array of times: (valid mask, phase array, step_time array).
+
+    Scoring semantics: valid only while the leg is in a planned cycle. The C++ reference additionally holds
+    the first / last posture with an amplitude fade (`StridePhase::fade`, 0.4 step times) at walk start and
+    stop so the template does not step; that window is deliberately not part of the scored phase."""
     valid = np.zeros(len(times), bool)
     ph = np.zeros(len(times))
     st = np.zeros(len(times))

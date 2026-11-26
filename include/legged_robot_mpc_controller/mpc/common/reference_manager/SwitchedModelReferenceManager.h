@@ -318,6 +318,9 @@ scalar_t maxOffset = 0.6;
     bool valid = false;     //!< false: the leg has no planned step around `time` (standing)
     scalar_t phase = 0.0;   //!< human gait-cycle phase in [0, 1): 0 heel strike, 0.5 other heel strike, 0.6 toe-off
     scalar_t stepTime = 0.0;  //!< planned step time (heel strike to the other heel strike) [s]
+    //! Amplitude factor in [0, 1]: ramps in over the first swing out of standing and out after the last
+    //! heel strike (phase held), so the template does not step at walk start / stop.
+    scalar_t fade = 1.0;
   };
 
   /// Human gait-cycle phase of one leg (0 = LF, 1 = RF), time-warped onto the planned mode schedule.
