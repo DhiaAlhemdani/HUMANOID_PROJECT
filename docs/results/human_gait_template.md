@@ -280,3 +280,25 @@ The solve-rate guard tripped once (39.7 Hz, the other run 43.3) - run-to-run spr
 node. Shipped: `torqueConstraintNodes: 4` in `config/g1/ros2_controllers.yaml` (comment explains the
 (N-1)*dt effective window), `holdOnTorqueWindowOverrun: true`. Both apply to the baseline too; a
 `human4` baseline run with the shipped config is the pending comparison.
+
+## Run 9 — `humanUB4` (shipped config + recipe, speeds + omni) and a wrong baseline
+
+`human4` was run with `default`, i.e. the shipped four-rung gait ladder, not the `human` baseline
+(= shipped config + `ocs2.gait.continuous.enabled=true`, step B). Not comparable - but informative
+on its own: the ladder at 0.8 m/s holds with jerk **270.8** / acc_hf 5.66 / tau-rate 1062 (steps 0.24 m,
+hl_leg 11), against 88.7 for the continuous law and 69.7 for the template; at 0.2 m/s it trots 7 cm
+steps at jerk 69 (law 47, template 35). The continuous law should ship on.
+
+`humanUB4` (upper-body recipe on the fixed controller, 0 falls, 40.6 Hz), against the *old* `human`:
+
+| segment | human (old) | humanUB4 |
+|---|---|---|
+| speeds hold 0.2 / 0.5 / 0.8 | 47.0 / 56.6 / 88.7 | **35.4 / 44.2 / 69.7** |
+| speeds ramps max | 73.6 | 67.2 |
+| speeds final stop | 0.2 | 0.15 |
+| omni 0.3 / +turn / 0.3 | 47.8 / 51.1 / - | 32.8 / 53.7 / 39.9 |
+| omni 0.6 / diag / back | 65.6 / 48.1 / 48.5 | 51.5 / 39.4 / 38.7 |
+| omni stops | ~1 / 0.3 | 1.1 / 2.3 |
+
+Pending: the proper fixed-controller baseline `humanC4` (continuous law + nodes 4 + hold) to split the
+gain between the controller fix and the template.
