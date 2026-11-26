@@ -16,6 +16,11 @@ Per segment (ground truth at 100 Hz, ~/tracking at 500 Hz):
   ang_jerk     pelvis angular acceleration RMS (roll/pitch rates differentiated), 0-15 Hz [rad/s^2]
   roll_pp / pitch_pp   peak-to-peak roll and pitch [deg]
   tau_rate     leg measured torque rate RMS, 0-40 Hz [Nm/s]: the hardware-side proxy of torque steps
+  leg_acc      leg joint acceleration RMS, 0-15 Hz [rad/s^2], mean over hip/knee/ankle joints (measured positions):
+               the limb-side abruptness the pelvis numbers do not see (a force-rate cost can move it there)
+  leg_jerk     leg joint jerk RMS, 0-15 Hz [rad/s^3]
+  arm_acc      arm joint acceleration RMS, 0-15 Hz [rad/s^2], shoulder/elbow joints
+  arm_pp       shoulder-pitch swing amplitude, peak-to-peak [deg], mean of both arms (arm sway)
   tau_hf       leg measured torque, 4-40 Hz band RMS [Nm]
   v_err        command tracking error RMS (|v_cmd - v_pelvis| planar, after the ramp) [m/s]; the command is
                rounded like the controller does when <case>/config.yaml enables ocs2.gait.continuous
@@ -86,6 +91,47 @@ MODE = {0: "FLY", 1: "RF", 2: "LF", 3: "STANCE"}
 legs = [n.split("/", 1)[1] for n in TN if n.startswith("meas_tau/") and any(k in n for k in ("hip", "knee", "ankle"))]
 jt = tc("t")
 yaw_tr = tc("obs_base/yaw")
+
+# ---- limb motion from the measured joint positions (1 kHz) --------------------------------------
+JS_T = d["js_t"] if "js_t" in d.files and d["js_t"].size else None
+JS_Q = d["js_q"] if JS_T is not None else None
+JS_N = list(d["js_names"]) if JS_T is not None else []
+if JS_T is not None:
+    o = np.argsort(JS_T)
+    JS_T, JS_Q = JS_T[o], JS_Q[o]
+    keep = np.concatenate([[True], np.diff(JS_T) > 1e-6])
+    JS_T, JS_Q = JS_T[keep], JS_Q[keep]
+LEG_J = [i for i, n in enumerate(JS_N) if any(k in n for k in ("hip", "knee", "ankle"))]
+ARM_J = [i for i, n in enumerate(JS_N) if any(k in n for k in ("shoulder", "elbow"))]
+SHOULDER_PITCH = [i for i, n in enumerate(JS_N) if "shoulder_pitch" in n]
+
+
+def limb_metrics(s0, s1):
+    """Joint-space acceleration / jerk RMS (0-15 Hz) over a segment; empty dict without joint states."""
+    if JS_T is None:
+        return {}
+    m = (JS_T >= s0) & (JS_T <= s1)
+    if m.sum() < 100:
+        return {}
+    t, q = JS_T[m], JS_Q[m]
+    fs = 200.0
+    tu = np.arange(t[0], t[-1], 1.0 / fs)
+    out = {}
+    for key, idx in (("leg", LEG_J), ("arm", ARM_J)):
+        if not idx:
+            continue
+        accs, jerks = [], []
+        for i in idx:
+            qu = np.interp(tu, t, q[:, i])
+            v = np.gradient(qu, tu)
+            a = np.gradient(v, tu)
+            accs.append(band(tu, a, 0, 15, fs))
+            jerks.append(band(tu, np.gradient(a, tu), 0, 15, fs))
+        out[f"{key}_acc"] = float(np.mean(accs))
+        out[f"{key}_jerk"] = float(np.mean(jerks))
+    if SHOULDER_PITCH:
+        out["arm_pp"] = float(np.mean([math.degrees(np.ptp(q[:, i])) for i in SHOULDER_PITCH]))
+    return out
 
 # ---- steps from plan_mode: a step starts when a single support begins -------------------------
 # step_t = time to the next step start, step_l = planar pelvis displacement over it (the leg proxy: what the
@@ -160,6 +206,7 @@ for s in segs:
         if mm.sum() > 50:
             r["ds"] = float(np.mean(pm_all[mm] == 3))
     r["v_err"] = float(np.sqrt(np.mean((fwd_v[tail] - cmd[0]) ** 2 + (lat_v[tail] - cmd[1]) ** 2))) if tail.sum() > 5 else float("nan")
+    r.update(limb_metrics(s0, s1))
     yaw_rate = deriv(tt, np.unwrap(yaw))
     r["w_err"] = float(np.sqrt(np.mean((yaw_rate[tail] - cmd[2]) ** 2))) if tail.sum() > 5 else float("nan")
     if TR is not None and legs:
@@ -178,7 +225,7 @@ steady = [r for r in rows if r["kind"] == "steady"]
 trans = [r for r in rows if r["kind"] == "transition"]
 agg = {"survived": bool(np.isnan(fell)), "fell_at": None if np.isnan(fell) else round(fell - SETTLE, 1),
        "n_steady": len(steady), "n_transition": len(trans)}
-for key in ("jerk", "acc_hf", "lat_acc_hf", "tau_rate", "ang_jerk", "v_err", "step_t", "step_l"):
+for key in ("jerk", "acc_hf", "lat_acc_hf", "tau_rate", "ang_jerk", "v_err", "step_t", "step_l", "leg_acc", "leg_jerk", "arm_acc", "arm_pp"):
     sv = [r[key] for r in steady if np.isfinite(r.get(key, np.nan))]
     tv = [r[key] for r in trans if np.isfinite(r.get(key, np.nan))]
     agg[f"steady_{key}_mean"] = round(float(np.mean(sv)), 4) if sv else None
@@ -195,11 +242,13 @@ print(f"SUITE {TITLE} | survived={agg['survived']} fell_at={agg['fell_at']} | st
       f"acc_hf {agg['steady_acc_hf_mean']} tau_rate {agg['steady_tau_rate_mean']} v_err {agg['steady_v_err_mean']} | "
       f"transitions ({len(trans)}): jerk max {agg['transition_jerk_max']} acc_hf max {agg['transition_acc_hf_max']} "
       f"tau_rate max {agg['transition_tau_rate_max']} | worst: {agg.get('worst_transition')}")
-print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err step_t step_l   ds  modes")
+print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err step_t step_l   ds leg_acc leg_jrk arm_acc arm_pp  modes")
 for r in rows:
     print(f"SEG {r['label']:36s} {r['kind']:10s} {r['jerk']:6.2f} {r['acc_hf']:6.3f} {r['lat_acc_hf']:6.3f} {r['ang_jerk']:7.2f} "
           f"{r['roll_pp']:6.2f} {r['pitch_pp']:7.2f} {r.get('tau_rate', float('nan')):9.1f} {r['v_err']:6.3f} "
-          f"{r.get('step_t', float('nan')):6.2f} {r.get('step_l', float('nan')):6.2f} {r.get('ds', float('nan')):5.2f}  {r.get('modes', '')}"
+          f"{r.get('step_t', float('nan')):6.2f} {r.get('step_l', float('nan')):6.2f} {r.get('ds', float('nan')):5.2f} "
+          f"{r.get('leg_acc', float('nan')):7.2f} {r.get('leg_jerk', float('nan')):7.1f} {r.get('arm_acc', float('nan')):7.2f} "
+          f"{r.get('arm_pp', float('nan')):6.1f}  {r.get('modes', '')}"
           + ("  FELL" if r["fell"] else ""))
 
 # ---- figure ------------------------------------------------------------------------------------

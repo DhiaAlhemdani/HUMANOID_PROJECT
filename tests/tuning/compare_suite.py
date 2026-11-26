@@ -10,11 +10,15 @@ Reads <root>/<tag>__<script>/suite.json. Aggregates over the whole suite (all sc
   transition_jerk_mean, transition_acc_hf_mean
   v_err_max (worst command tracking of any segment), falls
   solve_hz (min over scripts of the MPC_TIMING actual rate in <case>/summary.txt; nan if absent)
+  steady_leg_acc_mean, steady_leg_jerk_mean, steady_arm_acc_mean, steady_arm_pp_mean (limb motion, see
+  score_suite.py; printed, and the limbs guards below keep a candidate from winning by moving the
+  abruptness from the pelvis into the limbs)
 Default gates -- a candidate WINS when every guard holds and at least one primary improves by its
 ratio while no primary gets worse than 1.10x:
   primaries: transition_jerk_max 0.8, transition_acc_hf_max 0.8, steady_jerk_mean 0.85, steady_acc_hf_mean 0.85
   guards:    falls == 0, v_err_max <= 1.2x + 0.03, steady_tau_rate_mean <= 1.15x, transition_tau_rate_max <= 1.15x,
-             solve_hz >= 0.9x (formulation changes must not starve the solver)
+             solve_hz >= 0.9x (formulation changes must not starve the solver),
+             steady_leg_jerk_mean <= 1.15x, steady_arm_acc_mean <= 1.15x (limbs; skipped when the baseline lacks them)
 The per-segment table prints every segment of every script side by side (jerk | acc_hf | tau_rate).
 """
 import argparse
@@ -26,7 +30,8 @@ from pathlib import Path
 import numpy as np
 
 AGG_KEYS = ["steady_jerk_mean", "steady_acc_hf_mean", "steady_tau_rate_mean", "transition_jerk_max",
-            "transition_acc_hf_max", "transition_tau_rate_max", "transition_jerk_mean", "transition_acc_hf_mean", "v_err_max", "falls", "solve_hz"]
+            "transition_acc_hf_max", "transition_tau_rate_max", "transition_jerk_mean", "transition_acc_hf_mean", "v_err_max", "falls", "solve_hz",
+            "steady_leg_acc_mean", "steady_leg_jerk_mean", "steady_arm_acc_mean", "steady_arm_pp_mean"]
 
 
 def load(root: Path, tag: str, scripts):
@@ -57,6 +62,10 @@ def aggregate(runs):
         "v_err_max": max(vals(steady + trans, "v_err"), default=math.nan),
         "falls": sum(0 if j["agg"]["survived"] else 1 for j in runs.values()),
         "solve_hz": min([j["solve_hz"] for j in runs.values() if math.isfinite(j.get("solve_hz", math.nan))], default=math.nan),
+        "steady_leg_acc_mean": np.mean(vals(steady, "leg_acc")) if vals(steady, "leg_acc") else math.nan,
+        "steady_leg_jerk_mean": np.mean(vals(steady, "leg_jerk")) if vals(steady, "leg_jerk") else math.nan,
+        "steady_arm_acc_mean": np.mean(vals(steady, "arm_acc")) if vals(steady, "arm_acc") else math.nan,
+        "steady_arm_pp_mean": np.mean(vals(steady, "arm_pp")) if vals(steady, "arm_pp") else math.nan,
         "scripts": len(runs),
     }
     return {k: (float(v) if isinstance(v, (np.floating, float)) else v) for k, v in agg.items()}
@@ -74,7 +83,7 @@ def main():
                  ["transition_jerk_max:0.8", "transition_acc_hf_max:0.8", "steady_jerk_mean:0.85", "steady_acc_hf_mean:0.85"])]
     guards = []
     for g in (a.guard or ["v_err_max:max:1.2:0.03", "steady_tau_rate_mean:max:1.15:0", "transition_tau_rate_max:max:1.15:0",
-                          "solve_hz:min:0.9:0"]):
+                          "solve_hz:min:0.9:0", "steady_leg_jerk_mean:max:1.15:0", "steady_arm_acc_mean:max:1.15:0"]):
         k, kind, ratio, slack = g.split(":"); guards.append((k, kind, float(ratio), float(slack)))
 
     base_runs = load(a.root, a.base, a.scripts)
@@ -90,7 +99,7 @@ def main():
         if R["falls"] > 0:
             fails.append(f"falls {R['falls']}")
         for k, kind, ratio, slack in guards:
-            if not (isinstance(R[k], float) and math.isfinite(R[k])):
+            if not (isinstance(R[k], float) and math.isfinite(R[k]) and math.isfinite(B[k])):
                 continue
             lim = B[k] * ratio + slack
             if (kind == "max" and R[k] > lim) or (kind == "min" and R[k] < lim):
@@ -123,6 +132,21 @@ def main():
                 r = segs[i] if i < len(segs) else None
                 cells.append(f"{r['jerk']:6.2f} {r['acc_hf']:6.3f} {r.get('tau_rate', float('nan')):7.0f}" if r else " " * 21)
             print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells) + ("  FELL" if seg.get("fell") else ""))
+    # limbs table (only when the baseline has joint-state metrics)
+    if any("leg_acc" in seg for j in base_runs.values() for seg in j["segments"]):
+        print("\nper segment limbs (leg_acc | leg_jerk | arm_acc | arm_pp deg):")
+        for s in a.scripts:
+            if s not in base_runs:
+                continue
+            print(f"-- {s}")
+            for i, seg in enumerate(base_runs[s]["segments"]):
+                cells = []
+                for t in tags:
+                    segs = runs[t].get(s, {}).get("segments", [])
+                    r = segs[i] if i < len(segs) else None
+                    nan = float("nan")
+                    cells.append(f"{r.get('leg_acc', nan):6.2f} {r.get('leg_jerk', nan):6.0f} {r.get('arm_acc', nan):6.2f} {r.get('arm_pp', nan):5.1f}" if r else " " * 26)
+                print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells))
     print("\nwinners: " + (", ".join(c for c, (v, _) in verdicts.items() if v.startswith("WINNER")) or "NONE"))
 
 

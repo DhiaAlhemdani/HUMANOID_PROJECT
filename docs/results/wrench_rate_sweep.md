@@ -34,3 +34,29 @@ node (positive-definite floor), `WbIdWrenchRateCost` adds `(1 − scale) × w` f
 Sweep 1e-3 and 1e-2 with scale 0.05, expecting the acc_hf/tau_rate gains of the high weights without
 the sway/falls. If the sway persists with a free first node, the cause is the in-horizon slowness itself
 and the next lever is per-phase weighting (price the double-support handover, not mid-stance).
+
+## Free first node (`wrenchRateFirstNodeScale 0.05`), 2026-11-25
+
+`tuning_results/wrench_rate_firstnode.txt`:
+
+| candidate | steady jerk / acc_hf / tau_rate | transition max | v_err | falls | solve Hz | verdict |
+|---|---|---|---|---|---|---|
+| humanW_1e-4 (scale 1) | 36.7 / 0.574 / 168 | 58.2 / 1.00 / 294 | 0.193 | 0 | 44.1 | WINNER |
+| **humanF_1e-3** (scale 0.05) | **32.7 / 0.392 / 146** | **54.7 / 0.655 / 250** | 0.232 | 0 | 42.7 | WINNER on all four primaries |
+| humanF_1e-2 (scale 0.05) | 118.7 / 1.55 / 252 | 288 / 2.16 / 552 | 0.749 | 1 | 39.4 | fall (omni, 0.3 hold after the turn) |
+
+- The free first node did what it should: the **tracking loss is gone** at 1e-3 (user), the 0.8 hold goes
+  88.7 / 1.41 / 422 → 43.8 / 0.64 / 252, every pelvis number is the best of the campaign.
+- 1e-2 is past the limit even with a free first node: the in-horizon force is then too slow for the
+  balance corrections themselves.
+- **User's eye at 1e-3: arms sway during the walk, and the step abruptness got *worse*.** The pelvis is
+  smoother because the optimizer moved the fast momentum changes into the limbs — arm and swing-leg
+  accelerations are nearly free in the cost (r.jointAccelerations 5e-6 per (rad/s²)², arm posture 5),
+  so once the ground-reaction rate is priced they become the flywheel. The pelvis metrics are blind to
+  that; `score_suite.py` now also reports `leg_acc`, `leg_jerk`, `arm_acc`, `arm_pp` from the 1 kHz joint
+  states, and `compare_suite.py` guards `steady_leg_jerk_mean` and `steady_arm_acc_mean` (≤ 1.15×).
+
+Next (config only): `humanF_1e-3` + arms stiffened ×10 (`make_wrench_configs.sh … arms`) to take the
+flywheel away, rescoring the existing runs for the limb numbers first. If the leg abruptness stays, the
+rate weight moves to a per-phase schedule (priced around the contact handover, free mid-stance) so the
+balance corrections are not what the limbs have to make up for.
