@@ -134,9 +134,14 @@ zo, zp = sig("obs_base/z"), sig("plan_base/z")
 mode = sig("plan_mode")
 foot_z = {f: (sig(f"obs_foot/{f}/z"), sig(f"plan_foot/{f}/z")) for f in feet}
 foot_v = {f: np.hypot(sig(f"obs_foot/{f}/vx"), sig(f"obs_foot/{f}/vy")) if sig(f"obs_foot/{f}/vx") is not None else None for f in feet}
+def side(name):
+    n = name.lower()
+    return "l" if ("left" in n or "_l_" in n or n.endswith("_l") or n.startswith("l_")) else "r"
+
+
 contact = {}
 for f in feet:
-    cands = [n for n in TN if n.startswith("meas_contact/") and n.endswith("/contact") and f.split("_")[0] in n]
+    cands = [n for n in TN if n.startswith("meas_contact/") and n.endswith("/contact") and side(n.split("/")[1]) == side(f)]
     contact[f] = sig(cands[0]) if cands else None
 tau = {j: sig(f"meas_tau/{j}") for j in joints}
 err = {j: (sig(f"meas_q/{j}") - sig(f"cmd_q/{j}")) for j in joints if sig(f"cmd_q/{j}") is not None and sig(f"meas_q/{j}") is not None}
@@ -159,7 +164,7 @@ for f in feet:
     if zz is not None and zpp is not None:
         events.append(first(np.abs(zz - zpp) > 0.03, f"{f} height error > 3 cm", f"peak {100 * np.nanmax(np.abs(zz - zpp)):.1f} cm"))
     if foot_v[f] is not None and mode is not None:
-        stance = np.isin(mode, (3, 1 if f.startswith("left") else 2))  # LF = left swings, RF = right swings
+        stance = np.isin(mode, (3, 1 if side(f) == "l" else 2))  # mode 2 = LF (left swings), 1 = RF
         events.append(first((foot_v[f] > 0.1) & stance, f"{f} slip > 0.1 m/s in stance", f"peak {np.nanmax(np.where(stance, foot_v[f], 0)):.2f} m/s"))
 for j, e in err.items():
     ev = first(np.abs(e) > 0.3, f"tracking error > 0.3 rad: {j}", f"peak {np.nanmax(np.abs(e)):.2f} rad")
@@ -196,6 +201,61 @@ for tq in times:
     top_err = sorted(((abs(e[i]), j) for j, e in err.items()), reverse=True)[:3]
     parts.append(" ".join(f"{j.replace('_joint', '')[:14]}={v:4.2f}" for v, j in top_err))
     print(" | ".join(parts))
+
+# ---- 2b. reference and policy continuity ------------------------------------------------------------
+# A fall that starts as a 10 deg pitch step within 50-100 ms is either an impact or a reference jump the
+# whole-body controller tracked; the two look the same in the base signals and different here.
+print("\n-- reference continuity: largest |delta cmd_q| between consecutive 2 ms samples (rad) and when")
+dt_med = float(np.median(np.diff(tw)))
+jumps = []
+for j in joints:
+    c = sig(f"cmd_q/{j}")
+    if c is None:
+        continue
+    dq = np.abs(np.diff(c))
+    k = int(np.argmax(dq))
+    jumps.append((dq[k], tw[k + 1], j))
+for v, tt, j in sorted(jumps, reverse=True)[:6]:
+    print(f"  {j:<28} {v:6.3f} rad/sample ({v / dt_med:6.1f} rad/s) at {tt:.3f}")
+pv, pt0 = sig("policy_valid"), sig("policy_t0")
+if pt0 is not None:
+    starts = np.flatnonzero(np.diff(pt0) > 1e-9) + 1
+    if starts.size > 1:
+        gaps = np.diff(tw[starts])
+        k = int(np.argmax(gaps))
+        print(f"  policies: {starts.size} new policies, median interval {1000 * np.median(gaps):.0f} ms, "
+              f"longest {1000 * gaps[k]:.0f} ms ending at {tw[starts[k + 1]]:.3f}")
+    if pv is not None and (pv < 0.5).any():
+        print(f"  policy_valid == 0 for {100 * np.mean(pv < 0.5):.0f} % of the window, first at {tw[np.flatnonzero(pv < 0.5)[0]]:.3f}")
+pbp = sig("plan_base/pitch")
+if pbp is not None and pitch is not None:
+    k = int(np.argmax(np.abs(pbp - pitch)))
+    print(f"  plan_base/pitch: range {math.degrees(pbp.min()):.1f} .. {math.degrees(pbp.max()):.1f} deg; "
+          f"largest obs-plan gap {math.degrees(np.abs(pbp - pitch)[k]):.1f} deg at {tw[k]:.3f}")
+
+# mode switches: how the landing foot arrived
+if mode is not None:
+    print("\n-- mode switches: landing foot height / vertical speed 50 ms before the switch, planned fz 20 ms after")
+    sw = np.flatnonzero(np.diff(mode) != 0) + 1
+    for k in sw:
+        m0, m1 = int(mode[k - 1]), int(mode[k])
+        landing = None
+        if m0 in (1, 2) and m1 == 3:
+            landing = [f for f in feet if side(f) == ("r" if m0 == 1 else "l")]
+        label = f"{tw[k]:7.2f}  {MODE.get(m0, '?'):>6} -> {MODE.get(m1, '?'):<6}"
+        if landing:
+            f = landing[0]
+            zz, vz = foot_z[f][0], sig(f"obs_foot/{f}/vz")
+            kb = max(0, k - int(round(0.05 / dt_med)))
+            ka = min(len(tw) - 1, k + int(round(0.02 / dt_med)))
+            fz = sig(f"plan_wrench/{f}/fz")
+            label += (f"  {f}: z {100 * zz[kb]:5.1f} cm, vz {vz[kb]:+5.2f} m/s at -50 ms; z {100 * zz[k]:5.1f} cm at switch"
+                      if zz is not None and vz is not None else "")
+            label += f"; plan fz {fz[ka]:5.0f} N at +20 ms" if fz is not None else ""
+        if pitch is not None:
+            ka = min(len(tw) - 1, k + int(round(0.1 / dt_med)))
+            label += f"; base pitch {math.degrees(pitch[k]):5.1f} -> {math.degrees(pitch[ka]):5.1f} deg over +100 ms"
+        print("  " + label)
 
 # ---- 3. torque peaks ------------------------------------------------------------------------------------
 print("\n-- peak |meas_tau| per joint in the window (limit from the MJCF if known)")
