@@ -214,11 +214,12 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
       RCLCPP_INFO(get_node()->get_logger(),
                   "%s whole-body feedback layer on: residual servo kp %.1f kd %.1f (ramp %.2f s), base kp [%.0f %.0f %.0f | %.0f %.0f %.0f], "
                   "joint kp %.0f, swing kp %.0f, weights base/joint/swing/wrench %.1f/%.2f/%.1f/%.3f, orientation task %s (w %.1f)%s, "
-                  "contact-switch fade %.3f s",
+                  "contact-switch fade %.3f s%s",
                   kTag, wb.residualKp, wb.residualKd, wb.gainRampSeconds, wb.baseKp[0], wb.baseKp[1], wb.baseKp[2],
                   wb.baseKp[3], wb.baseKp[4], wb.baseKp[5], wb.jointKp, wb.swingKp[2], wb.baseWeight[2], wb.jointWeight,
                   wb.swingWeight, wb.wrenchWeight, wb.orientationLink.empty() ? "off" : wb.orientationLink.c_str(),
-                  wb.orientationWeight, wb.jointWeights.empty() ? "" : ", per-joint weights", wb.contactBlendSeconds);
+                  wb.orientationWeight, wb.jointWeights.empty() ? "" : ", per-joint weights", wb.contactBlendSeconds,
+                  wb.holdOnTorqueWindowOverrun ? " (held on torque-window overruns)" : "");
     }
 
     stand_up_trajectory_.reset();
@@ -1904,6 +1905,12 @@ HumanoidWholeBodyInverseDynamicsMpcController::compute_mpc_joint_action(const oc
     return tau;
   };
 
+  // True when this tick's feedforward is the plan's inverse dynamics at the planned state rather than
+  // a torque the MPC constrained (policy older than the torque window). That torque is only as physical
+  // as the plan's joint accelerations beyond the window, which no joint row bounds: across a contact
+  // switch it reaches the actuator limits (hip roll 139 Nm, waist roll 50 Nm at a late touchdown) and
+  // must not be what the contact-switch fade below hands to the robot.
+  bool feedforward_is_fallback = false;
   if (feedforward_ == Feedforward::PolicyTorque && parameters_.ocs2.constraints.inverseDynamics.activate) {
     // The MPC's own torque. It is a physical torque only inside the torque window,
     // where the joint rows of the inverse dynamics hold; past it (a solve slower than
@@ -1915,6 +1922,7 @@ HumanoidWholeBodyInverseDynamicsMpcController::compute_mpc_joint_action(const oc
     if (window.containsInterpolatedInput(policy_time, policy_times)) {
       command.feedforward = control_model_->getJointTorques(policy_input);
     } else {
+      feedforward_is_fallback = true;
       ++torque_window_overruns_;
       RCLCPP_WARN_THROTTLE(
         get_node()->get_logger(), *get_node()->get_clock(), 2000,
@@ -1962,7 +1970,13 @@ HumanoidWholeBodyInverseDynamicsMpcController::compute_mpc_joint_action(const oc
       }
       clamp_torque(tau);
       // Contact-switch fade: the plan's torque carries the switch, the layer's torque the rest.
+      // When the plan's torque is the unconstrained fallback the layer keeps the whole tick: its
+      // torque is at least contact- and limit-consistent at the measured state.
       whole_body_contact_alpha_ = contact_switch_fade(policy_time, policy_mode);
+      const auto& wb = parameters_.control.wholeBody;
+      if (feedforward_is_fallback && wb.holdOnTorqueWindowOverrun) {
+        whole_body_contact_alpha_ = 1.0;
+      }
       command.feedforward = command.feedforward + whole_body_contact_alpha_ * (tau - command.feedforward);
       whole_body_last_residual_ = result.dynamicsResidual;
       whole_body_last_clips_ = result.wrenchClips;

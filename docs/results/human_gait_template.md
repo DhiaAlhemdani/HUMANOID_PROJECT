@@ -212,3 +212,38 @@ per joint against the MJCF limits and, with `mujoco` importable, the arm-body sp
 (the polynomial penalty is active below minimumDistance + delta = 25 mm; the nominal clearance of
 the upper arm to the torso is 29 mm at shoulder pitch 0, i.e. 4 mm of margin before the arm swing
 starts paying a 6000-curvature penalty — the current prime suspect).
+
+### Run 6 anatomy: the 0.8 m/s falls are a controller defect, not a template effect
+
+Tools: `tests/tuning/fall_anatomy.py` (window report), `touchdown_table.py` (one row per heel strike,
+62 strides at 0.8 m/s over 7 runs), `extract_window.py` (CSV slices of five strides). Findings, in the
+order they were established:
+
+1. Not the estimator: estimate vs ground truth within 1.0 deg pitch / 0.3 deg roll / 0.5 cm through both
+   onsets. The pitch step is real: TRUE pitch rate 354 and 665 deg/s (survivor max 66).
+2. Not a reference jump, not a solve gap: the large `cmd_q` steps come 50-80 ms *after* the onset;
+   policy intervals 22-24 ms median, 32-34 ms max, same as the survivors.
+3. Not a hard landing: every 0.8 m/s stride lands at 0.15-0.18 m/s; the normal stride has the foot on
+   the ground 49 +- 22 ms *before* the planned switch (baseline 67 ms).
+4. The three strides that pitched >= 16 deg (UB2 35.25, UBnb 33.15 - both fell - and UB2r2 38.62, a
+   near-miss) share two features no harmless stride combines: the foot still airborne at the planned
+   switch (`lead_ms` 0-4) *and* a 38-45 Nm waist-roll torque spike in the 80 ms before it. Either alone
+   is harmless (5 late strides, 3 spike strides, pitch max <= 5.7 deg).
+5. The CSV slices show what the spike is. In the 30 ms fade before the switch (`wbc/contact_alpha`
+   -> 0) the command is the plan's torque. Within the torque window that is the MPC policy torque and
+   `cmd_tau == plan_tau` (HV3nw 39.25: the MPC itself planned -40 Nm waist roll, the robot executed it,
+   nothing happened). But `torqueConstraintNodes: 3` with `dt 0.02` gives a window of (3-0.5)*dt = 50 ms
+   that the interpolation check can only honour up to 40 ms of policy age, and at 41-42 Hz solve rate
+   (the template costs 3-4 Hz) the policy is 43-60 ms old on roughly a third of the ticks. On those the
+   feedforward is the fallback: the plan's inverse dynamics at the planned state, with planned joint
+   accelerations that no joint row bounds beyond the window. Across a late touchdown that RNEA reaches
+   the actuator limits - waist roll 50/50, right hip roll 139/139, hip pitch 88/88 - and the fade hands
+   exactly that to the robot. In UB2 the next policy arrives at 35.241 (age 32 ms) and the command
+   collapses from +50 to -1.7 Nm within one tick; the pelvis was already pitching at 350 deg/s.
+
+Fix (`control.wholeBody.holdOnTorqueWindowOverrun`, default true, shipped on): on a torque-window
+overrun tick the contact fade is skipped and the whole-body layer's torque is kept - it is contact- and
+limit-consistent at the measured state. Alternative knob for comparison: `torqueConstraintNodes: 4`
+(window 70 ms, effective 60) makes the fallback rare at the cost of one more constrained node.
+The baseline `human` run is exposed to the same defect (its ages are shorter at 45.5 Hz), which is
+consistent with its 0.8 m/s hold being its roughest segment (jerk 88.7).

@@ -72,6 +72,12 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           the nearest switch). The layer swaps its contact set with the plan mode while the robot is still in the old
           contact state for a few ms; without the fade that routes the support transient through the landing hip as a
           one-tick torque impulse (2.B sweep 3: 30 ms removes it). 0 = off", validation: {gt_eq: [0.0]}}
+      holdOnTorqueWindowOverrun: {type: bool, default_value: true, description: "Skip the contact-switch fade on
+          ticks whose plan torque is the torque-window fallback (policy older than the window, plan inverse dynamics
+          at the planned state). Beyond the window the plan's joint accelerations are unbounded by any joint row, and
+          their inverse dynamics across a contact switch reaches the actuator limits; fading into that at a late
+          touchdown pitched the pelvis 10 deg in 20 ms (humanUB2 / humanUBnb at 0.8 m/s). false = the fade always
+          applies, as before."}
       baseKp: {type: double_array, default_value: [0.0, 0.0, 50.0, 25.0, 100.0, 100.0], description: "Base task
           stiffness on the generalized-coordinate error [x y z yaw pitch roll] (world position, Euler ZYX angles)
           [1/s^2]; 0 tracks the planned acceleration only", validation: {fixed_size<>: [6], lower_element_bounds<>: [0.0]}}
