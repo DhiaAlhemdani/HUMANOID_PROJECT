@@ -6,8 +6,8 @@ usage: fall_anatomy.py <case_dir | data.npz> [--at T_SIM | --segment 'hold vx +0
 
 Prints, for the window before the fall (data.npz `fell`, or --at):
   1. first-anomaly table: the sim time at which each signal first leaves its band
-     (base pitch / roll 10 deg, base height error 5 cm, foot height error 3 cm, foot slip 0.1 m/s in
-     stance, joint tracking error 0.3 rad, torque beyond 90 % of the MJCF actuator range);
+     (base pitch / roll 10 deg, base height error 5 cm, foot height error 3 cm, estimator error vs ground
+     truth, joint tracking error 0.3 rad, torque beyond 90 % of the MJCF actuator range);
   2. a timeline at --step resolution: plan mode, base pitch / roll / z (obs - plan), per-foot
      obs z and contact, the three largest |meas_tau| joints and the three largest tracking errors;
   3. peak torque per joint over the window against its limit;
@@ -171,9 +171,8 @@ for f in feet:
     zz, zpp = foot_z[f]
     if zz is not None and zpp is not None:
         events.append(first(np.abs(zz - zpp) > 0.03, f"{f} height error > 3 cm", f"peak {100 * np.nanmax(np.abs(zz - zpp)):.1f} cm"))
-    if foot_v[f] is not None and mode is not None:
-        stance = np.isin(mode, (3, 2 if side(f) == "l" else 1))  # LF (2) = left foot in contact
-        events.append(first((foot_v[f] > 0.1) & stance, f"{f} slip > 0.1 m/s in stance", f"peak {np.nanmax(np.where(stance, foot_v[f], 0)):.2f} m/s"))
+    # no stance-slip check: obs_foot velocities are not world-frame (a stance foot reads ~ -vx), so a
+    # threshold on them only measures the walking speed
 for j, e in err.items():
     ev = first(np.abs(e) > 0.3, f"tracking error > 0.3 rad: {j}", f"peak {np.nanmax(np.abs(e)):.2f} rad")
     if ev:
