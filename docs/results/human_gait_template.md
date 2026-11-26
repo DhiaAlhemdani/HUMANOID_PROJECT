@@ -195,3 +195,20 @@ low-speed knee is at 17–22° as before. Decision: the leg curves stay experime
 `HUMAN_LEGS=true`), the recipe default becomes the upper body (`HUMAN_LEGS=false`). The human-like
 lower body needs a different mechanism than a joint-space reference against a flat-foot MPC —
 heel-to-toe contact or a learned residual — and is parked as the next design item.
+
+## Run 6 — `humanUB2` + repeats
+
+`humanUB2` (fade in): stops quiet again (3.8 / 4.0; baseline 1 / 0.3), omni as before, **but the
+0.8 m/s hold fell** (192, v_err 0.58). Repeats of the same yaml on the speeds script: `humanUB2r1`
+survived (0.8 hold 73.6, stop 33.8), `humanUB2r2` survived (0.8 hold 67.5, stop 8.4).
+`humanUBnb` (pelvis template off) fell on the ramp to 0.8 (430). Tally for the upper-body template at
+0.8 m/s: 4 survived (66, 68, 74, 68) / 1 fell; the pelvis part is not the margin. Stops: 3.8, 4.0,
+34, 8 — the fade removed the systematic snap, what is left varies run to run.
+
+A 1-in-5 fall rate at the baseline's own roughest segment cannot be resolved by more A/B runs; the
+next step is anatomy. `tests/tuning/fall_anatomy.py <case>` prints the first-anomaly table, a
+timeline (mode, base pitch / roll / height error, feet, top torques and tracking errors), peak torque
+per joint against the MJCF limits and, with `mujoco` importable, the arm-body sphere clearance
+(the polynomial penalty is active below minimumDistance + delta = 25 mm; the nominal clearance of
+the upper arm to the torso is 29 mm at shoulder pitch 0, i.e. 4 mm of margin before the arm swing
+starts paying a 6000-curvature penalty — the current prime suspect).
