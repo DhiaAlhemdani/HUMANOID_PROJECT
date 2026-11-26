@@ -26,6 +26,8 @@
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=$1; W=$2; SCALE=${3:-0.05}; FEAT=",${4:-},"
+# rcl YAML: an integer in a double list is an error and 1e-4 is a *string*; write plain decimals.
+W=$(python3 -c "import sys; s=format(float(sys.argv[1]), 'f').rstrip('0'); print(s + '0' if s.endswith('.') else s)" "$W")
 R12="[$W, $W, $W, $W, $W, $W, $W, $W, $W, $W, $W, $W]"
 EDITS=("ocs2.gait.continuous.enabled=true" "ocs2.model.wrenchState=true"
        "ocs2.costs.wrenchRateFirstNodeScale=$SCALE" "ocs2.costs.r.contactWrenchRates=$R12")
@@ -36,7 +38,8 @@ LEGPF="0.05, 0.1, 30.0, 0.1, 0.1, 0.1, 0.05, 0.1, 30.0, 0.1, 0.1, 0.1"
 # terminal leg / arm position weights stay at the shipped values so the last node does not pull back
 # towards the crouch and the unswung arms.
 if has human; then
-  read -r HP KN AP <<< "${HUMAN_LEGW:-10 10 3}"
+  # ROS 2 YAML lists must be one type: every weight is written as a double (10 -> 10.0).
+  read -r HP KN AP <<< "$(printf '%.3f %.3f %.3f' ${HUMAN_LEGW:-10 10 3})"
   LEGP="$HP, 0.2, 15.0, $KN, $AP, 0.1, $HP, 0.2, 15.0, $KN, $AP, 0.1"
   EDITS+=("ocs2.reference.humanGait.enabled=true" "ocs2.reference.humanGait.elbowMean=-0.4"
           "ocs2.reference.defaultBaseHeight=0.785")
