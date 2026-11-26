@@ -277,10 +277,24 @@ scalar_t maxOffset = 0.6;
     //! flat) [rad]. Humans stand on a nearly straight knee; the whole-body ID wants a margin from the
     //! singularity. The standing posture is then hip -kneeOffset/2, knee kneeOffset, ankle -kneeOffset/2.
     scalar_t kneeOffset = 0.3;
-    //! Use the hip / ankle curves as motion about the stance posture (cycle mean removed). The tables are
-    //! trunk-relative angles of a trunk leaning ~10 deg forward; with a level pelvis the raw mean (+13 deg
-    //! hip flexion) can only be met by tilting the pelvis, which fights the base pitch cost.
-    bool removeHipMean = true;
+    //! Flat-foot closure in stance: the ankle reference is -hip - knee (sole level under a level pelvis)
+    //! instead of the human ankle curve, blended in over the last 10 % of swing and out over the first
+    //! 10 % of swing. The human curve has the heel up for the last quarter of stance and the heel only
+    //! on the ground at strike; a flat-foot robot cannot do either, and the raw curve then asks the
+    //! stance foot to pitch by 10-40 deg against the contact constraint.
+    bool stanceAnkleClosure = true;
+    //! With the closure, the stance knee is capped so that the closed ankle stays within this
+    //! dorsiflexion [rad]: the human knee flexes to ~45 deg before toe-off with the heel up; flat-footed
+    //! that would need 45 deg of dorsiflexion and a 6 cm pelvis drop. The trailing leg stays straighter.
+    scalar_t maxStanceDorsiflexion = 0.44;
+    //! Pelvis height reference from the stance legs' template (planar FK with the foot flat), as an
+    //! offset from the standing posture; averaged over both legs in double support. Replaces
+    //! heightOscillation when `base` is on. A fixed height cannot be met by human leg angles once the
+    //! legs are split (the pelvis is 2-5 cm lower at heel strike than at mid stance), so a fixed
+    //! reference and the leg curves pull against each other.
+    bool heightFromLegs = true;
+    scalar_t thighLength = 0.3366;  //!< hip pitch axis to knee axis [m] (G1)
+    scalar_t shankLength = 0.3;     //!< knee axis to ankle pitch axis [m] (G1)
     scalar_t shoulderAmplitude = 0.35;  //!< shoulder pitch swing at referenceSpeed [rad]
     scalar_t elbowAmplitude = 0.15;     //!< elbow swing at referenceSpeed [rad]
     scalar_t elbowMean = 0.0;           //!< constant elbow offset from the nominal while enabled [rad]
@@ -288,7 +302,7 @@ scalar_t maxOffset = 0.6;
     scalar_t waistYawAmplitude = 0.08;  //!< trunk counter-rotation at full scale [rad]
     scalar_t pelvisRollAmplitude = 0.05;   //!< pelvis obliquity at full scale [rad], swing side down
     scalar_t pelvisPitchAmplitude = 0.0;   //!< pelvis pitch oscillation at full scale [rad], twice per cycle
-    scalar_t heightOscillation = 0.015;    //!< pelvis vertical excursion at full scale [m], high at mid-stance
+    scalar_t heightOscillation = 0.015;    //!< pelvis vertical excursion at full scale [m] when !heightFromLegs
   };
 
   /// Installs the template; resolves the joint names against the MPC joint list (throws on a missing name).

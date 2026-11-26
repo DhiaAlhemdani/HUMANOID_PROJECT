@@ -63,18 +63,41 @@ Speeds suite survived; the omni suite fell at 22.5 s on `ramp → vx 0.2 vy 0.1`
 swing ×4 with the right phase, step length and tracking kept — but from 0.6 m/s the pelvis pitches
 ±17° and the solver's constraints stop being met.
 
-Root cause found in the template, not the weights: the hip (and ankle) tables are angles relative
-to a human trunk that leans ~10° forward while walking; their cycle mean is +13° flexion. The G1's
-pelvis is held level by the base-pose cost, so asking both hips for 13°·scale of extra flexion
-through the whole cycle can only be satisfied by pitching the pelvis forward — the harder the
-weights and the larger the scale (0.87 at 0.8 m/s vs 0.57 at 0.2), the stronger the pitch
-fight, which is exactly the speed-dependent pitch oscillation seen. Fix (`removeHipMean`, default
-on): hip and ankle curves are applied as motion about the stance posture (mean removed), knee stays
-absolute. Side effect: the standing posture and the walking mean now coincide, so walk ↔ stand
-transitions no longer step the hip reference.
+First diagnosis (commit `3000088`, wrong): "the hip curve's +13° mean is a trunk lean, remove it".
+Run 2 (`humanHV2`: mean removed, leg weights 5/5/2, pelvis template off, swing 7–9 cm) was worse —
+fell at 10.8 s on the ramp to 0.5 m/s and at 20.2 s in omni; 0.2–0.3 m/s still good (knee_ms 16–17°,
+arm_amp 4.7°). The mean is not a trunk lean: during flat-foot stance (10–40 % of the cycle) the raw
+curves satisfy hip − knee + ankle ≈ 0 to within 2°, i.e. they are already consistent with a level
+pelvis and a flat foot; removing 13°·scale of hip flexion broke that closure in every stance and the
+pelvis had to pitch to make up for it. Reverted.
 
-Also for run 2 (`make_wrench_configs.sh human` defaults): leg weights 5 / 5 / 2 (softer, the knee
-curve still reaches the robot), pelvis template (`base`) off until the legs are quiet, and the
-continuous gait's swing clearance 7–9 cm instead of 5–6 cm so the swing-foot task and the 60° swing
-knee ask for the same leg instead of two different ones. Overridable with `HUMAN_LEGW`,
-`HUMAN_BASE=true`, `HUMAN_SWING="z1 z2 z3 z4"`.
+What actually conflicts (planar FK of the G1 leg, 0.3366 / 0.300 m, pelvis level):
+
+| phase | human foot | raw template asks the stance foot to pitch | implied pelvis height vs standing |
+|---|---|---|---|
+| 0–10 % (heel strike → foot flat) | heel only | −14° (scale 0.57) … −22° (0.87) | −2.8 … −6.1 cm |
+| 15–40 % (foot flat) | flat | < 3° | −2 … −0.3 cm |
+| 45–60 % (heel off → toe off) | heel up | +6 … +28° (0.57), +10 … +43° (0.87) | −2 … −7 cm |
+
+A flat-foot robot cannot pitch the stance foot (6-row contact constraint), and the base-height cost
+holds a fixed 0.785 m. So around every heel strike and every toe-off the hip/knee/ankle references,
+the contact constraint and the height reference disagree by tens of degrees and several cm — growing
+with scale, i.e. with speed. That is the speed-dependent pitch oscillation of run 1.
+
+## Increment 2 (commit after `2084f8b`)
+
+- `stanceAnkleClosure` (default on): in stance the ankle reference is −hip − knee (sole flat under a
+  level pelvis); the stance knee is capped so the closed ankle stays within `maxStanceDorsiflexion`
+  (0.44 rad: the trailing leg stays straighter instead of flexing 45° with the heel down). Blended
+  over the first and last 10 % of swing, so references are continuous at contact changes.
+- `heightFromLegs` (default on, with `base`): the pelvis height reference is the stance legs' template
+  through planar FK, as an offset from the standing posture, weighted over both legs in double
+  support with the same fades. p-p 2 cm at scale 0.57, 3.6 cm at 0.87, lowest in double support,
+  highest at mid stance — the human pattern, and now what the legs ask for.
+- Recipe defaults back to leg weights 10/10/3, pelvis template on; swing clearance knots
+  0.06/0.065/0.09/0.11 m = the ankle height the swing-leg curves imply at 0/0.45/0.8/1.15 m/s.
+- Python mirror: `human_gait.leg_template_rad(..., stance_ankle_closure, max_stance_dorsiflexion)`,
+  `leg_height`, `pelvis_height_offset`.
+
+Run 3 = `humanHV3`, same recipe string. Gate as before; the specific expectation is pitch_pp at
+0.6–0.8 m/s back under 10° and no fall in omni.

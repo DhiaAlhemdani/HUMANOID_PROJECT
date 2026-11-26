@@ -585,9 +585,16 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             [rad] (hip and ankle take half, trunk upright, foot flat): the margin from the straight-knee singularity.
             The standing pelvis height that goes with it on the G1: 0.3 -> 0.785 m, 0.2 -> 0.789 m, 0.5 -> 0.772 m.",
             validation: {gt_eq: [0.0]}}
-        removeHipMean: {type: bool, default_value: true, description: "Use the hip / ankle curves as motion about the
-            stance posture (cycle mean removed). The tables are trunk-relative angles of a trunk leaning ~10 deg
-            forward; with a level pelvis the raw +13 deg mean hip flexion can only be met by tilting the pelvis."}
+        stanceAnkleClosure: {type: bool, default_value: true, description: "In stance the ankle reference is
+            -hip - knee (sole flat under a level pelvis) instead of the human ankle curve, blended over the last /
+            first 10 % of swing. The human heel is up for the last quarter of stance; a flat-foot robot cannot be."}
+        maxStanceDorsiflexion: {type: double, default_value: 0.44, description: "With stanceAnkleClosure, the stance
+            knee is capped so the closed ankle stays within this dorsiflexion [rad] (the heel cannot come up)."}
+        heightFromLegs: {type: bool, default_value: true, description: "With `base`, the pelvis height reference is
+            the stance legs' template put through planar FK (foot flat), as an offset from the standing posture,
+            averaged over both legs in double support; replaces heightOscillation."}
+        thighLength: {type: double, default_value: 0.3366, description: "Hip pitch axis to knee axis [m] for heightFromLegs."}
+        shankLength: {type: double, default_value: 0.3, description: "Knee axis to ankle pitch axis [m] for heightFromLegs."}
         shoulderAmplitude: {type: double, default_value: 0.35, description: "Shoulder pitch swing at referenceSpeed
             [rad].", validation: {gt_eq: [0.0]}}
         elbowAmplitude: {type: double, default_value: 0.15, description: "Elbow swing at referenceSpeed [rad].",

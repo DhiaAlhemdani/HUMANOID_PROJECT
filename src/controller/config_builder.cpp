@@ -390,7 +390,11 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
     hg.referenceSpeed = h.referenceSpeed;
     hg.maxScale = h.maxScale;
     hg.kneeOffset = h.kneeOffset;
-    hg.removeHipMean = h.removeHipMean;
+    hg.stanceAnkleClosure = h.stanceAnkleClosure;
+    hg.maxStanceDorsiflexion = h.maxStanceDorsiflexion;
+    hg.heightFromLegs = h.heightFromLegs;
+    hg.thighLength = h.thighLength;
+    hg.shankLength = h.shankLength;
     hg.shoulderAmplitude = h.shoulderAmplitude;
     hg.elbowAmplitude = h.elbowAmplitude;
     hg.elbowMean = h.elbowMean;

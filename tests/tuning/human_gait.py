@@ -38,16 +38,54 @@ def human_curve_deg(name, phase):
     return (1.0 - a) * c[i] + a * c[i + 1]
 
 
-def leg_template_rad(phase, scale, knee_offset=0.3, remove_hip_mean=True):
+def stance_closure_weight(phase):
+    """Weight of the flat-foot ankle closure: 1 in stance, blended out over [0.6, 0.7) and in over [0.9, 1.0)."""
+    p = np.asarray(phase, dtype=float)
+    return np.where(p < 0.6, 1.0, np.where(p < 0.7, (0.7 - p) / 0.1, np.where(p < 0.9, 0.0, (p - 0.9) / 0.1)))
+
+
+G1_THIGH = 0.3366  # hip pitch axis to knee axis [m]
+G1_SHANK = 0.300   # knee axis to ankle pitch axis [m]
+
+
+def leg_template_rad(phase, scale, knee_offset=0.3, stance_ankle_closure=True, max_stance_dorsiflexion=0.44):
     """Robot (G1 convention) hip pitch, knee, ankle pitch reference for one leg at `phase` and `scale`."""
     d2r = math.pi / 180.0
     half = 0.5 * knee_offset
-    hip_mean = float(np.mean(HIP_FLEX_DEG[:20])) if remove_hip_mean else 0.0
-    ankle_mean = float(np.mean(ANKLE_DORSI_DEG[:20])) if remove_hip_mean else 0.0
-    hip = -(scale * (human_curve_deg("hip", phase) - hip_mean) * d2r) - half
+    hip = -(scale * human_curve_deg("hip", phase) * d2r) - half
     knee = scale * human_curve_deg("knee", phase) * d2r + knee_offset
-    ankle = -(scale * (human_curve_deg("ankle", phase) - ankle_mean) * d2r) - half
+    ankle = -(scale * human_curve_deg("ankle", phase) * d2r) - half
+    if stance_ankle_closure:
+        w = stance_closure_weight(phase)
+        knee_stance = np.minimum(knee, max_stance_dorsiflexion - hip)
+        knee = w * knee_stance + (1.0 - w) * knee
+        ankle = w * (-hip - knee_stance) + (1.0 - w) * ankle
     return hip, knee, ankle
+
+
+def leg_height(hip, knee, thigh=G1_THIGH, shank=G1_SHANK):
+    """Pelvis height above the sole for a flat foot under a level pelvis, up to a constant (planar FK)."""
+    return thigh * np.cos(hip) + shank * np.cos(hip + knee)
+
+
+def pelvis_height_offset(phase_a, phase_b, scale, knee_offset=0.3, **kw):
+    """Pelvis height reference offset from the standing posture (C++ heightFromLegs), both legs' phases
+    given (nan for a leg without a planned step)."""
+    num, den = 0.0, 0.0
+    for ph in (phase_a, phase_b):
+        if ph is None or not np.isfinite(ph):
+            continue
+        w = float(stance_closure_weight(ph))
+        if w <= 0.0:
+            continue
+        stance_phase = min(ph, 0.6 - 1e-9) if ph < 0.7 else 0.0
+        hip, knee, _ = leg_template_rad(stance_phase, scale, knee_offset, **kw)
+        num += w * leg_height(hip, knee)
+        den += w
+    if den <= 0.0:
+        return 0.0
+    half = 0.5 * knee_offset
+    return num / den - leg_height(-half, knee_offset)
 
 
 def contact(mode, leg):

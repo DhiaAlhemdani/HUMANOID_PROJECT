@@ -189,13 +189,19 @@ constexpr std::array<double, 21> kHumanHipFlexionDeg = {30, 29, 26, 22, 17, 12, 
 constexpr std::array<double, 21> kHumanKneeFlexionDeg = {5, 10, 16, 18, 16, 13, 10, 7, 5, 6, 10, 19, 35, 52, 62, 62, 55, 42, 27, 13, 5};
 constexpr std::array<double, 21> kHumanAnkleDorsiflexionDeg = {0, -4, -6, -3, 0, 3, 6, 8, 9, 10, 9, 4, -8, -17, -16, -10, -5, -2, 0, 1, 0};
 
-// Cycle mean of a curve (the 21st knot repeats the first).
-scalar_t curveMeanDeg(const std::array<double, 21>& curve) {
-  double sum = 0.0;
-  for (size_t i = 0; i < 20; ++i) {
-    sum += curve[i];
+// Weight of the flat-foot ankle closure over the cycle: 1 in stance [0, 0.6), blended out over
+// [0.6, 0.7) and in over [0.9, 1.0).
+scalar_t stanceClosureWeight(scalar_t phase) {
+  if (phase < 0.6) {
+    return 1.0;
   }
-  return sum / 20.0;
+  if (phase < 0.7) {
+    return (0.7 - phase) / 0.1;
+  }
+  if (phase < 0.9) {
+    return 0.0;
+  }
+  return (phase - 0.9) / 0.1;
 }
 
 scalar_t humanCurveRad(const std::array<double, 21>& curve, scalar_t phase) {
@@ -369,20 +375,53 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
 
   vector_t q = mpcRobotModelPtr_->getJointAngles(xNominal);
 
+  // Pelvis height above the sole for a leg at (hip, knee) with the foot flat under a level pelvis, up to
+  // a constant (pelvis-to-hip and ankle-to-sole offsets cancel against the standing posture).
+  const auto legHeight = [&](scalar_t hip, scalar_t knee) {
+    return g.thighLength * std::cos(hip) + g.shankLength * std::cos(hip + knee);
+  };
+  const scalar_t half = 0.5 * g.kneeOffset;
+  const scalar_t standingHeight = legHeight(-half, g.kneeOffset);
+  scalar_t stanceHeightSum = 0.0;
+  scalar_t stanceWeightSum = 0.0;
+
   if (g.legs) {
-    const scalar_t half = 0.5 * g.kneeOffset;
-    // The hip and ankle tables are trunk-relative angles of a trunk that leans ~10 deg forward in human
-    // walking (hip cycle mean +13 deg); this pelvis is held level, so by default the curves are used as
-    // motion about the robot's own stance posture (mean removed). The knee is absolute: 0 is straight.
-    const scalar_t hipMean = g.removeHipMean ? curveMeanDeg(kHumanHipFlexionDeg) * M_PI / 180.0 : 0.0;
-    const scalar_t ankleMean = g.removeHipMean ? curveMeanDeg(kHumanAnkleDorsiflexionDeg) * M_PI / 180.0 : 0.0;
+    // Hip / knee / ankle reference of one leg at `phase` (robot conventions, G1: hip pitch and ankle pitch
+    // positive = extension / plantarflexion, knee positive = flexion).
+    const auto legPosture = [&](scalar_t phase, scalar_t scale, scalar_t& hip, scalar_t& knee, scalar_t& ankle) {
+      hip = -(scale * humanCurveRad(kHumanHipFlexionDeg, phase)) - half;
+      knee = scale * humanCurveRad(kHumanKneeFlexionDeg, phase) + g.kneeOffset;
+      ankle = -(scale * humanCurveRad(kHumanAnkleDorsiflexionDeg, phase)) - half;
+      if (g.stanceAnkleClosure) {
+        const scalar_t wClosure = stanceClosureWeight(phase);
+        // Flat foot under a level pelvis: ankle = -hip - knee; the knee is capped so the ankle stays
+        // within maxStanceDorsiflexion (the heel cannot come up).
+        const scalar_t kneeStance = std::min(knee, g.maxStanceDorsiflexion - hip);
+        knee = wClosure * kneeStance + (1.0 - wClosure) * knee;
+        ankle = wClosure * (-hip - kneeStance) + (1.0 - wClosure) * ankle;
+      }
+    };
     const auto legReference = [&](size_t leg, const StridePhase& w) {
       const scalar_t phase = w.valid ? w.phase : 0.3;  // standing: the mid-stance point of the curves at scale 0
       const scalar_t scale = w.valid ? legScale : 0.0;
-      // Robot conventions (G1): hip pitch and ankle pitch positive = extension / plantarflexion, knee positive = flexion.
-      q[humanGaitJointIndices_[3 * leg + 0]] = -(scale * (humanCurveRad(kHumanHipFlexionDeg, phase) - hipMean)) - half;
-      q[humanGaitJointIndices_[3 * leg + 1]] = scale * humanCurveRad(kHumanKneeFlexionDeg, phase) + g.kneeOffset;
-      q[humanGaitJointIndices_[3 * leg + 2]] = -(scale * (humanCurveRad(kHumanAnkleDorsiflexionDeg, phase) - ankleMean)) - half;
+      scalar_t hip, knee, ankle;
+      legPosture(phase, scale, hip, knee, ankle);
+      q[humanGaitJointIndices_[3 * leg + 0]] = hip;
+      q[humanGaitJointIndices_[3 * leg + 1]] = knee;
+      q[humanGaitJointIndices_[3 * leg + 2]] = ankle;
+      if (w.valid) {
+        // Height contribution: the stance posture, held at its toe-off value while fading out over the
+        // first 10 % of swing and at its heel-strike value while fading in over the last 10 %, so the
+        // reference is continuous across contact changes.
+        const scalar_t weight = stanceClosureWeight(phase);
+        if (weight > 0.0) {
+          const scalar_t stancePhase = phase < 0.7 ? std::min(phase, 0.6 - 1e-9) : 0.0;
+          scalar_t hipS, kneeS, ankleS;
+          legPosture(stancePhase, scale, hipS, kneeS, ankleS);
+          stanceHeightSum += weight * legHeight(hipS, kneeS);
+          stanceWeightSum += weight;
+        }
+      }
     };
     legReference(0, left);
     legReference(1, right);
@@ -415,8 +454,16 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
 
   if (g.base && cycleValid) {
     vector6_t pose = nominalPose;
-    // Vertical excursion: high at mid single stance (30 %, 80 %), low in double support (5 %, 55 %).
-    pose[2] += g.heightOscillation * legScale * legScale * (-std::cos(2.0 * kTwoPi * (cyclePhase - 0.05)));
+    if (g.heightFromLegs && g.legs) {
+      // What the stance legs' template implies with the foot flat: high at mid stance, 2-5 cm lower
+      // around heel strike / toe-off. Commanded height = standing posture.
+      if (stanceWeightSum > 0.0) {
+        pose[2] += stanceHeightSum / stanceWeightSum - standingHeight;
+      }
+    } else {
+      // Vertical excursion: high at mid single stance (30 %, 80 %), low in double support (5 %, 55 %).
+      pose[2] += g.heightOscillation * legScale * legScale * (-std::cos(2.0 * kTwoPi * (cyclePhase - 0.05)));
+    }
     // Pelvis pitch, twice per cycle (sign left to the amplitude).
     pose[4] += g.pelvisPitchAmplitude * legScale * (-std::cos(2.0 * kTwoPi * cyclePhase));
     // Obliquity: the swing-side hip drops; right swing is centred at 80 % (roll positive = right side down).
