@@ -518,6 +518,7 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
   mpc_ready_.store(false);
   has_active_policy_ = false;
   active_policy_ready_ = false;
+  has_last_policy_wrench_ = false;
   has_last_written_command_ = false;
   policy_blend_start_time_ = -1.0;
   motion_manager_->setOperatorMotionEnabled(!stand_up_trajectory_);
@@ -1079,6 +1080,7 @@ HumanoidWholeBodyInverseDynamicsMpcController::run_bring_up(
           mrt_interface_->reset();
           has_active_policy_ = false;
           active_policy_ready_ = false;
+          has_last_policy_wrench_ = false;
           reset_mpc_warm_start_requested_.store(true, std::memory_order_release);
         }
         if (uses_state_estimator(parameters_.floatingBase.source)) {
@@ -1586,6 +1588,21 @@ ocs2::SystemObservation HumanoidWholeBodyInverseDynamicsMpcController::build_obs
   // floating-base source and the joint interfaces.
   control_model_->setGeneralizedCoordinates(observation.state, q_pinocchio);
   control_model_->setGeneralizedVelocities(observation.state, v_pinocchio);
+  if (control_model_->hasWrenchState()) {
+    // No force sensing: the current wrench state is the wrench the last plan applied at this time,
+    // zero for a foot the schedule has in swing, and the shared weight before any plan exists. The
+    // first node's W == Ws then anchors the new plan to the force it is already commanding.
+    const auto contacts = ocs2::humanoid::modeNumber2StanceLeg(observation.mode);
+    const vector_t stand_input =
+      ocs2::humanoid::weightCompensatingInput(*control_pinocchio_, contacts, *control_model_);
+    for (size_t c = 0; c < 2; ++c) {
+      ocs2::vector6_t wrench = ocs2::vector6_t::Zero();
+      if (contacts[c]) {
+        wrench = has_last_policy_wrench_ ? last_policy_wrench_[c] : control_model_->getContactWrench(stand_input, c);
+      }
+      control_model_->setWrenchState(observation.state, wrench, c);
+    }
+  }
 
   observation_from_hardware_ = true;
   last_hardware_observation_ = observation;
@@ -1850,6 +1867,10 @@ HumanoidWholeBodyInverseDynamicsMpcController::compute_mpc_joint_action(const oc
   size_t policy_mode = ocs2::humanoid::STANCE;
   const double policy_time = observation.time + parameters_.ocs2.solver.rollout.policyTimeOffset;
   mrt_interface_->evaluatePolicy(policy_time, observation.state, policy_state, policy_input, policy_mode);
+  if (control_model_->hasWrenchState()) {
+    last_policy_wrench_ = {control_model_->getContactWrench(policy_input, 0), control_model_->getContactWrench(policy_input, 1)};
+    has_last_policy_wrench_ = true;
+  }
   if (tracking_publisher_) {
     tracking_policy_valid_ = true;
     tracking_policy_state_ = policy_state;

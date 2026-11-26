@@ -16,13 +16,16 @@
 #include <legged_robot_mpc_controller/mpc/common/HumanoidCostConstraintFactory.h>
 #include <legged_robot_mpc_controller/mpc/common/HumanoidPreComputation.h>
 #include <legged_robot_mpc_controller/mpc/common/cost/EndEffectorKinematicsQuadraticCost.h>
+#include <legged_robot_mpc_controller/mpc/common/model/DynamicsHelperFunctions.h>
 #include <legged_robot_mpc_controller/mpc/common/model/createPinocchioModel.h>
 
 #include "legged_robot_mpc_controller/mpc/wb_id/model/WbIdPinocchioMapping.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/constraint/WbIdJointTorqueLimitConstraint.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/cost/WbIdContactLoadShareCost.h"
+#include "legged_robot_mpc_controller/mpc/wb_id/cost/WbIdWrenchStateSwingCost.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/constraint/WbIdJointVelocityLimitConstraint.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/constraint/WbIdRneaConstraintCppAd.h"
+#include "legged_robot_mpc_controller/mpc/wb_id/constraint/WbIdWrenchStateConstraint.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/dynamics/WbIdDynamics.h"
 
 namespace ocs2::humanoid {
@@ -90,6 +93,14 @@ WbIdMpcInterface::WbIdMpcInterface(Config config, bool setupOCP)
                                 ") does not match the MPC state dimension (" + std::to_string(mpcRobotModelPtr_->getStateDim()) + ")");
   }
   initialState_ = config_.initialState;
+  if (mpcRobotModelPtr_->hasWrenchState()) {
+    // The construction-time wrench states carry the robot's weight on both feet (the controller
+    // overwrites the observation from sensors and the last plan).
+    const vector_t standInput = weightCompensatingInput(*pinocchioInterfacePtr_, {true, true}, *mpcRobotModelPtr_);
+    for (size_t c = 0; c < N_CONTACTS; ++c) {
+      mpcRobotModelPtr_->setWrenchState(initialState_, mpcRobotModelPtr_->getContactWrench(standInput, c), c);
+    }
+  }
 
   if (setupOCP) {
     setupOptimalControlProblem();
@@ -129,7 +140,8 @@ void WbIdMpcInterface::setupOptimalControlProblem() {
                                                           *mpcRobotModelADPtr_, modelSettings_));
   }
 
-  const WbIdPinocchioMappingCppAd pinocchioMappingCppAd(mpcRobotModelPtr_->getGenCoordinatesDim(), mpcRobotModelPtr_->getInputDim());
+  const WbIdPinocchioMappingCppAd pinocchioMappingCppAd(mpcRobotModelPtr_->getGenCoordinatesDim(), mpcRobotModelPtr_->getInputDim(),
+                                                        mpcRobotModelPtr_->getStateDim());
   for (const TaskSpaceCostConfig& taskSpaceCost : config_.taskSpaceCosts) {
     if (!taskSpaceCost.activate) {
       continue;
@@ -152,7 +164,8 @@ void WbIdMpcInterface::setupOptimalControlProblem() {
     problemPtr_->stateSoftConstraintPtr->add("FootCollisionSoftConstraint", factory.getFootCollisionConstraint());
   }
   if (config_.armSelfCollision.activate) {
-    const WbIdPinocchioMapping mapping(mpcRobotModelPtr_->getGenCoordinatesDim(), mpcRobotModelPtr_->getInputDim());
+    const WbIdPinocchioMapping mapping(mpcRobotModelPtr_->getGenCoordinatesDim(), mpcRobotModelPtr_->getInputDim(),
+                                       mpcRobotModelPtr_->getStateDim());
     problemPtr_->stateSoftConstraintPtr->add(
         "armSelfCollision", std::make_unique<ArmBodyCollisionSoftConstraint>(
             *pinocchioInterfacePtr_, mapping, mpcRobotModelPtr_->getStateDim(), config_.armSelfCollision));
@@ -187,6 +200,10 @@ void WbIdMpcInterface::setupOptimalControlProblem() {
   }
 
   // Contacts.
+  if (mpcRobotModelPtr_->hasWrenchState() && !config_.activateSwingFootZeroWrench) {
+    throw std::invalid_argument("[WbIdMpcInterface] model.wrenchState needs constraints.swingFootZeroWrench (the stance-only "
+                                "wrench-state tie relies on it for the swing nodes)");
+  }
   if (config_.activateWheelContact && (config_.activateFootMotionEquality || config_.activateContactMomentXY)) {
     throw std::invalid_argument(
         "[WbIdMpcInterface] wheelContact replaces footMotionEquality and contactMomentXY; deactivate both");
@@ -211,6 +228,16 @@ void WbIdMpcInterface::setupOptimalControlProblem() {
     }
     if (config_.activateSwingFootZeroWrench) {
       problemPtr_->equalityConstraintPtr->add(footName + "_zeroWrench", factory.getZeroWrenchConstraint(i));
+    }
+    // Wrench-as-state layout (roadmap v2 step A): the wrench state integrates the wrench-rate input and is
+    // tied to the input wrench in stance, so the rate weights in R price every force step between nodes; in
+    // swing (W = 0 by the row above, the projection needs independent rows) the state copy is pulled to zero.
+    if (mpcRobotModelPtr_->hasWrenchState()) {
+      problemPtr_->equalityConstraintPtr->add(
+          footName + "_wrenchState", std::make_unique<WbIdWrenchStateConstraint>(*referenceManagerPtr_, *mpcRobotModelPtr_, i));
+      problemPtr_->stateCostPtr->add(footName + "_wrenchStateSwing",
+                                     std::make_unique<WbIdWrenchStateSwingCost>(config_.wrenchStateSwingWeights, *referenceManagerPtr_,
+                                                                                *mpcRobotModelPtr_, i));
     }
     if (config_.activateWheelContact) {
       problemPtr_->equalityConstraintPtr->add(

@@ -214,6 +214,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           fallback) add f_c tanh(v / jointFrictionVelocity), so the planned motor torque overcomes it. Empty = none"}
       jointFrictionVelocity: {type: double, default_value: 0.05, description: "Joint speed [rad/s] over which the
           smoothed Coulomb friction reaches 76% of f_c (tanh(1))", validation: {gt: [0.0]}}
+      wrenchState: {type: bool, default_value: false, description: "Wrench-as-state layout (roadmap v2 step A):
+          the contact wrenches are appended to the MPC state and their rates to the input (x = [q, v, Ws],
+          u = [W, a, tau, dW], dWs/dt = dW, W == Ws), so costs.r.contactWrenchRates prices every force step
+          between nodes. Changes the state/input dimensions: the generated CppAD libraries are rebuilt"}
     solver:
       sqp:
         nThreads: {type: int, default_value: 4, description: "Number of solver threads", validation: {gt: [0]}}
@@ -283,6 +287,13 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         contactWrenches: {type: double_array, default_value: [0.05, 0.05, 0.01, 0.05, 0.05, 0.2, 0.05, 0.05,
               0.01, 0.05, 0.05, 0.2], description: "Input cost diagonal, contact wrenches [left fx,fy,fz,mx,my,mz,
             right fx,fy,fz,mx,my,mz]", validation: {fixed_size<>: [12]}}
+        contactWrenchRates: {type: double_array, default_value: [0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001,
+              0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001], description: "Input cost diagonal on the contact
+            wrench rates dW [N/s, N m/s], same ordering as contactWrenches; times ocs2.costs.rScaling. Only with
+            ocs2.model.wrenchState; must stay positive (the SQP needs a positive-definite input Hessian). A full
+            step of 400 N over one 20 ms node is 2e4 N/s, so 1e-5 * rScaling 1e-3 * (2e4)^2 = 4 per node is the
+            near-free default; ~1e-3 makes it comparable to the base tracking terms",
+          validation: {fixed_size<>: [12]}}
         baseAccelerations: {type: double_array, default_value: [0.001, 0.001, 0.001, 0.001, 0.001, 0.001],
             description: "Input cost diagonal on the base acceleration [linear xyz, Euler ZYX]; times ocs2.costs.rScaling",
           validation: {fixed_size<>: [6]}}

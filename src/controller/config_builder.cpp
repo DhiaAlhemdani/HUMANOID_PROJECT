@@ -1,6 +1,7 @@
 #include "legged_robot_mpc_controller/controller/config_builder.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <stdexcept>
 #include <utility>
@@ -79,6 +80,7 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   }
   model.jointFriction = p.model.jointFriction;
   model.jointFrictionVelocity = p.model.jointFrictionVelocity;
+  model.wrenchState = p.model.wrenchState;
 
   auto& foot = model.footConstraintConfig;
   foot.positionErrorGain_z = p.constraints.footMotionEquality.positionErrorGain_z;
@@ -149,10 +151,12 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   swing.impactProximityFactorTouchDownVelocity = p.gait.swingTrajectory.impactProximityFactorTouchDownVelocity;
   swing.impactProximityFactorMidPointValue = p.gait.swingTrajectory.impactProximityFactorMidPointValue;
 
-  // x = [q, v]. The controller replaces this construction-time state from sensors.
+  // x = [q, v] (+ the 12 wrench states with model.wrenchState, filled by the MPC interface). The controller
+  // replaces this construction-time state from sensors.
   checkJointArraySize(p.reference.defaultJointState, numJoints, "reference.defaultJointState");
   const auto nv = static_cast<Eigen::Index>(6 + numJoints);
-  config.initialState = vector_t::Zero(2 * nv);
+  const std::vector<double> wrenchStateZeros(p.model.wrenchState ? 12 : 0, 0.0);
+  config.initialState = vector_t::Zero(2 * nv + static_cast<Eigen::Index>(wrenchStateZeros.size()));
   config.initialState(2) = p.reference.defaultBaseHeight;
   config.initialState.segment(6, static_cast<Eigen::Index>(numJoints)) = toVector(p.reference.defaultJointState);
 
@@ -197,8 +201,10 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   const auto qJointVelocities = perJoint(p.costs.q.jointVelocities, numJoints, 0.0, "costs.q.jointVelocities");
   const auto qFinalJointVelocities = perJoint(p.costs.qFinal.jointVelocities, numJoints, 0.0, "costs.qFinal.jointVelocities");
   auto& costs = config.costConstraintConfig;
-  costs.Q = assembleDiagonalMatrix({zeros6, qJointsGeneric, zeros6, qJointVelocities}, p.costs.qScaling);
-  costs.QFinal = assembleDiagonalMatrix({zeros6, qFinalJointsGeneric, zeros6, qFinalJointVelocities}, p.costs.qScaling);
+  // The wrench states are not tracked (the wrench itself is priced in R through W == Ws).
+  costs.Q = assembleDiagonalMatrix({zeros6, qJointsGeneric, zeros6, qJointVelocities, wrenchStateZeros}, p.costs.qScaling);
+  costs.QFinal = assembleDiagonalMatrix({zeros6, qFinalJointsGeneric, zeros6, qFinalJointVelocities, wrenchStateZeros},
+                                        p.costs.qScaling);
   costs.baseMotionQ = assembleDiagonalMatrix({p.costs.q.basePose, p.costs.q.baseVelocity}, p.costs.qScaling);
   costs.baseMotionQFinal = assembleDiagonalMatrix({p.costs.qFinal.basePose, p.costs.qFinal.baseVelocity}, p.costs.qScaling);
   costs.armJointIndices = armJointIndices;
@@ -207,11 +213,22 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   costs.armJointQFinal = assembleDiagonalMatrix(
     {selectAtIndices(p.costs.qFinal.jointPositions, armJointIndices)}, p.costs.qScaling);
   costs.terminalCostScaling = p.costs.terminalCostScaling;
-  // u = [W_left, W_right, a_base, a_joints, tau_joints].
+  // u = [W_left, W_right, a_base, a_joints, tau_joints] (+ [dW_left, dW_right] with model.wrenchState).
+  std::vector<double> wrenchRateWeights;
+  if (p.model.wrenchState) {
+    wrenchRateWeights = p.costs.r.contactWrenchRates;
+    for (double w : wrenchRateWeights) {
+      if (!(std::isfinite(w) && w > 0.0)) {
+        throw std::invalid_argument(
+          "[whole_body_inverse_dynamics_mpc_config_builder] costs.r.contactWrenchRates must be positive with "
+          "model.wrenchState");
+      }
+    }
+  }
   costs.R = assembleDiagonalMatrix(
     {p.costs.r.contactWrenches, p.costs.r.baseAccelerations,
      perJoint(p.costs.r.jointAccelerations, numJoints, 0.005, "costs.r.jointAccelerations"),
-     perJoint(p.costs.r.jointTorques, numJoints, 0.1, "costs.r.jointTorques")}, p.costs.rScaling);
+     perJoint(p.costs.r.jointTorques, numJoints, 0.1, "costs.r.jointTorques"), wrenchRateWeights}, p.costs.rScaling);
 
   // --- constraints ---
   auto& armCollision = config.armSelfCollision;
@@ -310,6 +327,15 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
 
   // --- double-support load-transfer shaping (D2/D3); 0 keeps the shipped behavior ---
   config.contactLoadShareWeight = p.costs.contactLoadShareWeight;
+  if (p.model.wrenchState) {
+    // One node of rate cost per node of swing: Ws held through a swing costs many one-node dumps.
+    const auto& rates = p.costs.r.contactWrenchRates;
+    const double perNode = p.costs.rScaling / (p.solver.sqp.dt * p.solver.sqp.dt);
+    for (Eigen::Index i = 0; i < 6; ++i) {
+      config.wrenchStateSwingWeights(i) =
+        perNode * std::max(rates[static_cast<size_t>(i)], rates[static_cast<size_t>(6 + i)]);
+    }
+  }
 
   // --- task-space kinematics costs ---
   config.activateTaskSpaceFootCost = p.costs.taskSpaceFootCost.activate;

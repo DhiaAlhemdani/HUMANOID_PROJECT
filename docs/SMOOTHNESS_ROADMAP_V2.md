@@ -123,6 +123,25 @@ the gate is the existing `solve_hz ≥ 0.9×`.
 Measurement: the suite's `tau_rate` and `acc_hf` everywhere, plus the per-event
 `plan_tau_step_at_contact_change` (should fall from 18 Nm to a few Nm).
 
+### As built (increment 1, 2026-11-25) — `ocs2.model.wrenchState`
+
+The layout is *appended*, not rearranged, so every existing consumer of the input wrench is
+untouched: `x = [q, v, Ws(12)]`, `u = [W(12), a, τ, Ẇ(12)]`, `Ẇs = Ẇ` (`WbIdDynamics`), and the
+stance-only equality `W_c = Ws_c` (`WbIdWrenchStateConstraint`, one per foot). In swing the
+foot's `ZeroWrenchConstraint` already pins `W_c = 0` through the same input columns — the SQP
+projection needs independent rows, so the tie is inactive there and a quadratic state cost
+(`WbIdWrenchStateSwingCost`, weighted like one node of rate cost) pulls `Ws_c` to zero instead.
+The rate weight is `costs.r.contactWrenchRates` (12, must stay > 0 — HPIPM needs `R > 0`);
+Ws has no Q weight (the wrench is priced in R through the tie). The observation reports `Ws` as
+the last evaluated policy wrench (zero for a swing foot, shared weight before the first plan), so
+the first node anchors the new plan to the force already being commanded. Generated CppAD code
+goes to its own folder (`…_wrenchstate`): first start takes minutes
+(`LAUNCH_TIMEOUT=900 LOCO_WAIT=600` for `run_case.sh`). Scale: a full 400 N step in one 20 ms
+node is 2e4 N/s; with `rScaling 1e-3` a weight of `1e-5` costs 4 per node (the shipped near-free
+default for the layout check), `~1e-3` costs 400 — the same order as the base tracking terms —
+and is where increment 2's sweep starts. Increment 2: rate-weight sweep on `speeds` + `omni`
+(gate: `solve_hz ≥ 0.9×`, no falls, then the user's videos), per-phase weight shaping if needed.
+
 ## 4. Step C — residual RL (after A and B)
 
 Prerequisites from `LOCOMOTION_IMPROVEMENTS.md` §3.1 stand: actuator realism and a domain

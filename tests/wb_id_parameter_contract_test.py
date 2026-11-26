@@ -81,7 +81,10 @@ def main():
         assert set(costs[stage]) == {"basePose", "baseVelocity", "jointPositions", "jointVelocities"}
         for key in ("jointPositions", "jointVelocities"):
             assert len(costs[stage][key]) == count
-    assert set(costs["r"]) == {"contactWrenches", "baseAccelerations", "jointAccelerations", "jointTorques"}
+    assert set(costs["r"]) == {"contactWrenches", "contactWrenchRates", "baseAccelerations", "jointAccelerations", "jointTorques"}
+    # Wrench-as-state layout: 12 strictly positive rate weights (the SQP needs R > 0), off by default.
+    assert len(costs["r"]["contactWrenchRates"]) == 12 and all(v > 0 for v in costs["r"]["contactWrenchRates"])
+    assert params["ocs2"]["model"]["wrenchState"] is False
     for key in ("jointAccelerations", "jointTorques"):
         assert len(costs["r"][key]) == count
     for stage in ("q", "qFinal", "r"):

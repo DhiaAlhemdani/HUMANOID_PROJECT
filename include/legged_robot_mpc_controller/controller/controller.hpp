@@ -306,6 +306,10 @@ private:
   ocs2::SystemObservation last_hardware_observation_;
   bool has_hardware_observation_{false};
   bool observation_from_hardware_{false};
+  //! Wrench-as-state layout (ocs2.model.wrenchState): the last evaluated policy wrenches, which the
+  //! next observation reports as the current wrench states (no force sensing is assumed).
+  bool has_last_policy_wrench_{false};
+  std::array<ocs2::vector6_t, 2> last_policy_wrench_{};
 };
 
 }  // namespace legged_robot_mpc_controller

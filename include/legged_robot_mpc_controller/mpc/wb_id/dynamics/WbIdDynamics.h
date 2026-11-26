@@ -31,6 +31,9 @@ class WbIdDynamics final : public SystemDynamicsBase {
 
   size_t nv_;
   size_t accelerationStart_;
+  size_t wrenchDim_ = 0;  // 6 * N_CONTACTS when the model carries wrench states, else 0
+  size_t wrenchStateStart_ = 0;
+  size_t wrenchRateStart_ = 0;
   matrix_t dfdx_;
   matrix_t dfdu_;
 };

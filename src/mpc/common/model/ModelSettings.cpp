@@ -120,10 +120,13 @@ ModelSettings::ModelSettings(const Params& params, const std::string& urdfFile, 
   this->j_r_shoulder_y_name = params.j_r_shoulder_y_name;
   this->j_l_elbow_y_name = params.j_l_elbow_y_name;
   this->j_r_elbow_y_name = params.j_r_elbow_y_name;
+  // The wrench-as-state layout changes the state/input dimensions baked into the generated
+  // libraries: keep its code in a folder of its own so toggling it never loads stale models.
+  const std::string layoutSuffix = params.wrenchState ? "_wrenchstate" : "";
   if (params.modelFolderCppAd.empty()) {
-    modelFolderCppAd = "cppad_code_gen/cppad_" + mpcName + robotName;
+    modelFolderCppAd = "cppad_code_gen/cppad_" + mpcName + robotName + layoutSuffix;
   } else {
-    modelFolderCppAd = params.modelFolderCppAd + "/" + mpcName + robotName;
+    modelFolderCppAd = params.modelFolderCppAd + "/" + mpcName + robotName + layoutSuffix;
   }
 
   this->fixedJointNames = params.fixedJointNames;
@@ -185,6 +188,7 @@ ModelSettings::ModelSettings(const Params& params, const std::string& urdfFile, 
 
   this->jointFriction = params.jointFriction;
   this->jointFrictionVelocity = params.jointFrictionVelocity;
+  this->wrenchState = params.wrenchState;
   if (!jointFriction.empty() && jointFriction.size() != mpc_joint_dim) {
     throw std::invalid_argument("[ModelSettings] jointFriction needs one entry per MPC joint (" + std::to_string(mpc_joint_dim) +
                                 "), got " + std::to_string(jointFriction.size()));

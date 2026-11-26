@@ -84,6 +84,9 @@ class ModelSettings {
     // joint dynamics rows add f_c tanh(v / jointFrictionVelocity).
     std::vector<scalar_t> jointFriction;
     scalar_t jointFrictionVelocity = 0.05;  // [rad/s]
+    // WB-ID only (roadmap v2 step A): the contact wrenches are also states and their rates inputs,
+    // so the solver can be charged for force steps between nodes. See WbIdMpcRobotModel.
+    bool wrenchState = false;
   };
 
   ModelSettings(const Params& params, const std::string& urdfFile, const std::string& mpcName, bool verbose = false);
@@ -135,6 +138,9 @@ class ModelSettings {
   // Coulomb friction per MPC joint [N m]; empty = none; smoothed as f_c tanh(v / jointFrictionVelocity).
   std::vector<scalar_t> jointFriction;
   scalar_t jointFrictionVelocity = 0.05;
+
+  // Wrench-as-state layout of the WB-ID MPC (see WbIdMpcRobotModel).
+  bool wrenchState = false;
 
   FootConstraintConfig footConstraintConfig;
 
