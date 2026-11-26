@@ -9,21 +9,24 @@ Reads <root>/<tag>__<script>/suite.json. Aggregates over the whole suite (all sc
   transition_jerk_max, transition_acc_hf_max, transition_tau_rate_max (max over transitions)
   transition_jerk_mean, transition_acc_hf_mean
   v_err_max (worst command tracking of any segment), falls
+  solve_hz (min over scripts of the MPC_TIMING actual rate in <case>/summary.txt; nan if absent)
 Default gates -- a candidate WINS when every guard holds and at least one primary improves by its
 ratio while no primary gets worse than 1.10x:
   primaries: transition_jerk_max 0.8, transition_acc_hf_max 0.8, steady_jerk_mean 0.85, steady_acc_hf_mean 0.85
-  guards:    falls == 0, v_err_max <= 1.2x + 0.03, steady_tau_rate_mean <= 1.15x, transition_tau_rate_max <= 1.15x
+  guards:    falls == 0, v_err_max <= 1.2x + 0.03, steady_tau_rate_mean <= 1.15x, transition_tau_rate_max <= 1.15x,
+             solve_hz >= 0.9x (formulation changes must not starve the solver)
 The per-segment table prints every segment of every script side by side (jerk | acc_hf | tau_rate).
 """
 import argparse
 import json
 import math
+import re
 from pathlib import Path
 
 import numpy as np
 
 AGG_KEYS = ["steady_jerk_mean", "steady_acc_hf_mean", "steady_tau_rate_mean", "transition_jerk_max",
-            "transition_acc_hf_max", "transition_tau_rate_max", "transition_jerk_mean", "transition_acc_hf_mean", "v_err_max", "falls"]
+            "transition_acc_hf_max", "transition_tau_rate_max", "transition_jerk_mean", "transition_acc_hf_mean", "v_err_max", "falls", "solve_hz"]
 
 
 def load(root: Path, tag: str, scripts):
@@ -32,6 +35,9 @@ def load(root: Path, tag: str, scripts):
         f = root / f"{tag}__{s}" / "suite.json"
         if f.is_file():
             out[s] = json.loads(f.read_text())
+            summary = f.parent / "summary.txt"
+            m = re.search(r"MPC_TIMING\].*?actual=([0-9.]+) Hz", summary.read_text()) if summary.is_file() else None
+            out[s]["solve_hz"] = float(m.group(1)) if m else math.nan
     return out
 
 
@@ -50,6 +56,7 @@ def aggregate(runs):
         "transition_acc_hf_mean": np.mean(vals(trans, "acc_hf")) if trans else math.nan,
         "v_err_max": max(vals(steady + trans, "v_err"), default=math.nan),
         "falls": sum(0 if j["agg"]["survived"] else 1 for j in runs.values()),
+        "solve_hz": min([j["solve_hz"] for j in runs.values() if math.isfinite(j.get("solve_hz", math.nan))], default=math.nan),
         "scripts": len(runs),
     }
     return {k: (float(v) if isinstance(v, (np.floating, float)) else v) for k, v in agg.items()}
@@ -66,7 +73,8 @@ def main():
     primaries = [(p.split(":")[0], float(p.split(":")[1])) for p in (a.primary or
                  ["transition_jerk_max:0.8", "transition_acc_hf_max:0.8", "steady_jerk_mean:0.85", "steady_acc_hf_mean:0.85"])]
     guards = []
-    for g in (a.guard or ["v_err_max:max:1.2:0.03", "steady_tau_rate_mean:max:1.15:0", "transition_tau_rate_max:max:1.15:0"]):
+    for g in (a.guard or ["v_err_max:max:1.2:0.03", "steady_tau_rate_mean:max:1.15:0", "transition_tau_rate_max:max:1.15:0",
+                          "solve_hz:min:0.9:0"]):
         k, kind, ratio, slack = g.split(":"); guards.append((k, kind, float(ratio), float(slack)))
 
     base_runs = load(a.root, a.base, a.scripts)
