@@ -261,3 +261,22 @@ for (2.B sweep 3) comes back on those ticks. The hold removes the fall; it does 
 which is the policy being older than the 40 ms the window honours on ~12 % of ticks (5574 overruns in
 the UB2 log). Next: `torqueConstraintNodes: 4` (window 70 ms, effective 60) on top of the hold, so the
 fade sees the real policy torque on most ticks and the hold only catches the rest.
+
+## Run 8 — `humanUB3n4` x2: hold + `torqueConstraintNodes: 4`
+
+| | n4 | n4r1 | UB3 (hold only, x3) | pre-fix survivors | baseline |
+|---|---|---|---|---|---|
+| hold 0.2 / 0.5 | 34.5 / 40.0 | 35.1 / 42.5 | 35-37 / 46-47 | 38-39 / 41-49 | 47.0 / 56.6 |
+| hold 0.8 | **66.5** | 77.0 | 80-85 | 66-74 | 88.7 |
+| ramp -> 0.8 | 71.7 | 63.2 | 62-91 | 60-125 | 73.6 |
+| final stop | 0.88 | 0.19 | 0.2-3.7 | 3.8-34 | 0.2 |
+| steady_jerk_mean | 36.2 | 38.4 | 41.3-43.5 | 41-44 | 48.0 |
+| solve Hz | 39.7 | 43.3 | 40.5-43.7 | 41-42 | 45.5 |
+| falls | 0 | 0 | 0 | 1 in 5 | 0 |
+
+The fourth constrained node gives the fade the real policy torque on most ticks again: 0.8 hold back
+to the high 60s / 70s, 0.5 hold 40-42 (the best so far, -27 % vs baseline), stops quiet, 0 falls.
+The solve-rate guard tripped once (39.7 Hz, the other run 43.3) - run-to-run spread, not a cost of the
+node. Shipped: `torqueConstraintNodes: 4` in `config/g1/ros2_controllers.yaml` (comment explains the
+(N-1)*dt effective window), `holdOnTorqueWindowOverrun: true`. Both apply to the baseline too; a
+`human4` baseline run with the shipped config is the pending comparison.

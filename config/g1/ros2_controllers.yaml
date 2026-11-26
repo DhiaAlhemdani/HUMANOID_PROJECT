@@ -504,7 +504,12 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         inverseDynamics:
           # Keep physical equalities enabled for locomotion; disabling is diagnostic-only.
           activate: true
-          torqueConstraintNodes: 3
+          # 4, not the literature's 3: the window is (N-0.5)*dt and the policy interpolation can only use it
+          # up to (N-1)*dt of policy age. At 40-45 Hz the policy is 40-60 ms old on ~12 % of ticks, and on
+          # those the feedforward falls back to the plan's unbounded inverse dynamics (0.8 m/s falls,
+          # docs/results/human_gait_template.md runs 6-8). 4 nodes = 60 ms honoured; the hold in
+          # control.wholeBody covers the rest.
+          torqueConstraintNodes: 4
 
         footMotionEquality:
           activate: true
