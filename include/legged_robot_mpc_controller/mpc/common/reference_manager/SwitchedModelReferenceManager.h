@@ -422,6 +422,8 @@ scalar_t maxOffset = 0.6;
   ArmSwingSettings armSwing_;
   HumanGaitSettings humanGait_;
   std::array<size_t, 7> humanGaitJointIndices_{};
+  static constexpr size_t kSwingKneeTableSize = 65;
+  std::vector<scalar_t> swingKneeTable_;  //!< swing-knee factor over legScale in [0, maxScale]
 
   BufferedValue<TargetTrajectories> externalJointTargets_{TargetTrajectories()};
   BufferedValue<std::shared_ptr<const StairClimbingPlan>> stairClimbingPlan_{nullptr};

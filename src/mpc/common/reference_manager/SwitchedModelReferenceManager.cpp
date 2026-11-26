@@ -215,12 +215,73 @@ scalar_t humanCurveRad(const std::array<double, 21>& curve, scalar_t phase) {
   return ((1.0 - a) * curve[i] + a * curve[i + 1]) * M_PI / 180.0;
 }
 
+using HumanGaitSettings = SwitchedModelReferenceManager::HumanGaitSettings;
+
+// Pelvis height above the sole for a leg at (hip, knee) with the foot flat under a level pelvis, up to a
+// constant (pelvis-to-hip and ankle-to-sole offsets cancel against the standing posture).
+scalar_t humanLegHeight(const HumanGaitSettings& g, scalar_t hip, scalar_t knee) {
+  return g.thighLength * std::cos(hip) + g.shankLength * std::cos(hip + knee);
+}
+
+// Hip / knee / ankle reference of one leg at `phase` and amplitude `scale` (robot conventions, G1: hip pitch
+// and ankle pitch positive = extension / plantarflexion, knee positive = flexion). `swingKnee` scales the
+// knee curve in swing (1 = human).
+void humanLegPosture(const HumanGaitSettings& g, scalar_t phase, scalar_t scale, scalar_t swingKnee, scalar_t& hip,
+                     scalar_t& knee, scalar_t& ankle) {
+  const scalar_t half = 0.5 * g.kneeOffset;
+  const scalar_t wClosure = stanceClosureWeight(phase);
+  hip = -(scale * humanCurveRad(kHumanHipFlexionDeg, phase)) - half;
+  knee = scale * humanCurveRad(kHumanKneeFlexionDeg, phase) * (1.0 - (1.0 - swingKnee) * (1.0 - wClosure)) + g.kneeOffset;
+  ankle = -(scale * humanCurveRad(kHumanAnkleDorsiflexionDeg, phase)) - half;
+  if (g.stanceAnkleClosure) {
+    // Flat foot under a level pelvis: ankle = -hip - knee; the knee is capped so the ankle stays within
+    // maxStanceDorsiflexion (the heel cannot come up).
+    const scalar_t kneeStance = std::min(knee, g.maxStanceDorsiflexion - hip);
+    knee = wClosure * kneeStance + (1.0 - wClosure) * knee;
+    ankle = wClosure * (-hip - kneeStance) + (1.0 - wClosure) * ankle;
+  }
+}
+
+// Swing-knee factor at `scale`: the largest value in [0, 1] whose foot clearance (swing-leg FK under the
+// pelvis height the stance leg implies half a cycle on) stays within swingClearance.
+scalar_t humanSwingKneeFactor(const HumanGaitSettings& g, scalar_t scale) {
+  if (!(g.swingClearance > 0.0) || scale <= 0.0) {
+    return 1.0;
+  }
+  constexpr std::array<scalar_t, 4> kSwingPhases = {0.65, 0.70, 0.75, 0.80};
+  const auto clearance = [&](scalar_t factor) {
+    scalar_t worst = -1.0;
+    for (const scalar_t ph : kSwingPhases) {
+      scalar_t hipS, kneeS, ankleS, hipW, kneeW, ankleW;
+      humanLegPosture(g, ph - 0.5, scale, factor, hipS, kneeS, ankleS);  // the stance leg, half a cycle on
+      humanLegPosture(g, ph, scale, factor, hipW, kneeW, ankleW);
+      worst = std::max(worst, humanLegHeight(g, hipS, kneeS) - humanLegHeight(g, hipW, kneeW));
+    }
+    return worst;
+  };
+  if (clearance(1.0) <= g.swingClearance) {
+    return 1.0;
+  }
+  scalar_t lo = 0.0, hi = 1.0;
+  for (int i = 0; i < 16; ++i) {
+    const scalar_t mid = 0.5 * (lo + hi);
+    (clearance(mid) > g.swingClearance ? hi : lo) = mid;
+  }
+  return lo;
+}
+
 }  // namespace
 
 void SwitchedModelReferenceManager::setHumanGaitSettings(const HumanGaitSettings& settings) {
   humanGait_ = settings;
   if (!settings.enabled) {
     return;
+  }
+  // Swing-knee factor over the amplitude scale, solved once here (the reference is evaluated at every node).
+  swingKneeTable_.resize(kSwingKneeTableSize);
+  for (size_t i = 0; i < kSwingKneeTableSize; ++i) {
+    const scalar_t scale = settings.maxScale * static_cast<scalar_t>(i) / static_cast<scalar_t>(kSwingKneeTableSize - 1);
+    swingKneeTable_[i] = humanSwingKneeFactor(settings, scale);
   }
   if (settings.jointNames.size() != humanGaitJointIndices_.size()) {
     throw std::invalid_argument("[SwitchedModelReferenceManager] humanGait.jointNames needs 7 entries "
@@ -375,64 +436,23 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
 
   vector_t q = mpcRobotModelPtr_->getJointAngles(xNominal);
 
-  // Pelvis height above the sole for a leg at (hip, knee) with the foot flat under a level pelvis, up to
-  // a constant (pelvis-to-hip and ankle-to-sole offsets cancel against the standing posture).
-  const auto legHeight = [&](scalar_t hip, scalar_t knee) {
-    return g.thighLength * std::cos(hip) + g.shankLength * std::cos(hip + knee);
-  };
+  const auto legHeight = [&](scalar_t hip, scalar_t knee) { return humanLegHeight(g, hip, knee); };
   const scalar_t half = 0.5 * g.kneeOffset;
   const scalar_t standingHeight = legHeight(-half, g.kneeOffset);
   scalar_t stanceHeightSum = 0.0;
   scalar_t stanceWeightSum = 0.0;
 
   if (g.legs) {
-    // Hip / knee / ankle reference of one leg at `phase` (robot conventions, G1: hip pitch and ankle pitch
-    // positive = extension / plantarflexion, knee positive = flexion). `swingKnee` scales the knee curve
-    // in swing (1 = human).
-    const auto legPostureWith = [&](scalar_t phase, scalar_t scale, scalar_t swingKnee, scalar_t& hip, scalar_t& knee,
-                                    scalar_t& ankle) {
-      const scalar_t wClosure = stanceClosureWeight(phase);
-      hip = -(scale * humanCurveRad(kHumanHipFlexionDeg, phase)) - half;
-      knee = scale * humanCurveRad(kHumanKneeFlexionDeg, phase) * (1.0 - (1.0 - swingKnee) * (1.0 - wClosure)) + g.kneeOffset;
-      ankle = -(scale * humanCurveRad(kHumanAnkleDorsiflexionDeg, phase)) - half;
-      if (g.stanceAnkleClosure) {
-        // Flat foot under a level pelvis: ankle = -hip - knee; the knee is capped so the ankle stays
-        // within maxStanceDorsiflexion (the heel cannot come up).
-        const scalar_t kneeStance = std::min(knee, g.maxStanceDorsiflexion - hip);
-        knee = wClosure * kneeStance + (1.0 - wClosure) * knee;
-        ankle = wClosure * (-hip - kneeStance) + (1.0 - wClosure) * ankle;
-      }
-    };
-    // Swing-knee factor: the largest value in [0, 1] whose foot clearance (swing-leg FK under the pelvis
-    // height the stance leg implies half a cycle on) stays within swingClearance.
-    const auto swingKneeFactor = [&](scalar_t scale) {
-      if (!(g.swingClearance > 0.0) || scale <= 0.0) {
-        return 1.0;
-      }
-      constexpr std::array<scalar_t, 4> kSwingPhases = {0.65, 0.70, 0.75, 0.80};
-      const auto clearance = [&](scalar_t factor) {
-        scalar_t worst = -1.0;
-        for (const scalar_t ph : kSwingPhases) {
-          scalar_t hipS, kneeS, ankleS, hipW, kneeW, ankleW;
-          legPostureWith(ph - 0.5, scale, factor, hipS, kneeS, ankleS);  // the stance leg, half a cycle on
-          legPostureWith(ph, scale, factor, hipW, kneeW, ankleW);
-          worst = std::max(worst, legHeight(hipS, kneeS) - legHeight(hipW, kneeW));
-        }
-        return worst;
-      };
-      if (clearance(1.0) <= g.swingClearance) {
-        return 1.0;
-      }
-      scalar_t lo = 0.0, hi = 1.0;
-      for (int i = 0; i < 16; ++i) {
-        const scalar_t mid = 0.5 * (lo + hi);
-        (clearance(mid) > g.swingClearance ? hi : lo) = mid;
-      }
-      return lo;
-    };
-    const scalar_t swingKnee = swingKneeFactor(legScale);
+    // Swing-knee factor at this amplitude, from the table built in setHumanGaitSettings.
+    scalar_t swingKnee = 1.0;
+    if (swingKneeTable_.size() >= 2 && g.maxScale > 0.0) {
+      const scalar_t x = std::clamp(legScale / g.maxScale, 0.0, 1.0) * static_cast<scalar_t>(swingKneeTable_.size() - 1);
+      const size_t i = std::min(static_cast<size_t>(x), swingKneeTable_.size() - 2);
+      const scalar_t a = x - static_cast<scalar_t>(i);
+      swingKnee = (1.0 - a) * swingKneeTable_[i] + a * swingKneeTable_[i + 1];
+    }
     const auto legPosture = [&](scalar_t phase, scalar_t scale, scalar_t& hip, scalar_t& knee, scalar_t& ankle) {
-      legPostureWith(phase, scale, swingKnee, hip, knee, ankle);
+      humanLegPosture(g, phase, scale, swingKnee, hip, knee, ankle);
     };
     const auto legReference = [&](size_t leg, const StridePhase& w) {
       const scalar_t phase = w.valid ? w.phase : 0.3;  // standing: the mid-stance point of the curves at scale 0

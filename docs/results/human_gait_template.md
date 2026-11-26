@@ -159,3 +159,18 @@ swing-foot constraint; and the planner cannot be raised (the isolation runs).
 FK, four swing phases) so the template's own clearance peaks at the planner's value. No change below
 0.4 m/s (factor 0.97 at scale 0.57); 0.83 at 0.5 m/s, 0.68 at 0.8 m/s — the swing knee peaks at 54°
 instead of 71°. Run 4 = `humanHV4`, speeds + omni.
+
+`humanHV4`: worse, not better — fell on the 0.8 ramp again and, new, in the omni turning hold
+(0.3 m/s + 0.4 rad/s, jerk 367) which HV3 passed at 60; 0.2 hold 67.7 (HV3 42.7, HV3w 52.1) although
+the swing-knee factor is 0.97 there; solve rate 37.3 Hz (HV3 42.0, baseline 45.5). Two readings:
+(1) the swing-knee solve ran a 16-step bisection inside the per-node reference evaluation — moved
+into a 65-entry table built once in `setHumanGaitSettings`; (2) the leg template with weights
+10/10/3 is marginal even at 0.3 m/s once the MPC has to deviate from the forward pattern (turn,
+diagonal), and the spread between repeats at the same speed (42.7 / 52.1 / 67.7 at 0.2 m/s;
+188 → 44 inside one run at 0.5) is now as large as the effects being tested. Stiff posture weights
+leave the solver no room to place feet for recovery; the human curves should bias the posture, not
+dictate it.
+
+Plan: validate the upper-body template alone across omni (`humanUB` = `HUMAN_LEGS=false`, the D
+configuration, already 0 falls and −18 % jerk on speeds), and repeat the full template with soft leg
+weights (`humanHV4L` = `HUMAN_LEGW="3 3 1"`).
