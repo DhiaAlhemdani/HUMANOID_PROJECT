@@ -189,6 +189,15 @@ constexpr std::array<double, 21> kHumanHipFlexionDeg = {30, 29, 26, 22, 17, 12, 
 constexpr std::array<double, 21> kHumanKneeFlexionDeg = {5, 10, 16, 18, 16, 13, 10, 7, 5, 6, 10, 19, 35, 52, 62, 62, 55, 42, 27, 13, 5};
 constexpr std::array<double, 21> kHumanAnkleDorsiflexionDeg = {0, -4, -6, -3, 0, 3, 6, 8, 9, 10, 9, 4, -8, -17, -16, -10, -5, -2, 0, 1, 0};
 
+// Cycle mean of a curve (the 21st knot repeats the first).
+scalar_t curveMeanDeg(const std::array<double, 21>& curve) {
+  double sum = 0.0;
+  for (size_t i = 0; i < 20; ++i) {
+    sum += curve[i];
+  }
+  return sum / 20.0;
+}
+
 scalar_t humanCurveRad(const std::array<double, 21>& curve, scalar_t phase) {
   const scalar_t p = phase - std::floor(phase);
   const scalar_t x = p * 20.0;
@@ -362,13 +371,18 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
 
   if (g.legs) {
     const scalar_t half = 0.5 * g.kneeOffset;
+    // The hip and ankle tables are trunk-relative angles of a trunk that leans ~10 deg forward in human
+    // walking (hip cycle mean +13 deg); this pelvis is held level, so by default the curves are used as
+    // motion about the robot's own stance posture (mean removed). The knee is absolute: 0 is straight.
+    const scalar_t hipMean = g.removeHipMean ? curveMeanDeg(kHumanHipFlexionDeg) * M_PI / 180.0 : 0.0;
+    const scalar_t ankleMean = g.removeHipMean ? curveMeanDeg(kHumanAnkleDorsiflexionDeg) * M_PI / 180.0 : 0.0;
     const auto legReference = [&](size_t leg, const StridePhase& w) {
       const scalar_t phase = w.valid ? w.phase : 0.3;  // standing: the mid-stance point of the curves at scale 0
       const scalar_t scale = w.valid ? legScale : 0.0;
       // Robot conventions (G1): hip pitch and ankle pitch positive = extension / plantarflexion, knee positive = flexion.
-      q[humanGaitJointIndices_[3 * leg + 0]] = -(scale * humanCurveRad(kHumanHipFlexionDeg, phase)) - half;
+      q[humanGaitJointIndices_[3 * leg + 0]] = -(scale * (humanCurveRad(kHumanHipFlexionDeg, phase) - hipMean)) - half;
       q[humanGaitJointIndices_[3 * leg + 1]] = scale * humanCurveRad(kHumanKneeFlexionDeg, phase) + g.kneeOffset;
-      q[humanGaitJointIndices_[3 * leg + 2]] = -(scale * humanCurveRad(kHumanAnkleDorsiflexionDeg, phase)) - half;
+      q[humanGaitJointIndices_[3 * leg + 2]] = -(scale * (humanCurveRad(kHumanAnkleDorsiflexionDeg, phase) - ankleMean)) - half;
     };
     legReference(0, left);
     legReference(1, right);

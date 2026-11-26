@@ -277,6 +277,10 @@ scalar_t maxOffset = 0.6;
     //! flat) [rad]. Humans stand on a nearly straight knee; the whole-body ID wants a margin from the
     //! singularity. The standing posture is then hip -kneeOffset/2, knee kneeOffset, ankle -kneeOffset/2.
     scalar_t kneeOffset = 0.3;
+    //! Use the hip / ankle curves as motion about the stance posture (cycle mean removed). The tables are
+    //! trunk-relative angles of a trunk leaning ~10 deg forward; with a level pelvis the raw mean (+13 deg
+    //! hip flexion) can only be met by tilting the pelvis, which fights the base pitch cost.
+    bool removeHipMean = true;
     scalar_t shoulderAmplitude = 0.35;  //!< shoulder pitch swing at referenceSpeed [rad]
     scalar_t elbowAmplitude = 0.15;     //!< elbow swing at referenceSpeed [rad]
     scalar_t elbowMean = 0.0;           //!< constant elbow offset from the nominal while enabled [rad]

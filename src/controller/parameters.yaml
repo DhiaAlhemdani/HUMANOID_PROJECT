@@ -585,6 +585,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             [rad] (hip and ankle take half, trunk upright, foot flat): the margin from the straight-knee singularity.
             The standing pelvis height that goes with it on the G1: 0.3 -> 0.785 m, 0.2 -> 0.789 m, 0.5 -> 0.772 m.",
             validation: {gt_eq: [0.0]}}
+        removeHipMean: {type: bool, default_value: true, description: "Use the hip / ankle curves as motion about the
+            stance posture (cycle mean removed). The tables are trunk-relative angles of a trunk leaning ~10 deg
+            forward; with a level pelvis the raw +13 deg mean hip flexion can only be met by tilting the pelvis."}
         shoulderAmplitude: {type: double, default_value: 0.35, description: "Shoulder pitch swing at referenceSpeed
             [rad].", validation: {gt_eq: [0.0]}}
         elbowAmplitude: {type: double, default_value: 0.15, description: "Elbow swing at referenceSpeed [rad].",

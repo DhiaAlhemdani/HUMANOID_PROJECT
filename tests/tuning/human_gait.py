@@ -38,13 +38,15 @@ def human_curve_deg(name, phase):
     return (1.0 - a) * c[i] + a * c[i + 1]
 
 
-def leg_template_rad(phase, scale, knee_offset=0.3):
+def leg_template_rad(phase, scale, knee_offset=0.3, remove_hip_mean=True):
     """Robot (G1 convention) hip pitch, knee, ankle pitch reference for one leg at `phase` and `scale`."""
     d2r = math.pi / 180.0
     half = 0.5 * knee_offset
-    hip = -(scale * human_curve_deg("hip", phase) * d2r) - half
+    hip_mean = float(np.mean(HIP_FLEX_DEG[:20])) if remove_hip_mean else 0.0
+    ankle_mean = float(np.mean(ANKLE_DORSI_DEG[:20])) if remove_hip_mean else 0.0
+    hip = -(scale * (human_curve_deg("hip", phase) - hip_mean) * d2r) - half
     knee = scale * human_curve_deg("knee", phase) * d2r + knee_offset
-    ankle = -(scale * human_curve_deg("ankle", phase) * d2r) - half
+    ankle = -(scale * (human_curve_deg("ankle", phase) - ankle_mean) * d2r) - half
     return hip, knee, ankle
 
 

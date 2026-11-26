@@ -18,7 +18,11 @@
 #            curves count (hip pitch 10, knee 10, ankle pitch 3; shipped: 0.05 / 0.1 / 0.1), the
 #            standing pelvis height for kneeOffset 0.3 (0.785 m) and a straighter elbow (elbowMean
 #            -0.4 rad). Combine with `arms,waist` for the arm / trunk weights. Not with `swing`.
-#            env HUMAN_LEGW="hp kn ap" overrides the three leg weights (default "10 10 3").
+#            env HUMAN_LEGW="hp kn ap" overrides the three leg weights (default "5 5 2");
+#            HUMAN_BASE=true turns the pelvis height / roll template on (default off until the legs
+#            are stable); HUMAN_SWING="z1 z2 z3 z4" sets the gait law's swing-height knots (default
+#            "0.07 0.07 0.08 0.09": a human-like swing knee lifts the ankle 8-10 cm, the shipped
+#            5 cm path and the knee curve would otherwise be two references fighting over the leg).
 #            NOTE the suite COMMANDS the pelvis height (tune_probe.py, default 0.795 = a straight
 #            leg): run the human configs with HEIGHT=0.785 so the height and the 0.3 rad knee agree,
 #            otherwise the height weight (50) and the knee weight pull against each other.
@@ -39,10 +43,12 @@ LEGPF="0.05, 0.1, 30.0, 0.1, 0.1, 0.1, 0.05, 0.1, 30.0, 0.1, 0.1, 0.1"
 # towards the crouch and the unswung arms.
 if has human; then
   # ROS 2 YAML lists must be one type: every weight is written as a double (10 -> 10.0).
-  read -r HP KN AP <<< "$(printf '%.3f %.3f %.3f' ${HUMAN_LEGW:-10 10 3})"
+  read -r HP KN AP <<< "$(printf '%.3f %.3f %.3f' ${HUMAN_LEGW:-5 5 2})"
+  read -r Z1 Z2 Z3 Z4 <<< "$(printf '%.3f %.3f %.3f %.3f' ${HUMAN_SWING:-0.07 0.07 0.08 0.09})"
   LEGP="$HP, 0.2, 15.0, $KN, $AP, 0.1, $HP, 0.2, 15.0, $KN, $AP, 0.1"
   EDITS+=("ocs2.reference.humanGait.enabled=true" "ocs2.reference.humanGait.elbowMean=-0.4"
-          "ocs2.reference.defaultBaseHeight=0.785")
+          "ocs2.reference.humanGait.base=${HUMAN_BASE:-false}" "ocs2.reference.defaultBaseHeight=0.785"
+          "ocs2.gait.continuous.swingHeight=[$Z1, $Z2, $Z3, $Z4]")
 fi
 LEGV="0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001"
 LEGA="0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005"
