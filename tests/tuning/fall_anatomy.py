@@ -133,6 +133,8 @@ def sig(name):
 pitch, roll = sig("obs_base/pitch"), sig("obs_base/roll")
 zo, zp = sig("obs_base/z"), sig("plan_base/z")
 mode = sig("plan_mode")
+if mode is not None:
+    mode = np.where(np.isfinite(mode), mode, -1.0)  # NaN before the first policy / after a fall
 foot_z = {f: (sig(f"obs_foot/{f}/z"), sig(f"plan_foot/{f}/z")) for f in feet}
 foot_v = {f: np.hypot(sig(f"obs_foot/{f}/vx"), sig(f"obs_foot/{f}/vy")) if sig(f"obs_foot/{f}/vx") is not None else None for f in feet}
 def side(name):

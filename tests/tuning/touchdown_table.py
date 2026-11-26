@@ -85,6 +85,7 @@ for case in a.cases:
     wr = sig("meas_tau/waist_roll_joint")
     n_pre = int(round(a.pre / dt))
 
+    mode = np.where(np.isfinite(mode), mode, -1.0)  # NaN before the first policy / after a fall
     sw = np.flatnonzero(np.diff(mode) != 0) + 1
     for k in sw:
         m0, m1 = int(mode[k - 1]), int(mode[k])
