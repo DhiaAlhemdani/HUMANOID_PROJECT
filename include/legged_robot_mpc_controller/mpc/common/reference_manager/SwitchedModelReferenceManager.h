@@ -30,6 +30,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
 
+#include <limits>
+
 #include <ocs2_core/thread_support/BufferedValue.h>
 #include <ocs2_core/thread_support/Synchronized.h>
 #include <ocs2_oc/synchronized_module/ReferenceManager.h>
@@ -188,6 +190,11 @@ class SwitchedModelReferenceManager : public ReferenceManager {
 
   bool isInContact(scalar_t time, size_t contactIndex) const { return getContactFlags(time)[contactIndex]; };
 
+  /// Start time of the horizon being solved (set in modifyReferences, before the solve reads the costs);
+  /// NaN before the first solve. Lets a cost or constraint treat the first node differently.
+  scalar_t getSolveInitTime() const { return solveInitTime_; }
+  bool isFirstNode(scalar_t time) const { return !(time > solveInitTime_ + 1e-6); }
+
   /**
    * Swing superimposed on the nominal arm posture while walking.
    *
@@ -342,6 +349,8 @@ scalar_t maxOffset = 0.6;
 
   bool useTerrainHeightEstimate_ = false;
   scalar_t maxTerrainHeightStep_ = 0.01;
+
+  scalar_t solveInitTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
 
   CaptureFootPlacementSettings captureFootPlacement_;
   feet_array_t<vector3_t> captureFoothold_{vector3_t::Zero(), vector3_t::Zero()};

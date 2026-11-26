@@ -493,6 +493,8 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # Double-support load-share cost (D2/D3): 0 disables; sweep picks a value
         # (docs/results/ after tests/tuning/run_loadshare_sweep.sh).
         contactLoadShareWeight: 0.0
+        # Wrench-as-state layout: share of the rate weight charged at the anchored first node (see parameters.yaml).
+        wrenchRateFirstNodeScale: 1.0
 
       constraints:
         inverseDynamics:

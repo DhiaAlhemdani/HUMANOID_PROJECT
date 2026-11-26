@@ -142,6 +142,12 @@ default for the layout check), `~1e-3` costs 400 — the same order as the base 
 and is where increment 2's sweep starts. Increment 2: rate-weight sweep on `speeds` + `omni`
 (gate: `solve_hz ≥ 0.9×`, no falls, then the user's videos), per-phase weight shaping if needed.
 
+**Sweep result (`docs/results/wrench_rate_sweep.md`):** 1e-4 wins every segment (steady acc_hf −29 %,
+tau_rate −22 %, jerk −15 %, solve rate −2 %) but the user still sees abruptness; 1e-3 sways after
+stops, 1e-2 falls — the anchored *and* priced first node makes each plan inherit the last plan's
+force (a low-pass with a weight-dependent lag). `costs.wrenchRateFirstNodeScale` now splits the
+first-node share (R, PD floor) from the in-horizon share (`WbIdWrenchRateCost`, second node on).
+
 ## 4. Step C — residual RL (after A and B)
 
 Prerequisites from `LOCOMOTION_IMPROVEMENTS.md` §3.1 stand: actuator realism and a domain

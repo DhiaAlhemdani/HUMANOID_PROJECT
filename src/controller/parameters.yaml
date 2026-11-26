@@ -365,6 +365,13 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           double-support load-share cost (0 disables it): pulls the free vertical-force split between
           the feet toward a C1 smoothstep transfer across each DS window, shaping the contact-handover
           force rate (D2/D3); registered only when > 0", validation: {gt_eq: [0.0]}}
+      wrenchRateFirstNodeScale: {type: double, default_value: 1.0, description: "Wrench-as-state layout
+          (ocs2.model.wrenchState): share of costs.r.contactWrenchRates charged at the first node of each
+          solve, whose wrench is anchored to the previous plan; the remaining share is charged on every
+          later node (WbIdWrenchRateCost). 1 = the whole rate weight everywhere (each plan inherits the last
+          plan's force: lower balance bandwidth); small values (0.01-0.1) keep the in-horizon ramps and let
+          the force re-plan freely each solve. Must stay > 0: the SQP needs a positive-definite R",
+        validation: {gt: [0.0], lt_eq: [1.0]}}
     constraints:
       footMotionEquality:
         activate: {type: bool, default_value: true, description: "Enable stance and swing foot acceleration equalities; disable only for diagnostic ablation"}

@@ -22,6 +22,7 @@
 #include "legged_robot_mpc_controller/mpc/wb_id/model/WbIdPinocchioMapping.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/constraint/WbIdJointTorqueLimitConstraint.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/cost/WbIdContactLoadShareCost.h"
+#include "legged_robot_mpc_controller/mpc/wb_id/cost/WbIdWrenchRateCost.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/cost/WbIdWrenchStateSwingCost.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/constraint/WbIdJointVelocityLimitConstraint.h"
 #include "legged_robot_mpc_controller/mpc/wb_id/constraint/WbIdRneaConstraintCppAd.h"
@@ -131,6 +132,13 @@ void WbIdMpcInterface::setupOptimalControlProblem() {
   if (config_.torsoTiltCost.activate) {
     problemPtr_->costPtr->add("torsoTiltCost", std::make_unique<WbIdTorsoTiltCost>(
         config_.torsoTiltCost, *pinocchioInterfacePtr_, *mpcRobotModelADPtr_, modelSettings_));
+  }
+
+  // Wrench-as-state layout: the in-horizon share of the wrench-rate weight (the first node's share is in R).
+  if (mpcRobotModelPtr_->hasWrenchState() && config_.wrenchRateWeightsAfterFirstNode.size() > 0 &&
+      config_.wrenchRateWeightsAfterFirstNode.maxCoeff() > 0.0) {
+    problemPtr_->costPtr->add("wrenchRateCost", std::make_unique<WbIdWrenchRateCost>(config_.wrenchRateWeightsAfterFirstNode,
+                                                                                    *referenceManagerPtr_, *mpcRobotModelPtr_));
   }
 
   // Double-support load-transfer shaping (D2/D3); registered only when explicitly weighted.

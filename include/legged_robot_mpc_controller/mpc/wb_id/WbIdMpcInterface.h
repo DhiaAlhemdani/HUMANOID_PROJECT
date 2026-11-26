@@ -87,6 +87,9 @@ class WbIdMpcInterface final : public RobotInterface {
     //! to zero (WbIdWrenchStateSwingCost), [fx, fy, fz, mx, my, mz]; the builder derives it from
     //! the wrench-rate weights (one node of rate cost: contactWrenchRates * rScaling / dt^2).
     vector6_t wrenchStateSwingWeights = vector6_t::Zero();
+    //! Wrench-rate weights (scaled, 12) charged on every node but the first (WbIdWrenchRateCost);
+    //! empty or zero = R carries the whole rate weight.
+    vector_t wrenchRateWeightsAfterFirstNode;
     WbIdTorsoTiltCost::Config torsoTiltCost;
 
     //! Acceleration-level stance/swing foot constraint gains.

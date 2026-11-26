@@ -227,6 +227,7 @@ void SwitchedModelReferenceManager::modifyReferences(scalar_t initTime,
                                                      size_t initMode,
                                                      TargetTrajectories& targetTrajectories,
                                                      ModeSchedule& modeSchedule) {
+  solveInitTime_ = initTime;
   // Swap in the latest external targets on the solver thread before the costs read them.
   externalJointTargets_.updateFromBuffer();
   stairClimbingPlan_.updateFromBuffer();

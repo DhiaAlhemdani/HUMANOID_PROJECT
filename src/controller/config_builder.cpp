@@ -225,10 +225,18 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
       }
     }
   }
+  // The first node's rate is priced at wrenchRateFirstNodeScale of the weight (in R, every node), the
+  // remainder from the second node on (WbIdWrenchRateCost), see parameters.yaml.
+  std::vector<double> wrenchRateFirstNode = wrenchRateWeights;
+  for (double& w : wrenchRateFirstNode) {
+    w *= p.costs.wrenchRateFirstNodeScale;
+  }
+  config.wrenchRateWeightsAfterFirstNode =
+    (1.0 - p.costs.wrenchRateFirstNodeScale) * p.costs.rScaling * toVector(wrenchRateWeights);
   costs.R = assembleDiagonalMatrix(
     {p.costs.r.contactWrenches, p.costs.r.baseAccelerations,
      perJoint(p.costs.r.jointAccelerations, numJoints, 0.005, "costs.r.jointAccelerations"),
-     perJoint(p.costs.r.jointTorques, numJoints, 0.1, "costs.r.jointTorques"), wrenchRateWeights}, p.costs.rScaling);
+     perJoint(p.costs.r.jointTorques, numJoints, 0.1, "costs.r.jointTorques"), wrenchRateFirstNode}, p.costs.rScaling);
 
   // --- constraints ---
   auto& armCollision = config.armSelfCollision;
