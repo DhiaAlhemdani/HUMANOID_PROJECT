@@ -24,6 +24,9 @@ if [ "$CFG" = default ]; then
   CFG=$OUT/$TAG.yaml
 fi
 VIDEO_PY=${VIDEO_PY:-python3}
+if [ "${RESCORE:-0}" != 1 ] && [ ! -f "$CFG" ]; then
+  echo "RUN_SUITE: controllers config '$CFG' does not exist (usage: run_suite.sh <tag> <controllers.yaml | default> [baseline_tag]; SCRIPTS=\"speeds omni\" picks scripts)"; exit 1
+fi
 
 if [ "${SKIP_BUILD:-0}" != 1 ]; then
   echo "== colcon build (legged_robot_mpc_controller)"

@@ -115,6 +115,7 @@ def main():
                 kinds = {("double" if "." in x else "int") for x in nums}
                 if len(kinds) > 1:
                     sys.exit(f"make_config: line {i} mixes integers and doubles in one list (rcl rejects it): {line.strip()}")
+    pathlib.Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     open(a.out, "w").write(text)
     print(a.out)
 
