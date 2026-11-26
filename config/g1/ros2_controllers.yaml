@@ -723,6 +723,42 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             - left_elbow_joint
             - right_elbow_joint
 
+        # ---- Human gait template (roadmap step H) --------------------------------------------
+        # Normative human walking kinematics as the reference instead of the fixed posture below:
+        # hip / knee / ankle curves over each leg's gait cycle (time-warped onto the planned step and
+        # double-support timing), pelvis obliquity and vertical excursion, trunk counter-rotation and
+        # arm swing, all scaled with the commanded step. Soft: the joint-position and base-pose
+        # weights decide how closely it is followed. With `legs` on, the leg entries of
+        # defaultJointState are replaced (standing: hip -kneeOffset/2, knee kneeOffset, ankle
+        # -kneeOffset/2) and defaultBaseHeight should match (kneeOffset 0.3 -> 0.785 m on the G1).
+        humanGait:
+          enabled: false
+          legs: true
+          arms: true
+          waist: true
+          base: true
+          jointNames:
+            - left_hip_pitch_joint
+            - left_knee_joint
+            - left_ankle_pitch_joint
+            - right_hip_pitch_joint
+            - right_knee_joint
+            - right_ankle_pitch_joint
+            - waist_yaw_joint
+          legLength: 0.65
+          humanStepRatio: 0.78
+          referenceSpeed: 1.3
+          maxScale: 1.2
+          kneeOffset: 0.3
+          shoulderAmplitude: 0.35
+          elbowAmplitude: 0.15
+          elbowMean: 0.0
+          armMaxOffset: 0.6
+          waistYawAmplitude: 0.08
+          pelvisRollAmplitude: 0.05
+          pelvisPitchAmplitude: 0.0
+          heightOscillation: 0.015
+
         # Nominal joint posture for reference generation; pelvis height is defaultBaseHeight.
         defaultJointState:
           [-0.8, 0.0, 0.0, 1.6, -0.8, 0.0,

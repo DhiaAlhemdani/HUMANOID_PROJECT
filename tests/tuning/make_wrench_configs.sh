@@ -13,6 +13,11 @@
 #     vel    base velocity weight x3 (vx 30 -> 100, vy 15 -> 50): with the rate priced the optimizer
 #            lags the command (step_l -10 %, hold v_err 0.12 -> 0.16 at 1e-3) because the velocity
 #            error is cheap next to the force rate.
+#     human  reference.humanGait.enabled = true (roadmap step H): human walking kinematics as the
+#            reference for legs, pelvis, trunk and arms. Sets the leg joint weights that make the leg
+#            curves count (hip pitch 10, knee 10, ankle pitch 3; shipped: 0.05 / 0.1 / 0.1), the
+#            standing pelvis height for kneeOffset 0.3 (0.785 m) and a straighter elbow (elbowMean
+#            -0.4 rad). Combine with `arms,waist` for the arm / trunk weights. Not with `swing`.
 # Joint order (robot.jointNames): 6 left leg, 6 right leg, 3 waist, 4 left arm, 4 right arm.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)
@@ -23,22 +28,34 @@ EDITS=("ocs2.gait.continuous.enabled=true" "ocs2.model.wrenchState=true"
 has() { [[ "$FEAT" == *",$1,"* ]]; }
 LEGP="0.05, 0.2, 15.0, 0.1, 0.1, 0.1, 0.05, 0.2, 15.0, 0.1, 0.1, 0.1"
 LEGPF="0.05, 0.1, 30.0, 0.1, 0.1, 0.1, 0.05, 0.1, 30.0, 0.1, 0.1, 0.1"
+# The terminal costs track the raw posture (defaultJointState), not the template: with `human` the
+# terminal leg / arm position weights stay at the shipped values so the last node does not pull back
+# towards the crouch and the unswung arms.
+if has human; then
+  LEGP="10.0, 0.2, 15.0, 10.0, 3.0, 0.1, 10.0, 0.2, 15.0, 10.0, 3.0, 0.1"
+  EDITS+=("ocs2.reference.humanGait.enabled=true" "ocs2.reference.humanGait.elbowMean=-0.4"
+          "ocs2.reference.defaultBaseHeight=0.785")
+fi
 LEGV="0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001"
 LEGA="0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005"
 WP="2.0, 2.0, 2.0"; WV="0.2, 0.2, 0.2"
-ARMP="5.0, 5.0, 2.0, 4.0, 5.0, 5.0, 2.0, 4.0"; ARMV="0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06"
+ARMP="5.0, 5.0, 2.0, 4.0, 5.0, 5.0, 2.0, 4.0"; ARMPF="$ARMP"; ARMV="0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06, 0.06"
 ARMVF="0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02"; ARMA="0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005, 0.005"
 if has arms; then
   ARMP="50.0, 50.0, 20.0, 40.0, 50.0, 50.0, 20.0, 40.0"; ARMV="0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6"
   ARMVF="0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2, 0.2"; ARMA="0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05, 0.05"
+  if ! has human; then ARMPF="$ARMP"; fi
 fi
 if has waist; then WP="20.0, 20.0, 20.0"; WV="1.0, 1.0, 1.0"; fi
-if has arms || has waist; then
-  EDITS+=("ocs2.costs.q.jointPositions=[$LEGP, $WP, $ARMP]" "ocs2.costs.qFinal.jointPositions=[$LEGPF, $WP, $ARMP]"
+if has arms || has waist || has human; then
+  EDITS+=("ocs2.costs.q.jointPositions=[$LEGP, $WP, $ARMP]" "ocs2.costs.qFinal.jointPositions=[$LEGPF, $WP, $ARMPF]"
           "ocs2.costs.q.jointVelocities=[$LEGV, $WV, $ARMV]" "ocs2.costs.qFinal.jointVelocities=[$LEGV, $WV, $ARMVF]"
           "ocs2.costs.r.jointAccelerations=[$LEGA, 0.005, 0.005, 0.005, $ARMA]")
 fi
-if has swing; then EDITS+=("ocs2.reference.armSwing.enabled=true"); fi
+if has swing; then
+  if has human; then echo "make_wrench_configs: 'swing' and 'human' both add an arm swing; drop 'swing'" >&2; exit 1; fi
+  EDITS+=("ocs2.reference.armSwing.enabled=true")
+fi
 if has vel; then
   EDITS+=("ocs2.costs.q.baseVelocity=[100.0, 50.0, 5.0, 30.0, 30.0, 30.0]"
           "ocs2.costs.qFinal.baseVelocity=[100.0, 50.0, 5.0, 30.0, 30.0, 30.0]")

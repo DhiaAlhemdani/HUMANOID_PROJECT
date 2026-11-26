@@ -30,6 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
 
+#include <array>
 #include <limits>
 
 #include <ocs2_core/thread_support/BufferedValue.h>
@@ -237,6 +238,72 @@ scalar_t maxOffset = 0.6;
   void setArmSwingReferenceActive(bool armSwingReferenceActive) { armSwing_.enabled = armSwingReferenceActive; }
 
   /**
+   * Human gait template: the whole-body kinematics of normal human walking as the
+   * reference, instead of one fixed posture.
+   *
+   * The nominal reference is a single joint posture (`reference.defaultJointState`)
+   * plus a pelvis velocity; nothing in it says what a walking human does with the
+   * hips, knees, trunk and arms, so the optimizer fills those in by effort alone
+   * (bent knees throughout, arms used as a flywheel, no trunk motion). This
+   * template replaces the posture with normative human gait curves (Winter-type
+   * sagittal hip / knee / ankle angles over the gait cycle, pelvis obliquity and
+   * vertical excursion, trunk counter-rotation, arm swing) evaluated at each leg's
+   * own gait-cycle phase. The phase is time-warped onto the planned mode schedule
+   * (heel strike -> other toe-off -> other heel strike -> toe-off -> heel strike map
+   * to 0 / 0.10 / 0.50 / 0.60 / 1.0 of the human cycle), so the curves follow the
+   * actual step and double-support timing of whatever gait is running.
+   *
+   * Amplitudes scale with the commanded step: the leg curves by the step length
+   * relative to the leg (humans: 0.78 leg lengths per step at 1.3 m/s), the arms
+   * by speed. Standing (no planned step) evaluates to the static stance posture.
+   * All of it is a soft reference: the joint-position / base-pose weights decide
+   * how closely it is followed, and the physics (contacts, torques, balance) stay
+   * with the MPC. Backward / lateral / turning commands fall back to the stance
+   * posture (the curves are for forward walking).
+   */
+  struct HumanGaitSettings {
+    bool enabled = false;
+    bool legs = true;   //!< hip pitch / knee / ankle pitch curves (absolute angles, replace the nominal)
+    bool arms = true;   //!< shoulder pitch / elbow swing about the nominal (needs the arm-swing joints)
+    bool waist = true;  //!< waist yaw counter-rotation about the nominal
+    bool base = true;   //!< pelvis height oscillation, roll (obliquity), pitch about the nominal
+    //! Joint names: [l_hip_pitch, l_knee, l_ankle_pitch, r_hip_pitch, r_knee, r_ankle_pitch, waist_yaw].
+    std::vector<std::string> jointNames;
+    scalar_t legLength = 0.65;        //!< hip-to-ankle length [m]; with the step length it sets the hip range
+    scalar_t humanStepRatio = 0.78;   //!< human step length / leg length at referenceSpeed
+    scalar_t referenceSpeed = 1.3;    //!< speed at which the curves and arm amplitudes are defined [m/s]
+    scalar_t maxScale = 1.2;          //!< cap on the amplitude scales
+    //! Added knee flexion everywhere (hip and ankle take half, keeping the trunk upright and the foot
+    //! flat) [rad]. Humans stand on a nearly straight knee; the whole-body ID wants a margin from the
+    //! singularity. The standing posture is then hip -kneeOffset/2, knee kneeOffset, ankle -kneeOffset/2.
+    scalar_t kneeOffset = 0.3;
+    scalar_t shoulderAmplitude = 0.35;  //!< shoulder pitch swing at referenceSpeed [rad]
+    scalar_t elbowAmplitude = 0.15;     //!< elbow swing at referenceSpeed [rad]
+    scalar_t elbowMean = 0.0;           //!< constant elbow offset from the nominal while enabled [rad]
+    scalar_t armMaxOffset = 0.6;        //!< clamp on the arm offsets [rad] (collision envelope)
+    scalar_t waistYawAmplitude = 0.08;  //!< trunk counter-rotation at full scale [rad]
+    scalar_t pelvisRollAmplitude = 0.05;   //!< pelvis obliquity at full scale [rad], swing side down
+    scalar_t pelvisPitchAmplitude = 0.0;   //!< pelvis pitch oscillation at full scale [rad], twice per cycle
+    scalar_t heightOscillation = 0.015;    //!< pelvis vertical excursion at full scale [m], high at mid-stance
+  };
+
+  /// Installs the template; resolves the joint names against the MPC joint list (throws on a missing name).
+  void setHumanGaitSettings(const HumanGaitSettings& settings);
+  const HumanGaitSettings& getHumanGaitSettings() const { return humanGait_; }
+
+  struct StridePhase {
+    bool valid = false;     //!< false: the leg has no planned step around `time` (standing)
+    scalar_t phase = 0.0;   //!< human gait-cycle phase in [0, 1): 0 heel strike, 0.5 other heel strike, 0.6 toe-off
+    scalar_t stepTime = 0.0;  //!< planned step time (heel strike to the other heel strike) [s]
+  };
+
+  /// Human gait-cycle phase of one leg (0 = LF, 1 = RF), time-warped onto the planned mode schedule.
+  StridePhase getLegStridePhase(size_t leg, scalar_t time) const;
+
+  /// Superimposes the human gait template on the nominal state (joints and base pose), in place.
+  void addHumanGaitTemplate(vector_t& xNominal, scalar_t time) const;
+
+  /**
    * Selects how the base tracking cost interprets the target trajectory.
    * RelativeTwist ignores the unobservable world x/y/yaw pose error and tracks
    * horizontal motion in the target heading frame. AbsolutePose retains full
@@ -330,6 +397,8 @@ scalar_t maxOffset = 0.6;
   ModeSchedule modeSchedule_;
 
   ArmSwingSettings armSwing_;
+  HumanGaitSettings humanGait_;
+  std::array<size_t, 7> humanGaitJointIndices_{};
 
   BufferedValue<TargetTrajectories> externalJointTargets_{TargetTrajectories()};
   BufferedValue<std::shared_ptr<const StairClimbingPlan>> stairClimbingPlan_{nullptr};

@@ -148,6 +148,24 @@ stops, 1e-2 falls — the anchored *and* priced first node makes each plan inher
 force (a low-pass with a weight-dependent lag). `costs.wrenchRateFirstNodeScale` now splits the
 first-node share (R, PD floor) from the in-horizon share (`WbIdWrenchRateCost`, second node on).
 
+## 3b. Step H — human gait template (the owner's target, 2026-11-25)
+
+The owner's acceptance criterion is "walk like a human, whole body". Steps A/B shape the forces and
+the timing; neither says what a human does with hips, knees, trunk and arms, so the optimizer fills
+those in by effort (bent knees throughout, arms as a flywheel, no trunk motion). Step H puts the
+kinematics in: `reference.humanGait` replaces the fixed posture with normative human gait curves
+(sagittal hip / knee / ankle, pelvis obliquity and vertical excursion, trunk counter-rotation, arm
+swing) evaluated at each leg's gait-cycle phase, time-warped onto the planned mode schedule
+(heel strike / other toe-off / other heel strike / toe-off = 0 / 0.10 / 0.50 / 0.60 of the cycle) and
+scaled with the commanded step (legs by step length / leg length, arms by speed). It is a soft
+reference under the same MPC + WB-ID physics; the joint-position and base-pose weights decide how
+closely it is followed. The suite scores it: `hl_leg` (RMS shape deviation from the human curves),
+`knee_ms` (mid-stance knee: the crouch), `hip_rom`, `knee_sw`, `arm_amp`, `arm_ph`
+(`tests/tuning/human_gait.py` holds the same tables as the C++). Increment 1: the template +
+score, default off (`make_wrench_configs.sh … human`). Increment 2 (after the first video): stance
+knee / pelvis height consistency through forward kinematics, heel-to-toe centre-of-pressure travel
+on the wrench-state layout, and a mocap-retargeted clip as an alternative curve source.
+
 ## 4. Step C — residual RL (after A and B)
 
 Prerequisites from `LOCOMOTION_IMPROVEMENTS.md` §3.1 stand: actuator realism and a domain
@@ -163,6 +181,7 @@ videos. Sized after A and B land; not before.
 | 0 | baseline suite + videos of the shipped controller | — (reference) |
 | B | `gait.continuous` law, default off; suite A/B | suite WIN (§1 gates), owner's video verdict not worse |
 | A | wrench-state OCP, default off; suite A/B | suite WIN, `solve_hz` guard, video verdict |
+| H | `reference.humanGait` template + human-likeness score, default off | no falls, `hl_leg` / `knee_ms` / `arm_amp` toward human, owner's video verdict |
 | C | residual policy | suite WIN on the randomised scene, video verdict |
 
 Every step keeps the default config unchanged until its gate is passed, as before; PR #3 stays

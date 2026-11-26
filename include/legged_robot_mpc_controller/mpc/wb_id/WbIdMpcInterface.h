@@ -127,6 +127,7 @@ class WbIdMpcInterface final : public RobotInterface {
 
     SwitchedModelReferenceManager::CaptureFootPlacementSettings captureFootPlacement;
     SwitchedModelReferenceManager::ArmSwingSettings armSwing;
+    SwitchedModelReferenceManager::HumanGaitSettings humanGait;
     bool useTerrainHeightEstimate = false;
     scalar_t maxTerrainHeightStep = 0.01;
 

@@ -133,6 +133,89 @@ def limb_metrics(s0, s1):
         out["arm_pp"] = float(np.mean([math.degrees(np.ptp(q[:, i])) for i in SHOULDER_PITCH]))
     return out
 
+# ---- human-likeness: phase-averaged joint curves against the normative human gait ---------------
+# For each walking segment the measured hip / knee / ankle angles are binned over each leg's gait-cycle
+# phase (the planned mode schedule time-warped onto the human cycle, see human_gait.py) and compared with
+# the human curves at the segment's own step length (scale = step_l / leg length / 0.78). Reported:
+#   hl_leg    RMS shape deviation of hip+knee+ankle (mean removed), both legs, over the cycle [deg]; 0 = the
+#             human motion, the per-joint offsets (crouch) are in knee_ms
+#   knee_ms   knee flexion at mid stance [deg] (humans ~5-10; the crouch indicator)
+#   hip_rom   hip pitch range over the cycle [deg] (humans ~40 at 1.3 m/s, ~30 at 0.5)
+#   knee_sw   peak swing knee flexion [deg] (humans ~60)
+#   arm_amp   shoulder pitch swing amplitude [deg] (humans ~15-25 at 1.3 m/s, scaling with speed)
+#   arm_ph    shoulder swing phase error against the human (arm back at the own leg's heel strike) [deg]
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+try:
+    import human_gait as HG
+except Exception as e:  # noqa: BLE001
+    HG = None
+    print(f"human_gait.py not importable ({e}); no human-likeness score")
+HL_JOINTS = {}
+if HG is not None and JS_T is not None:
+    for leg, side in ((0, "left"), (1, "right")):
+        for key, name in (("hip", f"{side}_hip_pitch_joint"), ("knee", f"{side}_knee_joint"), ("ankle", f"{side}_ankle_pitch_joint"),
+                          ("shoulder", f"{side}_shoulder_pitch_joint")):
+            if name in JS_N:
+                HL_JOINTS[(leg, key)] = JS_N.index(name)
+pm_series = tc("plan_mode")
+SCHED = HG.schedule_from_plan_mode(jt, pm_series) if (HG is not None and pm_series is not None and jt is not None) else None
+
+
+def human_likeness(s0, s1, step_l):
+    """Human-likeness numbers for a segment; {} without joint states / schedule / a measured step length."""
+    if SCHED is None or not HL_JOINTS or not np.isfinite(step_l):
+        return {}
+    m = (JS_T >= s0) & (JS_T <= s1)
+    if m.sum() < 200:
+        return {}
+    t = JS_T[m][::5]  # 200 Hz is plenty for a 20-bin phase average
+    q = JS_Q[m][::5]
+    scale = min(max(step_l / HG.G1_LEG_LENGTH / HG.HUMAN_STEP_RATIO, 0.0), 1.2)
+    ph_bins = (np.arange(20) + 0.5) / 20.0
+    dev, knee_ms, hip_rom, knee_sw, arm_amp, arm_ph = [], [], [], [], [], []
+    for leg in (0, 1):
+        valid, ph, _ = HG.phase_series(SCHED[0], SCHED[1], leg, t)
+        if valid.sum() < 100:
+            continue
+        hip, knee, ankle = HG.leg_template_rad(ph_bins, scale, knee_offset=0.0)  # offsets are the robot's choice, compare the motion
+        ref = {"hip": -np.degrees(hip), "knee": np.degrees(knee), "ankle": -np.degrees(ankle)}  # back in human sign conventions
+        meas = {}
+        for key, sign in (("hip", -1.0), ("knee", 1.0), ("ankle", -1.0)):
+            j = HL_JOINTS.get((leg, key))
+            if j is None:
+                continue
+            meas[key] = HG.phase_average(ph[valid], sign * np.degrees(q[valid, j]))
+        if len(meas) < 3:
+            continue
+        # the deviation is about the motion (mean removed); the stance offset (crouch) is knee_ms
+        for key in ("hip", "knee", "ankle"):
+            r, mm = ref[key], meas[key]
+            ok = np.isfinite(mm)
+            dev.append(np.mean(((mm[ok] - np.mean(mm[ok])) - (r[ok] - np.mean(r[ok]))) ** 2))
+        knee_ms.append(float(meas["knee"][6]))       # 30-35 % of the cycle: mid stance
+        hip_rom.append(float(np.nanmax(meas["hip"]) - np.nanmin(meas["hip"])))
+        knee_sw.append(float(np.nanmax(meas["knee"][12:18])))   # 60-90 %: swing
+        j = HL_JOINTS.get((leg, "shoulder"))
+        if j is not None:
+            sh = HG.phase_average(ph[valid], np.degrees(q[valid, j]))
+            if np.isfinite(sh).sum() >= 10:
+                c = np.cos(2 * np.pi * ph_bins)
+                sn = np.sin(2 * np.pi * ph_bins)
+                ok = np.isfinite(sh)
+                a = 2 * np.nanmean((sh[ok] - np.nanmean(sh[ok])) * c[ok])
+                b = 2 * np.nanmean((sh[ok] - np.nanmean(sh[ok])) * sn[ok])
+                arm_amp.append(float(math.hypot(a, b)))          # first-harmonic amplitude
+                if math.hypot(a, b) > 1.0:
+                    arm_ph.append(float(abs(math.degrees(math.atan2(b, a)))))  # 0 = arm back at own heel strike (shoulder pitch +)
+    if not dev:
+        return {}
+    out = {"hl_leg": float(np.sqrt(np.mean(dev))), "knee_ms": float(np.mean(knee_ms)), "hip_rom": float(np.mean(hip_rom)),
+           "knee_sw": float(np.mean(knee_sw))}
+    if arm_amp:
+        out["arm_amp"] = float(np.mean(arm_amp))
+        out["arm_ph"] = float(np.mean(arm_ph))
+    return out
+
 # ---- steps from plan_mode: a step starts when a single support begins -------------------------
 # step_t = time to the next step start, step_l = planar pelvis displacement over it (the leg proxy: what the
 # eye reads as walking is the step length, pelvis jerk does not see it), ds = planned double-support fraction.
@@ -207,6 +290,8 @@ for s in segs:
             r["ds"] = float(np.mean(pm_all[mm] == 3))
     r["v_err"] = float(np.sqrt(np.mean((fwd_v[tail] - cmd[0]) ** 2 + (lat_v[tail] - cmd[1]) ** 2))) if tail.sum() > 5 else float("nan")
     r.update(limb_metrics(s0, s1))
+    if s["kind"] == "steady" and abs(cmd[0]) > 0.05 and abs(cmd[1]) < 0.05 and abs(cmd[2]) < 0.05 and cmd[0] > 0:
+        r.update(human_likeness(s0, s1, r.get("step_l", float("nan"))))
     yaw_rate = deriv(tt, np.unwrap(yaw))
     r["w_err"] = float(np.sqrt(np.mean((yaw_rate[tail] - cmd[2]) ** 2))) if tail.sum() > 5 else float("nan")
     if TR is not None and legs:
@@ -225,7 +310,8 @@ steady = [r for r in rows if r["kind"] == "steady"]
 trans = [r for r in rows if r["kind"] == "transition"]
 agg = {"survived": bool(np.isnan(fell)), "fell_at": None if np.isnan(fell) else round(fell - SETTLE, 1),
        "n_steady": len(steady), "n_transition": len(trans)}
-for key in ("jerk", "acc_hf", "lat_acc_hf", "tau_rate", "ang_jerk", "v_err", "step_t", "step_l", "leg_acc", "leg_jerk", "arm_acc", "arm_pp"):
+for key in ("jerk", "acc_hf", "lat_acc_hf", "tau_rate", "ang_jerk", "v_err", "step_t", "step_l", "leg_acc", "leg_jerk", "arm_acc", "arm_pp",
+            "hl_leg", "knee_ms", "hip_rom", "knee_sw", "arm_amp", "arm_ph"):
     sv = [r[key] for r in steady if np.isfinite(r.get(key, np.nan))]
     tv = [r[key] for r in trans if np.isfinite(r.get(key, np.nan))]
     agg[f"steady_{key}_mean"] = round(float(np.mean(sv)), 4) if sv else None
@@ -242,13 +328,15 @@ print(f"SUITE {TITLE} | survived={agg['survived']} fell_at={agg['fell_at']} | st
       f"acc_hf {agg['steady_acc_hf_mean']} tau_rate {agg['steady_tau_rate_mean']} v_err {agg['steady_v_err_mean']} | "
       f"transitions ({len(trans)}): jerk max {agg['transition_jerk_max']} acc_hf max {agg['transition_acc_hf_max']} "
       f"tau_rate max {agg['transition_tau_rate_max']} | worst: {agg.get('worst_transition')}")
-print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err step_t step_l   ds leg_acc leg_jrk arm_acc arm_pp  modes")
+print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err step_t step_l   ds leg_acc leg_jrk arm_acc arm_pp  hl_leg knee_ms hip_rom knee_sw arm_amp arm_ph  modes")
 for r in rows:
     print(f"SEG {r['label']:36s} {r['kind']:10s} {r['jerk']:6.2f} {r['acc_hf']:6.3f} {r['lat_acc_hf']:6.3f} {r['ang_jerk']:7.2f} "
           f"{r['roll_pp']:6.2f} {r['pitch_pp']:7.2f} {r.get('tau_rate', float('nan')):9.1f} {r['v_err']:6.3f} "
           f"{r.get('step_t', float('nan')):6.2f} {r.get('step_l', float('nan')):6.2f} {r.get('ds', float('nan')):5.2f} "
           f"{r.get('leg_acc', float('nan')):7.2f} {r.get('leg_jerk', float('nan')):7.1f} {r.get('arm_acc', float('nan')):7.2f} "
-          f"{r.get('arm_pp', float('nan')):6.1f}  {r.get('modes', '')}"
+          f"{r.get('arm_pp', float('nan')):6.1f} {r.get('hl_leg', float('nan')):7.1f} {r.get('knee_ms', float('nan')):7.1f} "
+          f"{r.get('hip_rom', float('nan')):7.1f} {r.get('knee_sw', float('nan')):7.1f} {r.get('arm_amp', float('nan')):7.1f} "
+          f"{r.get('arm_ph', float('nan')):6.0f}  {r.get('modes', '')}"
           + ("  FELL" if r["fell"] else ""))
 
 # ---- figure ------------------------------------------------------------------------------------

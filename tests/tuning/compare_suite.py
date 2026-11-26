@@ -10,6 +10,7 @@ Reads <root>/<tag>__<script>/suite.json. Aggregates over the whole suite (all sc
   transition_jerk_mean, transition_acc_hf_mean
   v_err_max (worst command tracking of any segment), falls
   solve_hz (min over scripts of the MPC_TIMING actual rate in <case>/summary.txt; nan if absent)
+  hl_leg, knee_ms, hip_rom, arm_amp (human-likeness of the forward-walking holds, see score_suite.py; informational)
   steady_leg_acc_mean, steady_leg_jerk_mean, steady_arm_acc_mean, steady_arm_pp_mean (limb motion, see
   score_suite.py; printed, and the limbs guards below keep a candidate from winning by moving the
   abruptness from the pelvis into the limbs)
@@ -31,7 +32,8 @@ import numpy as np
 
 AGG_KEYS = ["steady_jerk_mean", "steady_acc_hf_mean", "steady_tau_rate_mean", "transition_jerk_max",
             "transition_acc_hf_max", "transition_tau_rate_max", "transition_jerk_mean", "transition_acc_hf_mean", "v_err_max", "falls", "solve_hz",
-            "steady_leg_acc_mean", "steady_leg_jerk_mean", "steady_arm_acc_mean", "steady_arm_pp_mean"]
+            "steady_leg_acc_mean", "steady_leg_jerk_mean", "steady_arm_acc_mean", "steady_arm_pp_mean",
+            "hl_leg", "knee_ms", "hip_rom", "arm_amp"]
 
 
 def load(root: Path, tag: str, scripts):
@@ -65,6 +67,10 @@ def aggregate(runs):
         "steady_leg_acc_mean": np.mean(vals(steady, "leg_acc")) if vals(steady, "leg_acc") else math.nan,
         "steady_leg_jerk_mean": np.mean(vals(steady, "leg_jerk")) if vals(steady, "leg_jerk") else math.nan,
         "steady_arm_acc_mean": np.mean(vals(steady, "arm_acc")) if vals(steady, "arm_acc") else math.nan,
+        "hl_leg": np.mean(vals(steady, "hl_leg")) if vals(steady, "hl_leg") else math.nan,
+        "knee_ms": np.mean(vals(steady, "knee_ms")) if vals(steady, "knee_ms") else math.nan,
+        "hip_rom": np.mean(vals(steady, "hip_rom")) if vals(steady, "hip_rom") else math.nan,
+        "arm_amp": np.mean(vals(steady, "arm_amp")) if vals(steady, "arm_amp") else math.nan,
         "steady_arm_pp_mean": np.mean(vals(steady, "arm_pp")) if vals(steady, "arm_pp") else math.nan,
         "scripts": len(runs),
     }
@@ -134,7 +140,7 @@ def main():
             print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells) + ("  FELL" if seg.get("fell") else ""))
     # limbs table (only when the baseline has joint-state metrics)
     if any("leg_acc" in seg for j in base_runs.values() for seg in j["segments"]):
-        print("\nper segment limbs (step_l m | v_err | leg_acc | leg_jerk | arm_acc | arm_pp deg):")
+        print("\nper segment limbs (step_l m | v_err | leg_acc | leg_jerk | arm_acc | arm_pp deg || hl_leg | knee_ms | hip_rom | knee_sw | arm_amp deg):")
         for s in a.scripts:
             if s not in base_runs:
                 continue
@@ -145,7 +151,8 @@ def main():
                     segs = runs[t].get(s, {}).get("segments", [])
                     r = segs[i] if i < len(segs) else None
                     nan = float("nan")
-                    cells.append(f"{r.get('step_l', nan):5.2f} {r.get('v_err', nan):5.2f} {r.get('leg_acc', nan):6.2f} {r.get('leg_jerk', nan):6.0f} {r.get('arm_acc', nan):6.2f} {r.get('arm_pp', nan):5.1f}" if r else " " * 38)
+                    cells.append(f"{r.get('step_l', nan):5.2f} {r.get('v_err', nan):5.2f} {r.get('leg_acc', nan):6.2f} {r.get('leg_jerk', nan):6.0f} {r.get('arm_acc', nan):6.2f} {r.get('arm_pp', nan):5.1f} || "
+                                 f"{r.get('hl_leg', nan):5.1f} {r.get('knee_ms', nan):5.1f} {r.get('hip_rom', nan):5.1f} {r.get('knee_sw', nan):5.1f} {r.get('arm_amp', nan):5.1f}" if r else " " * 71)
                 print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells))
     print("\nwinners: " + (", ".join(c for c, (v, _) in verdicts.items() if v.startswith("WINNER")) or "NONE"))
 

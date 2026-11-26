@@ -557,6 +557,50 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             and hips with no interpenetration and no near-miss inside a 20 mm margin. The optional armSelfCollision
             penalty does not replace this reference-excursion bound.",
             validation: {gt: [0.0]}}
+      humanGait:
+        enabled: {type: bool, default_value: false, description: "Human gait template: normative human walking
+            kinematics (hip/knee/ankle curves, pelvis obliquity and vertical excursion, trunk counter-rotation, arm
+            swing) as the joint and base-pose reference, evaluated at each leg's gait-cycle phase time-warped onto
+            the planned mode schedule and scaled with the commanded step. Off: the fixed defaultJointState."}
+        legs: {type: bool, default_value: true, description: "Apply the hip pitch / knee / ankle pitch curves. They
+            replace the leg entries of defaultJointState (standing: hip -kneeOffset/2, knee kneeOffset, ankle
+            -kneeOffset/2), so the joint-position weights of those joints decide how closely they are followed."}
+        arms: {type: bool, default_value: true, description: "Shoulder pitch / elbow swing about the nominal arm
+            posture (needs armSwing.jointNames). Do not combine with armSwing.enabled: the two would add."}
+        waist: {type: bool, default_value: true, description: "Waist yaw counter-rotation about the nominal."}
+        base: {type: bool, default_value: true, description: "Pelvis height oscillation, obliquity (roll) and pitch
+            about the base reference."}
+        jointNames: {type: string_array, default_value: [], description: "[left hip pitch, left knee, left ankle
+            pitch, right hip pitch, right knee, right ankle pitch, waist yaw]; required when enabled."}
+        legLength: {type: double, default_value: 0.65, description: "Hip-to-ankle length [m]; with the commanded
+            step length (speed x step time) it scales the leg curves: scale = step / legLength / humanStepRatio.",
+            validation: {gt: [0.0]}}
+        humanStepRatio: {type: double, default_value: 0.78, description: "Human step length over leg length at
+            referenceSpeed (0.7 m steps on a 0.9 m leg at 1.3 m/s).", validation: {gt: [0.0]}}
+        referenceSpeed: {type: double, default_value: 1.3, description: "Speed at which the curves and the arm
+            amplitudes are defined [m/s]; the arm swing scales with commanded speed / referenceSpeed.",
+            validation: {gt: [0.0]}}
+        maxScale: {type: double, default_value: 1.2, description: "Cap on the amplitude scales.", validation: {gt: [0.0]}}
+        kneeOffset: {type: double, default_value: 0.3, description: "Knee flexion added to the human curves everywhere
+            [rad] (hip and ankle take half, trunk upright, foot flat): the margin from the straight-knee singularity.
+            The standing pelvis height that goes with it on the G1: 0.3 -> 0.785 m, 0.2 -> 0.789 m, 0.5 -> 0.772 m.",
+            validation: {gt_eq: [0.0]}}
+        shoulderAmplitude: {type: double, default_value: 0.35, description: "Shoulder pitch swing at referenceSpeed
+            [rad].", validation: {gt_eq: [0.0]}}
+        elbowAmplitude: {type: double, default_value: 0.15, description: "Elbow swing at referenceSpeed [rad].",
+            validation: {gt_eq: [0.0]}}
+        elbowMean: {type: double, default_value: 0.0, description: "Constant elbow offset from the nominal while the
+            template is on [rad] (negative straightens the shipped 1.2 rad elbow towards a human arm)."}
+        armMaxOffset: {type: double, default_value: 0.6, description: "Clamp on the arm offsets [rad] (collision
+            envelope, see armSwing.maxOffset).", validation: {gt: [0.0]}}
+        waistYawAmplitude: {type: double, default_value: 0.08, description: "Trunk counter-rotation at full scale
+            [rad].", validation: {gt_eq: [0.0]}}
+        pelvisRollAmplitude: {type: double, default_value: 0.05, description: "Pelvis obliquity at full scale [rad],
+            swing side down.", validation: {gt_eq: [0.0]}}
+        pelvisPitchAmplitude: {type: double, default_value: 0.0, description: "Pelvis pitch oscillation at full scale
+            [rad], twice per cycle."}
+        heightOscillation: {type: double, default_value: 0.015, description: "Pelvis vertical excursion at full scale
+            [m], high at mid single stance, low in double support.", validation: {gt_eq: [0.0]}}
     gait:
       phaseTransitionStanceTime: {type: double, default_value: 0.0, description: "Minimum stance time inserted at
           phase transitions [s]"}

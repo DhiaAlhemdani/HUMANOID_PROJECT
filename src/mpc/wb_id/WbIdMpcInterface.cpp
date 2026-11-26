@@ -86,6 +86,7 @@ WbIdMpcInterface::WbIdMpcInterface(Config config, bool setupOCP)
       GaitSchedule::createGaitSchedule(config_.initialModeSchedule, config_.defaultModeSequenceTemplate, modelSettings_, verbose_),
       std::move(swingTrajectoryPlanner), *pinocchioInterfacePtr_, *mpcRobotModelPtr_);
   referenceManagerPtr_->setArmSwingSettings(config_.armSwing);
+  referenceManagerPtr_->setHumanGaitSettings(config_.humanGait);
   referenceManagerPtr_->setCaptureFootPlacementSettings(config_.captureFootPlacement);
   referenceManagerPtr_->setUseTerrainHeightEstimate(config_.useTerrainHeightEstimate, config_.maxTerrainHeightStep);
 

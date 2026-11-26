@@ -376,6 +376,40 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   config.armSwing.phaseOffset = p.reference.armSwing.phaseOffset;
   config.armSwing.maxOffset = p.reference.armSwing.maxOffset;
 
+  {
+    const auto& h = p.reference.humanGait;
+    auto& hg = config.humanGait;
+    hg.enabled = h.enabled;
+    hg.legs = h.legs;
+    hg.arms = h.arms;
+    hg.waist = h.waist;
+    hg.base = h.base;
+    hg.jointNames = h.jointNames;
+    hg.legLength = h.legLength;
+    hg.humanStepRatio = h.humanStepRatio;
+    hg.referenceSpeed = h.referenceSpeed;
+    hg.maxScale = h.maxScale;
+    hg.kneeOffset = h.kneeOffset;
+    hg.shoulderAmplitude = h.shoulderAmplitude;
+    hg.elbowAmplitude = h.elbowAmplitude;
+    hg.elbowMean = h.elbowMean;
+    hg.armMaxOffset = h.armMaxOffset;
+    hg.waistYawAmplitude = h.waistYawAmplitude;
+    hg.pelvisRollAmplitude = h.pelvisRollAmplitude;
+    hg.pelvisPitchAmplitude = h.pelvisPitchAmplitude;
+    hg.heightOscillation = h.heightOscillation;
+    if (hg.enabled && hg.jointNames.size() != 7) {
+      throw std::invalid_argument(
+        "[whole_body_inverse_dynamics_mpc_config_builder] reference.humanGait.jointNames must contain exactly 7 entries "
+        "[left hip pitch, left knee, left ankle pitch, right hip pitch, right knee, right ankle pitch, waist yaw]");
+    }
+    if (hg.enabled && hg.arms && p.reference.armSwing.enabled) {
+      throw std::invalid_argument(
+        "[whole_body_inverse_dynamics_mpc_config_builder] reference.humanGait.arms and reference.armSwing.enabled "
+        "both add an arm swing; enable one");
+    }
+  }
+
   config.useTerrainHeightEstimate = p.reference.groundHeight.useEstimate;
   config.maxTerrainHeightStep = p.reference.groundHeight.maxStepPerSolve;
 
