@@ -101,3 +101,23 @@ with scale, i.e. with speed. That is the speed-dependent pitch oscillation of ru
 
 Run 3 = `humanHV3`, same recipe string. Gate as before; the specific expectation is pitch_pp at
 0.6–0.8 m/s back under 10° and no fall in omni.
+
+## Run 3 — `humanHV3` (increment 2)
+
+Omni **survived** throughout (0.3 m/s, turn, 0.6 m/s, diagonal, backward, stops); speeds fell at
+15.4 s on the ramp to 0.8 m/s. The low end is now better than the baseline on every axis:
+
+| hold | jerk (base) | acc_hf (base) | knee_ms | hip_rom | arm_amp | v_err |
+|---|---|---|---|---|---|---|
+| 0.2 m/s | 42.7 (47.0) | 0.61 (0.94) | 18.9 (33.7) | 40 (42) | 4.7 (1.1) | 0.15 (0.10) |
+| 0.3 m/s | 41.1 (47.8) | 0.65 (0.90) | 18.8 (34.0) | 39 (42) | 4.6 (1.1) | 0.08 (0.11) |
+| 0.5 m/s | 142.7 (56.6) | 1.38 (1.02) | 19.1 (36.4) | 42 (50) | 5.8 (1.2) | 0.14 (0.12) |
+| 0.6 m/s | 96.5 (65.6) | 1.06 (1.04) | 26.8 (38.6) | 49 (56) | 6.8 (1.4) | 0.13 (0.14) |
+| 0.2/0.1 after 0.6 | 198 (48) | 2.36 (0.90) | | | | 0.18 (0.16) |
+
+Pattern: the template is a clear win up to 0.3 m/s, costs smoothness from 0.5 m/s, and does not
+survive the ramp to 0.8. The segment after the 0.6 m/s hold stays rough (leg jerk 2925, the robot is
+still recovering through the following stop), as in run 1 where that ramp was the fall. Next: two
+isolation runs on the speeds script — `HUMAN_MAXSCALE=0.6` (amplitude frozen at the 0.45 m/s value)
+and `HUMAN_LEGS=false` (arms / waist / pelvis only) — to attribute the high-speed loss to the leg
+amplitude before designing a speed taper.

@@ -21,6 +21,8 @@
 #            env HUMAN_LEGW="hp kn ap" overrides the three leg weights (default "10 10 3");
 #            HUMAN_BASE=false turns the pelvis height / roll template off (default on: the height
 #            reference is the stance legs' FK, so legs and base ask for the same thing);
+#            HUMAN_LEGS / HUMAN_ARMS / HUMAN_WAIST=false switch template parts off, HUMAN_MAXSCALE caps
+#            the amplitude scale (1.2; 0.6 freezes the template at its 0.45 m/s amplitude);
 #            HUMAN_SWING="z1 z2 z3 z4" sets the gait law's swing-height knots at 0 / 0.45 / 0.8 /
 #            1.15 m/s (default "0.06 0.065 0.09 0.11": the ankle height the swing-leg curves imply
 #            at those speeds, so the swing-foot task and the knee curve ask for the same leg).
@@ -44,11 +46,16 @@ LEGPF="0.05, 0.1, 30.0, 0.1, 0.1, 0.1, 0.05, 0.1, 30.0, 0.1, 0.1, 0.1"
 # towards the crouch and the unswung arms.
 if has human; then
   # ROS 2 YAML lists must be one type: every weight is written as a double (10 -> 10.0).
-  read -r HP KN AP <<< "$(printf '%.3f %.3f %.3f' ${HUMAN_LEGW:-10 10 3})"
+  # With the leg curves off the leg weights stay at the shipped (weak) values: the posture is then the crouch.
+  if [ "${HUMAN_LEGS:-true}" = true ]; then LEGW_DEFAULT="10 10 3"; else LEGW_DEFAULT="0.05 0.1 0.1"; fi
+  read -r HP KN AP <<< "$(printf '%.3f %.3f %.3f' ${HUMAN_LEGW:-$LEGW_DEFAULT})"
   read -r Z1 Z2 Z3 Z4 <<< "$(printf '%.3f %.3f %.3f %.3f' ${HUMAN_SWING:-0.06 0.065 0.09 0.11})"
   LEGP="$HP, 0.2, 15.0, $KN, $AP, 0.1, $HP, 0.2, 15.0, $KN, $AP, 0.1"
+  MAXS=$(printf '%.3f' ${HUMAN_MAXSCALE:-1.2})
   EDITS+=("ocs2.reference.humanGait.enabled=true" "ocs2.reference.humanGait.elbowMean=-0.4"
-          "ocs2.reference.humanGait.base=${HUMAN_BASE:-true}" "ocs2.reference.defaultBaseHeight=0.785"
+          "ocs2.reference.humanGait.legs=${HUMAN_LEGS:-true}" "ocs2.reference.humanGait.arms=${HUMAN_ARMS:-true}"
+          "ocs2.reference.humanGait.waist=${HUMAN_WAIST:-true}" "ocs2.reference.humanGait.base=${HUMAN_BASE:-true}"
+          "ocs2.reference.humanGait.maxScale=$MAXS" "ocs2.reference.defaultBaseHeight=0.785"
           "ocs2.gait.continuous.swingHeight=[$Z1, $Z2, $Z3, $Z4]")
 fi
 LEGV="0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001, 0.001"
