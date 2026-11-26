@@ -92,7 +92,8 @@ print(f"== {os.path.basename(case_dir.rstrip('/'))}: window {tw[0]:.2f} .. {tw[-
 
 joints = [n.split("/", 1)[1] for n in TN if n.startswith("meas_tau/")]
 feet = sorted({n.split("/")[1] for n in TN if n.startswith("obs_foot/")})
-MODE = {0: "FLY", 1: "RF", 2: "LF", 3: "STANCE"}
+MODE = {0: "FLY", 1: "RF", 2: "LF", 3: "STANCE"}  # LF = left foot in contact (right swings), RF = right in contact
+SWINGING = {1: "l", 2: "r"}                        # mode -> side of the swinging foot
 
 # ---- torque limits from the MJCF ------------------------------------------------------------------
 limits = {}
@@ -146,6 +147,13 @@ for f in feet:
 tau = {j: sig(f"meas_tau/{j}") for j in joints}
 err = {j: (sig(f"meas_q/{j}") - sig(f"cmd_q/{j}")) for j in joints if sig(f"cmd_q/{j}") is not None and sig(f"meas_q/{j}") is not None}
 
+# ground truth (100 Hz: t_sim, t_wall, x, y, z, vx, vy, vz, roll, pitch, yaw) interpolated onto the window
+gtw = None
+if gt is not None and gt.shape[1] >= 10:
+    g = gt[np.argsort(gt[:, 0])]
+    g = g[np.concatenate([[True], np.diff(g[:, 0]) > 1e-6])]
+    gtw = {k: np.interp(tw, g[:, 0], g[:, c]) for k, c in (("z", 4), ("roll", 8), ("pitch", 9))}
+
 # ---- 1. first anomaly -------------------------------------------------------------------------------
 def first(cond, label, detail=""):
     idx = np.flatnonzero(cond)
@@ -164,7 +172,7 @@ for f in feet:
     if zz is not None and zpp is not None:
         events.append(first(np.abs(zz - zpp) > 0.03, f"{f} height error > 3 cm", f"peak {100 * np.nanmax(np.abs(zz - zpp)):.1f} cm"))
     if foot_v[f] is not None and mode is not None:
-        stance = np.isin(mode, (3, 1 if side(f) == "l" else 2))  # mode 2 = LF (left swings), 1 = RF
+        stance = np.isin(mode, (3, 2 if side(f) == "l" else 1))  # LF (2) = left foot in contact
         events.append(first((foot_v[f] > 0.1) & stance, f"{f} slip > 0.1 m/s in stance", f"peak {np.nanmax(np.where(stance, foot_v[f], 0)):.2f} m/s"))
 for j, e in err.items():
     ev = first(np.abs(e) > 0.3, f"tracking error > 0.3 rad: {j}", f"peak {np.nanmax(np.abs(e)):.2f} rad")
@@ -175,6 +183,14 @@ for j, x in tau.items():
         ev = first(np.abs(x) > 0.9 * limits[j], f"torque > 90 % of limit: {j}", f"peak {np.nanmax(np.abs(x)):.0f} / {limits[j]:.0f} Nm")
         if ev:
             events.append(ev)
+if gtw is not None:
+    events.append(first(np.abs(gtw["pitch"]) > math.radians(10), "TRUE base pitch > 10 deg (gt)", f"peak {math.degrees(np.nanmax(np.abs(gtw['pitch']))):.1f}"))
+    if pitch is not None:
+        events.append(first(np.abs(pitch - gtw["pitch"]) > math.radians(3), "estimator pitch error > 3 deg", f"peak {math.degrees(np.nanmax(np.abs(pitch - gtw['pitch']))):.1f}"))
+    if roll is not None:
+        events.append(first(np.abs(roll - gtw["roll"]) > math.radians(3), "estimator roll error > 3 deg", f"peak {math.degrees(np.nanmax(np.abs(roll - gtw['roll']))):.1f}"))
+    if zo is not None:
+        events.append(first(np.abs(zo - gtw["z"]) > 0.02, "estimator height error > 2 cm", f"peak {100 * np.nanmax(np.abs(zo - gtw['z'])):.1f} cm"))
 events = sorted(e for e in events if e)
 print("\n-- first anomalies (sim s | signal | peak in window)")
 if not events:
@@ -183,12 +199,13 @@ for tt, label, detail in events[:14]:
     print(f"  {tt:8.2f} | {label:<46} | {detail}")
 
 # ---- 2. timeline --------------------------------------------------------------------------------------
-print(f"\n-- timeline (every {a.step:.2f} s): t | mode | pitch roll [deg] | z obs-plan [cm] | feet z [cm] (c=contact) | top |tau| [Nm] | top |q err| [rad]")
+print(f"\n-- timeline (every {a.step:.2f} s): t | mode | est pitch roll [deg] | TRUE pitch roll [deg] | z obs-plan [cm] | feet z [cm] (c=contact) | top |tau| [Nm] | top |q err| [rad]")
 times = np.arange(tw[0], tw[-1] + 1e-9, a.step)
 for tq in times:
     i = int(np.argmin(np.abs(tw - tq)))
     parts = [f"{tw[i]:7.2f}", MODE.get(int(mode[i]), "?") if mode is not None else "?"]
     parts.append(f"{math.degrees(pitch[i]):6.1f} {math.degrees(roll[i]):6.1f}" if pitch is not None and roll is not None else "   -   -")
+    parts.append(f"{math.degrees(gtw['pitch'][i]):6.1f} {math.degrees(gtw['roll'][i]):6.1f}" if gtw is not None else "   -   -")
     parts.append(f"{100 * (zo[i] - zp[i]):6.1f}" if zo is not None and zp is not None else "   -")
     fz = []
     for f in feet:
@@ -233,6 +250,21 @@ if pbp is not None and pitch is not None:
     print(f"  plan_base/pitch: range {math.degrees(pbp.min()):.1f} .. {math.degrees(pbp.max()):.1f} deg; "
           f"largest obs-plan gap {math.degrees(np.abs(pbp - pitch)[k]):.1f} deg at {tw[k]:.3f}")
 
+if gtw is not None and pitch is not None:
+    e_p, e_r = np.abs(pitch - gtw["pitch"]), np.abs(roll - gtw["roll"]) if roll is not None else None
+    kp = int(np.argmax(e_p))
+    msg = f"  estimator vs ground truth: pitch error max {math.degrees(e_p[kp]):.1f} deg at {tw[kp]:.3f}"
+    if e_r is not None:
+        kr = int(np.argmax(e_r))
+        msg += f", roll {math.degrees(e_r[kr]):.1f} deg at {tw[kr]:.3f}"
+    if zo is not None:
+        e_z = np.abs(zo - gtw["z"]); kz = int(np.argmax(e_z))
+        msg += f", height {100 * e_z[kz]:.1f} cm at {tw[kz]:.3f}"
+    print(msg)
+    dp = np.gradient(gtw["pitch"], tw)
+    kd = int(np.argmax(np.abs(dp)))
+    print(f"  TRUE pitch rate max {math.degrees(dp[kd]):.0f} deg/s at {tw[kd]:.3f}")
+
 # mode switches: how the landing foot arrived
 if mode is not None:
     print("\n-- mode switches: landing foot height / vertical speed 50 ms before the switch, planned fz 20 ms after")
@@ -241,7 +273,7 @@ if mode is not None:
         m0, m1 = int(mode[k - 1]), int(mode[k])
         landing = None
         if m0 in (1, 2) and m1 == 3:
-            landing = [f for f in feet if side(f) == ("r" if m0 == 1 else "l")]
+            landing = [f for f in feet if side(f) == SWINGING[m0]]
         label = f"{tw[k]:7.2f}  {MODE.get(m0, '?'):>6} -> {MODE.get(m1, '?'):<6}"
         if landing:
             f = landing[0]
@@ -254,7 +286,9 @@ if mode is not None:
             label += f"; plan fz {fz[ka]:5.0f} N at +20 ms" if fz is not None else ""
         if pitch is not None:
             ka = min(len(tw) - 1, k + int(round(0.1 / dt_med)))
-            label += f"; base pitch {math.degrees(pitch[k]):5.1f} -> {math.degrees(pitch[ka]):5.1f} deg over +100 ms"
+            label += f"; est pitch {math.degrees(pitch[k]):5.1f} -> {math.degrees(pitch[ka]):5.1f} deg over +100 ms"
+            if gtw is not None:
+                label += f" (true {math.degrees(gtw['pitch'][k]):5.1f} -> {math.degrees(gtw['pitch'][ka]):5.1f})"
         print("  " + label)
 
 # ---- 3. torque peaks ------------------------------------------------------------------------------------
