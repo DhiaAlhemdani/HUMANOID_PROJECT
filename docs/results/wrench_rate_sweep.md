@@ -49,14 +49,20 @@ and the next lever is per-phase weighting (price the double-support handover, no
   88.7 / 1.41 / 422 → 43.8 / 0.64 / 252, every pelvis number is the best of the campaign.
 - 1e-2 is past the limit even with a free first node: the in-horizon force is then too slow for the
   balance corrections themselves.
-- **User's eye at 1e-3: arms sway during the walk, and the step abruptness got *worse*.** The pelvis is
-  smoother because the optimizer moved the fast momentum changes into the limbs — arm and swing-leg
-  accelerations are nearly free in the cost (r.jointAccelerations 5e-6 per (rad/s²)², arm posture 5),
-  so once the ground-reaction rate is priced they become the flywheel. The pelvis metrics are blind to
-  that; `score_suite.py` now also reports `leg_acc`, `leg_jerk`, `arm_acc`, `arm_pp` from the 1 kHz joint
-  states, and `compare_suite.py` guards `steady_leg_jerk_mean` and `steady_arm_acc_mean` (≤ 1.15×).
+- **User's eye at 1e-3: the steps are fine (not abrupt), but the arms sway during the walk and the
+  steps got short.** Two separate effects of pricing the ground-reaction rate:
+  - *Arms:* arm accelerations are nearly free in the cost (r.jointAccelerations 5e-6 per (rad/s²)²,
+    arm posture 5), so once the force rate is priced the optimizer uses the arms as the flywheel for the
+    fast momentum changes. The pelvis metrics are blind to that; `score_suite.py` now also reports
+    `leg_acc`, `leg_jerk`, `arm_acc`, `arm_pp` from the 1 kHz joint states, and `compare_suite.py` guards
+    `steady_leg_jerk_mean` and `steady_arm_acc_mean` (≤ 1.15×).
+  - *Step length:* the step time is fixed by the gait law, so a shorter step means less pelvis travel
+    per step — the robot walks below the command. The braking/propulsion force swing at each touchdown
+    scales with step length, so a rate price favours lagging the command (hold `v_err`, `step_l` in the
+    per-segment limbs table). The 1e-2 fall is the same effect past its limit.
 
 Next (config only): `humanF_1e-3` + arms stiffened ×10 (`make_wrench_configs.sh … arms`) to take the
-flywheel away, rescoring the existing runs for the limb numbers first. If the leg abruptness stays, the
-rate weight moves to a per-phase schedule (priced around the contact handover, free mid-stance) so the
-balance corrections are not what the limbs have to make up for.
+flywheel away, rescoring the existing runs first for `step_l` / hold `v_err` / limb numbers. For the step
+length the candidates are a lower weight (5e-4) or a higher base-velocity weight; if neither keeps the
+smoothness, the rate weight moves to a per-phase schedule (priced around the contact handover, free
+mid-stance).
