@@ -5,7 +5,8 @@ usage: tune_probe.py <out_prefix> [speed] [vmax] [height]
 env PROFILE: vx (default) | vy | yaw (speed in m/s or rad/s on that axis, vmax its command scale) |
              stops (vx with 4 s walk / 3 s stand cycles during the hold) |
              script (SCRIPT=<json>: {"knots": [[t, vx, vy, yaw_rate], ...]} in physical units, linearly
-             interpolated, held after the last knot; VMAX_X/VMAX_Y/VMAX_YAW env give the command scales;
+             interpolated, held after the last knot; an optional 5th column is the commanded pelvis height
+             [m] (the GUI slider; without it HEIGHT holds); VMAX_X/VMAX_Y/VMAX_YAW env give the command scales;
              the schedule is saved in the meta for score_suite.py -- tests/tuning/suite/*.json)
 
 Publishes the walking command on a wall-clock schedule (4 s stand, 3 s ramp, 20 s hold, 3 s ramp
@@ -40,8 +41,9 @@ PROFILE = os.environ.get("PROFILE", "vx")
 SCRIPT = None
 if PROFILE == "script":
     import json
-    SCRIPT = np.array(json.load(open(os.environ["SCRIPT"]))["knots"], float)  # [t, vx, vy, yaw]
-    assert SCRIPT.ndim == 2 and SCRIPT.shape[1] == 4 and (np.diff(SCRIPT[:, 0]) >= 0).all(), "knots: [[t, vx, vy, yaw], ...] with t ascending"
+    SCRIPT = np.array(json.load(open(os.environ["SCRIPT"]))["knots"], float)  # [t, vx, vy, yaw(, height)]
+    assert SCRIPT.ndim == 2 and SCRIPT.shape[1] in (4, 5) and (np.diff(SCRIPT[:, 0]) >= 0).all(), \
+        "knots: [[t, vx, vy, yaw(, height)], ...] with t ascending"
     VMAX3 = [float(os.environ.get("VMAX_X", VMAX)), float(os.environ.get("VMAX_Y", 0.5)), float(os.environ.get("VMAX_YAW", 1.5708))]
 SHOT_TIMES = [SETTLE + RAMP + 8.0 + 0.2 * k for k in range(4)] if os.environ.get("SHOTS") else []
 CTRL = "/humanoid_whole_body_inverse_dynamics_mpc_controller"
@@ -75,6 +77,10 @@ class Probe(Node):
         if PROFILE == "script":
             c.linear_velocity_x = float(v[0] / VMAX3[0]); c.linear_velocity_y = float(v[1] / VMAX3[1])
             c.angular_velocity_z = float(v[2] / VMAX3[2])
+            if len(v) > 3:
+                c.desired_pelvis_height = float(v[3])
+                self.pub.publish(c)
+                return
         elif PROFILE == "vy":
             c.linear_velocity_y = v / VMAX
         elif PROFILE == "yaw":
@@ -104,6 +110,8 @@ def main():
         if SCRIPT is not None:
             # The script's own clock starts after the settle; three axes at once.
             vx = [float(np.interp(t - SETTLE, SCRIPT[:, 0], SCRIPT[:, k])) if t >= SETTLE else 0.0 for k in (1, 2, 3)]
+            if SCRIPT.shape[1] == 5:  # commanded height: the script's value, the first knot's before the settle ends
+                vx.append(float(np.interp(max(t - SETTLE, 0.0), SCRIPT[:, 0], SCRIPT[:, 4])))
         elif t < SETTLE:
             vx = 0.0
         elif t < SETTLE + RAMP:

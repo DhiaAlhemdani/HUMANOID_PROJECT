@@ -45,7 +45,9 @@ OUT = (lambda name: os.path.join(P, name)) if os.path.isdir(P) else (lambda name
 d = np.load(OUT("data.npz"), allow_pickle=False)
 if "script" not in d.files or d["script"].size == 0:
     sys.exit(f"{P}: no script in data.npz (run with PROFILE=script)")
-K = d["script"]                                   # [t, vx, vy, yaw] on the script clock
+K = d["script"]                                   # [t, vx, vy, yaw(, height)] on the script clock
+HCMD = K[:, 4] if K.shape[1] == 5 else None       # commanded pelvis height per knot (height suite script)
+K = K[:, :4]
 SETTLE = float(d["phases"][0])
 gt = d["gt"].copy()                               # t_sim, t_wall, x, y, z, vx, vy, vz, roll, pitch, yaw
 # The odometry twist's frame has differed between simulator builds (docs/h2_wb_id_mpc.md); derive the
@@ -79,14 +81,20 @@ def deriv(tt, x):
 
 
 # ---- segments on the script clock -------------------------------------------------------------
+# A height change (5th column) with the velocity held is a transition too ("ramp h -> ..."): the slider moved.
 segs = []
-for a, b in zip(K[:-1], K[1:]):
-    if np.allclose(a[1:], b[1:]):
+for i, (a, b) in enumerate(zip(K[:-1], K[1:])):
+    ha, hb = (HCMD[i], HCMD[i + 1]) if HCMD is not None else (0.0, 0.0)
+    htag = f" h {hb:.3f}" if HCMD is not None else ""
+    if np.allclose(a[1:], b[1:]) and abs(hb - ha) < 1e-6:
         if b[0] - a[0] >= 2.5:
-            segs.append(dict(kind="steady", t0=a[0] + 1.5, t1=b[0], cmd=list(a[1:]), label=f"hold vx {a[1]:+.1f} vy {a[2]:+.1f} w {a[3]:+.1f}"))
+            segs.append(dict(kind="steady", t0=a[0] + 1.5, t1=b[0], cmd=list(a[1:]), label=f"hold vx {a[1]:+.1f} vy {a[2]:+.1f} w {a[3]:+.1f}{htag}"))
+    elif np.allclose(a[1:], b[1:]):
+        segs.append(dict(kind="transition", t0=a[0], t1=b[0] + 2.0, cmd=list(b[1:]),
+                         label=f"ramp h -> {hb:.3f} at vx {b[1]:+.1f}"))
     else:
         segs.append(dict(kind="transition", t0=a[0], t1=b[0] + 2.0, cmd=list(b[1:]),
-                         label=f"ramp -> vx {b[1]:+.1f} vy {b[2]:+.1f} w {b[3]:+.1f}"))
+                         label=f"ramp -> vx {b[1]:+.1f} vy {b[2]:+.1f} w {b[3]:+.1f}{htag}"))
 
 # ---- gait names from plan_mode ---------------------------------------------------------------
 MODE = {0: "FLY", 1: "RF", 2: "LF", 3: "STANCE"}
@@ -324,7 +332,7 @@ if trans:
     worst = max(trans, key=lambda r: r.get("jerk", -1))
     agg["worst_transition"] = worst["label"]
 
-json.dump({"title": TITLE, "agg": agg, "segments": rows, "script": K.tolist()}, open(OUT("suite.json"), "w"), indent=1)
+json.dump({"title": TITLE, "agg": agg, "segments": rows, "script": d["script"].tolist()}, open(OUT("suite.json"), "w"), indent=1)
 
 print(f"SUITE {TITLE} | survived={agg['survived']} fell_at={agg['fell_at']} | steady ({len(steady)}): jerk {agg['steady_jerk_mean']} "
       f"acc_hf {agg['steady_acc_hf_mean']} tau_rate {agg['steady_tau_rate_mean']} v_err {agg['steady_v_err_mean']} | "
