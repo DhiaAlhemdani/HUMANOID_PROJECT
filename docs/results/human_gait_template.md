@@ -1338,3 +1338,37 @@ Rung status: `suite_mild` pass (T24e), `suite_rough` parked (foot), `slope_5` pa
 3.5 cm late going down - this is where the touchdown height may need the slope, Run 25 B), the
 `suite_mild` re-check with the slope code in (the slope must never go consistent on tiles), then
 `curb_4`.
+
+### Run 25 B — `slope_10`, `curb_4`, and the `suite_mild` re-check with the slope code in
+
+**`curb_4` (humanT25aC4 vs T25aS5): 0 falls both ways - rung 4 passes.** Six 4 cm curbs per direction
+(up and down, between 3 m plateaus). The cap reads each curb as a tier-3 step (`43-62 % @ 0.10-0.14` in
+the segments with a curb, back to 0 % on the plateaus - exactly the design: a curb is one big step, then
+flat), the strides table shows the curb landings at 2.8-3.9 deg pitch forward and one 14.4 deg excursion
+backward (the -4 cm curb down at 0.8 m/s, 33.8 s) that recovered. Guards: `tau_rate` max 384 (263 on the
+5 deg ramp), transition jerk 75.6 at the curbs; `v_err` by construction. The blind swing (5 cm swing
+height) clears a 4 cm curb it does not know about.
+
+**`slope_10` (humanT25aS10): walks the whole ladder both ways at the second incline tier (`100 % @
+0.15-0.28`, slope +-0.17 read correctly), then falls in the stop - both ways.** 46 / 47 landings on the
+ramp at 0.3-1.5 deg pitch; forward it stalled for 1.5 s mid-ramp (strides of 0.01 m at x 4.66-4.69,
+command 0.2, cap 0.15) and recovered. The stop: the last stride steps *back down* (-3.3 cm forward,
+-2.4 cm backward), pitch 15 deg, fall. The strides table has the reason in its `edge` column: **3.0 cm at
+every landing on the 10 deg ramp** (1.5 on the 5 deg one) - the flat sole on a 10 deg incline rests on
+its heel or toe edge (0.2 m x tan 10 deg = 3.5 cm), because the foot orientation reference is flat
+(task-space foot cost, orientation weights 1000, and the stance orientation feedback). Walking tolerates
+it at 0.2; standing on two edges, with the weight shifting to stop, does not (the `suite_rough` lesson
+again). The slope estimate now exists to fix this: a foot pitch reference that follows the plane (swing
+orientation target and the stance orientation feedback both), with the touchdown height = support
+height + slope x step along the heading. That is **Run 25 C**, a real piece of work in the foot
+references; `slope_10` is parked behind it, as a pass-with-a-caveat (walks, cannot stop).
+
+**`suite_mild` re-check (humanT25aM vs T24eM): 1 fall and `solve_hz` 45.5 -> 35.7.** No segment carries
+the F marker, so the fall is after the last script segment or in a transition the segmenter does not
+own; the cap column reads `@0.50` in every capped segment (tier 1 only - the slope logic never went
+consistent on tiles, as intended, but T24eM's tier-2 episodes are gone too, which may just be the
+different landing cells of a different run). The holds are T24eM's within noise (33 / 53 / 36 / 49 / 60
+vs 31 / 36 / 59 / 50 / 31 forward; backward 28 / 56 / 41 / 44 / 36 vs 38 / 42 / 42 / 43 / 65). The solve
+rate drop is the first thing to rule out (the slope code is a handful of flops per solve; three suites
+running concurrently on one machine is the likely cause) - a 36 Hz solver changes the walk. Anatomy
+requested before any conclusion.
