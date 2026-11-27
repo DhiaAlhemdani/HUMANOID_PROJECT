@@ -1227,3 +1227,28 @@ strategy an edge allows. Risk: flat 0.8 m/s, where the CoP travels heel to toe; 
 (5 deg, 0.4 m: 3.5 cm), so the cap will read a slope as rough and settle around tier 2 - acceptable for
 the rung, and the signal to make the cap slope-aware (consistent sign of the step along the direction of
 travel) if the slope rung needs the speed.
+
+### Run 24 E — humanT24f (smaller planned support polygon) on `suite_rough`: worse. `suite_rough` parked
+
+2 falls, earlier and harder than T24e: forward at x 2.34 m in the 0.5 hold (+3.5 cm step onto a 3.5 cm
+edge, pitch 30 deg), backward at x -1.47 m - the same two cells as every rough run (right foot on a 2.4
+cm edge, left onto +2.4 cm). Where it did walk, it walked worse: steady jerk 151 vs 104, acc_hf 2.7 vs
+1.6, the 0.2 holds the same. So the CoP constraint was not the mechanism: taking ankle authority away
+from the plan costs on every stride and buys nothing on the edge, where the foot rocks whatever the plan
+assumed. humanT24f is kept in `config/tuning/` as the record; `contactGeometry.rectangle` stays +-0.09 /
++-0.03.
+
+One more thing the strides tables settle: **an edge landing halves the step the cap can see.** The
+estimator reads the sole-frame height, and a sole straddling a 2.5 cm edge sits about 1.2 cm up; that is
+why the field's +2.5 cm first steps never engaged tier 2 at 0.025 or at 0.02, in four runs, and the ramp
+to 0.5 went ahead each time. Lowering tier 2 to 0.015 would catch them but would also put `suite_mild`
+(1-2 cm tiles, walked cleanly at 0.5) at 0.2 - not a trade worth making for a field the walk cannot stand
+still on (T24e fell in the stop).
+
+**`suite_rough` is parked behind the foot.** What it needs is a stance that tolerates a line contact: an
+edge signal (stance sole tilt from FK against the other foot) feeding either a re-step or a toe/heel
+contact mode - a different piece of work, listed with the lateral drift. The ladder goes on with
+**humanT24e** (`[0.01, 0.02, 0.035] -> [0.5, 0.2, 0.1]`): `suite_mild` re-check vs T24a (tier 2 at 0.02
+may now trip on mild's larger steps - the cap column tells; acceptable if mild stays at 0 falls and the
+0.5 segments keep their speed most of the time), flat re-check vs humanT24af (cap must stay 0 %), then
+`slope_5`.
