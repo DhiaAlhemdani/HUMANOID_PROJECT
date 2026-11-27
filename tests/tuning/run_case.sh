@@ -25,7 +25,10 @@ OUT=${OUT:-$REPO/tuning_results}; D=$OUT/$TAG; mkdir -p "$D"; rm -rf "${D:?}"/*
 [ "$CFG" = default ] && CFG=$REPO/config/g1/ros2_controllers.yaml
 cp "$CFG" "$D/config.yaml"
 [ -n "${MODEL:-}" ] && cp "$MODEL" "$D/robot_model.xml"
-python3 "$REPO/tests/mujoco_scene.py" --robot-name g1 --terrain "${TERRAIN:-none}" --output "$D/scene.xml" ${MODEL:+--robot-model "$D/robot_model.xml"}
+python3 "$REPO/tests/mujoco_scene.py" --robot-name g1 --terrain "${TERRAIN:-none}" --output "$D/scene.xml" ${MODEL:+--robot-model "$D/robot_model.xml"} || exit 1
+# Why: a run on the wrong ground is indistinguishable from a flat one in the scores; stamp the terrain so the
+# case dir says what it walked on (the first humanTM / humanTR "terrain" runs were flat: an old run_case.sh).
+echo "TERRAIN ${TERRAIN:-none} $(grep -oE 'terrains/[a-z0-9_]+\.xml' "$D/scene.xml" | head -1)"
 pkill -9 -x mujoco_ros2_con 2>/dev/null; pkill -9 -x rviz2 2>/dev/null; sleep 2
 # LAUNCH_TIMEOUT / LOCO_WAIT (env): raise both (e.g. 900 / 600) the first time a config needs new CppAD code (model.wrenchState).
 setsid nohup timeout ${LAUNCH_TIMEOUT:-240} bash -c "cd $WS && $SRC && ros2 launch legged_robot_mpc_controller robot.launch.py robotName:=g1 \
@@ -64,6 +67,7 @@ sleep 2
   fi
   grep -aoE "MPC_TIMING\].*utilization=[0-9.]+%|MPC_HEALTH\] equality SSE mean=[^|]*" "$D/sim.log" | tail -2 | sed -E 's/latest advance.*target period=[0-9.]+ ms, //'
   grep -aoE "bring-up FAULT: trunk tilt [0-9.]+|on_configure failed.*" "$D/sim.log" | head -1
+  echo "TERRAIN ${TERRAIN:-none} $(grep -oE 'terrains/[a-z0-9_]+\.xml' "$D/scene.xml" | head -1)"
 } | tee -a "$D/summary.txt"
 pkill -INT -f "ros2 launch legged_robot_mpc_controller" 2>/dev/null; sleep 4
 pkill -9 -x mujoco_ros2_con 2>/dev/null; pkill -9 -x rviz2 2>/dev/null; pkill -9 -x static_transfor 2>/dev/null; pkill -9 -x robot_state_pub 2>/dev/null
