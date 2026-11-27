@@ -897,3 +897,24 @@ terrain or the controller is changed. If confirmed: the "uneven ground" rung bec
 (the blind walker's realistic rough ground; edge landings are the curb rung's problem, dealt with there), and
 the blocks keep their place as a stepping-stone benchmark for a perceptive foothold planner.
 
+### Run 22 C — `terrain_strides.py` on the rung-1 cases: steps, not edges
+
+`tuning_results/terrain_strides.txt` (humanTM / TE / TV / TR `speeds`, TM / TV `backward`). Edge landings are
+~half of all landings (47-55 %; 27-38 % for TV) and are **not** followed by larger pitch excursions than
+full-sole landings (TM 1.7 vs 4.2 deg, TE 2.3 vs 2.1, TM backward 1.4 vs 2.5): the edge hypothesis is
+dropped for walking. The falls line up with the **largest terrain step of each run**, which is a per-stride
+quantity (stance and swing foot are 1-2 cells apart in x and often one in y, so it reaches 2-3x the adjacent
+bound): TV fell on a +3.1 cm step-up (pitch 33 deg; its largest), TR on a -6.1 cm step-down (14 deg, then
+-3.0 and over), TM on a +1.5 after the run's largest edge (2.8 cm) under the push-off foot, TE - the only run
+to meet +3.3 / -2.9 cm steps and survive them (pitch 2.6 / 1.9) - fell **in the stop**, with both feet on
+1.4-1.5 cm edges and no terrain event (user: "performing great and suddenly fell"). Routine +-1.3-1.7 cm steps
+are walked by every config. TE and TR also drift laterally (y -1.85 m over 10 m; 0.5 m over 3 m) where the
+flat runs track y = 0: a heading / estimator effect of the terrain to watch.
+
+So the blind walk's tolerance is ~+-1.7 cm per stride on the shipped config and ~3 cm with
+`useEstimate true`; 6 cm is out of reach blind. Next: fall anatomy of the TE stop (double support on two
+edges is the suspect: the WBC plans the CoP over a full sole that is resting on a line) and of the TM fall;
+humanTEV = `useEstimate true` + `touchDownVelocity -0.15` (TE took the big steps, TV took the step-downs
+backward; TVC failed because of the windows, not the descent); and the rung ladder re-based on the
+per-stride step (`suite_fine`: adjacent 0.5-1.0 cm so the per-stride step stays under ~2 cm).
+

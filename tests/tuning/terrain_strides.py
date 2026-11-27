@@ -162,7 +162,7 @@ for case in a.cases:
     R = np.array([(r["step_cm"], r["edge_cm"], r["pitch_pp"], r["dz_pp"], r["FELL"]) for r in rows], dtype=float)
     edge = R[:, 1] > a.edge_mm / 10
     up, down = R[:, 0] > 0.5, R[:, 0] < -0.5
-    walking = np.isfinite(R[:, 2])
+    walking = np.isfinite(R[:, 2]) & (R[:, 4] == 0)  # class means over the strides that did not end in the fall
 
     def mean(mask, c):
         v = R[mask & walking, c]
@@ -174,6 +174,10 @@ for case in a.cases:
           f"up {mean(up, 2)} | down {mean(down, 2)} | flat {mean(~up & ~down, 2)}")
     print(f"  height excursion after landing [cm]:  edge {mean(edge, 3)} | no edge {mean(~edge, 3)} | "
           f"up {mean(up, 3)} | down {mean(down, 3)} | flat {mean(~up & ~down, 3)}")
+    big = sorted(rows, key=lambda r: -abs(r["step_cm"]))[:4]
+    print("  largest steps: " + "; ".join(
+        f"{r['step_cm']:+.1f} cm at t {r['t']:.1f} (vx {r['vx']:.1f}, pitch {r['pitch_pp']:.1f}{', FELL' if r['FELL'] else ''})"
+        for r in big))
     if fell_sim is not None:
         last = [r for r in rows if r["FELL"]]
         print("  strides before the fall: " + "; ".join(
