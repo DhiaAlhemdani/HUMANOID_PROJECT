@@ -778,3 +778,12 @@ z 200 is free within one session (every speeds number equal or better, no falls)
 visible dip; z 400 starts to cost at the 0.8 ramp down (acc_hf 1.18, tau rate 362). Decision pending
 (ship 200 with the honest range 0.60-0.745 / default 0.735, or keep 50 and document the slider as the
 standing height). The lever beyond this is the knee torque cost in R, at the price of knee heat.
+
+**Backward check (`humanHZ200` `backward` + `height_back` vs `humanBW`):** backward the shipped config
+already follows the slider three times better than forward - at -0.5 m/s the command 0.785 -> 0.70
+moves the walked height 0.716 -> 0.688 (28 mm; forward 9 mm) - and z 200 adds nothing to it
+(0.723 -> 0.694, 29 mm of a 45 mm clamped command) while costing a little: -0.2 / -0.5 holds 30.3 / 34.9
+vs 27.5 / 33.2, acc_hf 0.56 / 0.59 vs 0.43 / 0.50, the -0.8 ramp acc_hf 0.91 vs 0.82 (guard fail);
+arms unchanged (10-18 deg), 0 falls. **Decision: keep z weight 50 (option 2).** The slider is the
+standing height; walking, it moves the pelvis ~1 cm forward and ~3 cm backward and that is the
+controller's property, not a tuning target. Run 20 closed.
