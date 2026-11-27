@@ -874,3 +874,26 @@ contactSync `earlyWindow 0.12`, `lateWindow 0.10`; humanTVC both; humanTE `groun
 (the stance-foot FK height, i.e. the part of the tile the KF has not absorbed yet, becomes the swing's ground
 reference; `maxStepPerSolve 0.002`). Then the flat regression of whatever passes.
 
+### Run 22 B — rung 1 single levers on `suite_mild` (baseline humanTM): none passes
+
+| candidate | forward (`speeds`) | backward | verdict |
+|---|---|---|---|
+| humanTV `touchDownVelocity -0.15` | **fell in the first 0.5 hold** (x ~ 3-5 m; humanTM got to 14 m) | clearly better: steady 28 / 57 / 68 / 46 / 47 vs 42 / 98 / 71 / 61 / 60 | the only lever that helped anything |
+| humanTC contactSync `earlyWindow 0.12`, `lateWindow 0.10` | 0.2 hold jerk 76 (32), 0.5 ramp 163, **fell in the 0.5 hold** | worse everywhere (tau_rate 350-450) | rejected: the windows are not the mechanism |
+| humanTVC both | 0.2 hold 149, **fell in the ramp to 0.5** | worse than TM | rejected |
+| humanTE `groundHeight.useEstimate true` | the only one to walk the whole ladder (0.8 hold 106 vs 109, last 0.2 hold 71 vs TM's fall); **fell in the final stop ramp** (jerk 426, tau_rate 1023) | mixed: 0.5 holds 57 / 82 vs 98 / 61, 0.8 worse (93 vs 71) | closest, still 2x flat jerk and a fall |
+
+Reading. The falls are position-locked, not speed-locked: TV / TC / TVC / humanTR all fell in the 0.5 hold at
+x ~ 3-5 m, TM at x ~ 14 m, TE at the stop near x ~ 15.5 m, while the same speeds are walked elsewhere on the
+strip. That is what tile features do, not touchdown timing: the G1 sole is 0.17 m long (collision spheres at
+-0.05 / +0.12 m from the ankle) on 0.5 m tiles, so roughly a third of all landings straddle a tile edge and rest
+on the heel pair or the toe pair with a 1-3 cm gap under the other end. The WBC loads both contact points as
+scheduled, the foot rocks onto the lower tile and the body pitches - no touchdown window or descent speed
+changes that, which is why TC made it worse (the switch is held while a rocking foot "searches"). Next:
+`tests/tuning/terrain_strides.py` (new) ray-casts the case's own scene under the four sole corners at every
+touchdown and classifies landings (edge / step up / step down) against the pitch excursion that follows, on
+the existing humanTM / TE / TV / TR cases - no new simulation - to confirm the edge mechanism before the
+terrain or the controller is changed. If confirmed: the "uneven ground" rung becomes a continuous heightfield
+(the blind walker's realistic rough ground; edge landings are the curb rung's problem, dealt with there), and
+the blocks keep their place as a stepping-stone benchmark for a perceptive foothold planner.
+
