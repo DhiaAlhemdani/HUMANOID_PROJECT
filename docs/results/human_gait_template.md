@@ -532,3 +532,34 @@ is a CppAD parameter): 400 (poles -10 / -40) and 600 (-20 / -30) on the shipped 
 600 with offset 0. Watch `lead_ms` and `plan_z` at -30..-10 ms; a result is only real if the plan
 stays on its spline *and* the 0.2 / 0.5 holds move (the 0.8 hold is noise-bound). Stops and the
 0.8 ramp are the guards (sweep 2 saw a 1.33x stops pitch regression at a shared 400).
+
+## Run 16 — swing height gain 400 / 600 (speeds, vs the humanLO repeat): not the lever
+
+| | humanLO | SK 400 | SK 600 | SK 600 + offset 0 |
+|---|---|---|---|---|
+| steady jerk / acc_hf | 34.8 / 0.59 | 27.9 / 0.50 | 34.2 / 0.50 | 29.8 / 0.58 |
+| hold 0.2 / 0.5 / 0.8 / 0.5 / 0.2 | 29.7 / 33.8 / 72.0 / 37.4 / 36.1 | 30.7 / 38.9 / 62.4 / 34.2 / 27.6 | 29.6 / 38.2 / **154.4** / 38.4 / 26.9 | 27.7 / 35.3 / 62.5 / 34.0 / 28.7 |
+| solve Hz | 45.1 | 43.4 | 40.3 (fail) | **33.6** (fail) |
+| lead ms (0.2 / 0.5) | 50 / 51 | 46 / 48 | 44 / 44 | 37 / 37 |
+| sw_td concentration (0.2 / 0.5) | 2.8-3.4 / 2.2-2.4 | 3.1-3.4 / 2.6-2.8 | 3.4-3.5 / 2.5-2.8 | 2.8-3.0 / 2.6-2.8 |
+| plan_z at -30 / -20 / -10 / 0 ms (0.2) | +0.7 / -0.2 / -1.0 / -0.8 (op1) | | -0.1 / -1.0 / -1.5 / -0.8 | +1.1 / +0.3 / -0.4 / -0.8 |
+
+kp 600 halves the sag (the plan ends ~0.8 mm under its spline instead of ~2) and the lead follows
+by only 6-13 ms, because the spline itself spends its last 27 ms inside the last millimetre
+(37 mm/s approach) and the sole sits on the ground at 0.25 mm: the real foot is down from
+-30..-20 ms with the plan exactly on its reference. The touchdown concentration does not move at
+all (2.5-3.5 everywhere), the 0.2 / 0.5 holds are a wash (SK_400's "winner" verdict is the
+noise-bound 0.8 hold), the stiffer equality costs 4-25 % solve rate, and SK_600 stumbled at 0.8
+(hold 154, no fall). **Not shipped; `swingPositionErrorGain_z` stays 200.**
+
+What the profiles say the touchdown jerk is: the real foot is already resting on the ground when
+the plan flips its contact flag and loads it **0 -> 123 N in one node** (then 130 / 142 / 167 /
+180 N at +10..+40 ms) while the WBC's contact alpha fades 0.2 -> 1.0 over +0..+30 ms; the pelvis
+jerk peaks 54-62 at -30 and +20..+30 ms, exactly as it peaked at the lift-off switch before the
+lift-off window. The lead is now 20-40 ms of an unloaded foot on the ground, not the cause of the
+step. Two levers, in order: (1) `contactLoadShareTouchDownWindow` 0.03 / 0.04 on top of the
+shipped lift-off window (config only; the cost ramps the landing foot's force from 0 over the
+window; the whole-DS smoothstep fell at 0.8 so the window must leave the middle of the 120 ms
+double support free - 0.06 + 0.04 is the most that fits); (2) if the window helps at 0.2 / 0.5
+but costs 0.8, the contact-triggered switch, which loads the foot when it lands instead of
+20-40 ms later.
