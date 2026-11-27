@@ -22,7 +22,8 @@ REFMGR_CPP = (ROOT / "src/mpc/common/reference_manager/SwitchedModelReferenceMan
 SYNC_H = (ROOT / "include/legged_robot_mpc_controller/mpc/common/gait/ContactSync.h").read_text()
 CMAKE = (ROOT / "CMakeLists.txt").read_text()
 
-KEYS = ("enabled", "earlyWindow", "lateWindow", "heightThreshold", "holdStep", "minPhaseDuration")
+KEYS = ("enabled", "earlyWindow", "lateWindow", "heightThreshold", "holdStep", "minPhaseDuration", "descentVelocity",
+        "blockedHeight")
 
 
 class ContactSyncContractTest(unittest.TestCase):
@@ -32,7 +33,7 @@ class ContactSyncContractTest(unittest.TestCase):
         self.assertFalse(schema["enabled"]["default_value"])
         # The schema defaults are the C++ struct defaults, so a config that only sets `enabled` gets the documented rule.
         for key, value in (("earlyWindow", 0.06), ("lateWindow", 0.0), ("heightThreshold", 0.002), ("holdStep", 0.02),
-                           ("minPhaseDuration", 0.02)):
+                           ("minPhaseDuration", 0.02), ("descentVelocity", 0.0), ("blockedHeight", 0.0)):
             self.assertEqual(schema[key]["default_value"], value, key)
             self.assertIn(f"scalar_t {key} = {value};", SYNC_H.replace("0.060", "0.06"), key)
 

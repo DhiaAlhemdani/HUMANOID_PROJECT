@@ -147,6 +147,8 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   config.contactSync.heightThreshold = p.gait.contactSync.heightThreshold;
   config.contactSync.holdStep = p.gait.contactSync.holdStep;
   config.contactSync.minPhaseDuration = p.gait.contactSync.minPhaseDuration;
+  config.contactSync.descentVelocity = p.gait.contactSync.descentVelocity;
+  config.contactSync.blockedHeight = p.gait.contactSync.blockedHeight;
   ocs2::humanoid::validateContactSyncSettings(config.contactSync);
 
   // --- swing trajectory ---

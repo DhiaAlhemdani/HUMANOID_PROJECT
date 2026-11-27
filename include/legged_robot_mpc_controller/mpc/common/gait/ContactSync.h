@@ -29,6 +29,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
 
+#include <limits>
 #include <ocs2_core/Types.h>
 #include <ocs2_core/reference/ModeSchedule.h>
 
@@ -57,6 +58,16 @@ namespace ocs2::humanoid {
  *    `time + holdStep` (the plan keeps swinging it down); the push stops at `lateWindow` after the
  *    originally planned time. 0 disables the late half.
  * No phase is made shorter than `minPhaseDuration`.
+ *
+ * "Landed" (contactSyncLanded): height alone is wrong on uneven ground both ways (run 22 D): a foot
+ * standing on a tile 2 cm above the plane is never accepted and the swing equality drives it into
+ * the tile; a foot passing the plane on its way to a tile 3 cm below is accepted in the air. With
+ * the optional velocity terms (0 = off, the height-only rule of runs 12-18 is unchanged):
+ *  - a sole within `heightThreshold` of the plane that is still descending faster than
+ *    `descentVelocity` is NOT landed (it is passing the plane towards lower ground);
+ *  - a sole at least `blockedHeight` above its planned swing height, while the plan is descending or
+ *    at rest and the sole has stopped descending (slower than `descentVelocity`), IS landed (it is
+ *    standing on higher ground than the plan assumed).
  */
 struct ContactSyncSettings {
   bool enabled = false;
@@ -65,7 +76,20 @@ struct ContactSyncSettings {
   scalar_t heightThreshold = 0.002;  //!< [m] sole height above the support plane that counts as landed
   scalar_t holdStep = 0.02;          //!< [s] a held touchdown is pushed this far past the solve time
   scalar_t minPhaseDuration = 0.02;  //!< [s] no phase is shortened below this
+  scalar_t descentVelocity = 0.0;    //!< [m/s] a sole descending faster than this is in the air whatever its height; 0 = off
+  scalar_t blockedHeight = 0.0;      //!< [m] a stopped sole this far above the descending plan is landed; 0 = off
 };
+
+/** What the rule sees of one foot. Velocities and the plan may be NaN (unknown): the height-only rule then applies. */
+struct ContactSyncFootObservation {
+  scalar_t soleHeight = 0.0;                                                  //!< [m] measured sole height above the support plane
+  scalar_t soleVelocity = std::numeric_limits<scalar_t>::quiet_NaN();     //!< [m/s] measured vertical sole velocity (up positive)
+  scalar_t plannedHeight = std::numeric_limits<scalar_t>::quiet_NaN();    //!< [m] planned swing height above the support plane at the solve time
+  scalar_t plannedVelocity = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [m/s] planned vertical swing velocity at the solve time
+};
+
+/** The "landed" decision documented above. */
+bool contactSyncLanded(const ContactSyncSettings& settings, const ContactSyncFootObservation& foot);
 
 void validateContactSyncSettings(const ContactSyncSettings& settings);
 
@@ -81,12 +105,14 @@ struct ContactSyncResult {
  *
  * @param settings   the rule.
  * @param time       the solve's start time.
- * @param soleHeights measured sole height of each foot above the support plane [m].
+ * @param feet       per-foot measured sole height / velocity and planned swing height / velocity (see
+ *                   ContactSyncFootObservation; NaN = unknown).
  * @param schedule   the mode schedule the solve is built on (eventTimes strictly increasing).
  * @param holdOrigin per-foot originally planned touchdown time of a held event (NaN when not holding);
  *                   owned by the caller, updated here.
  */
-ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, scalar_t time, const feet_array_t<scalar_t>& soleHeights,
-                                        ModeSchedule& schedule, feet_array_t<scalar_t>& holdOrigin);
+ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, scalar_t time,
+                                        const feet_array_t<ContactSyncFootObservation>& feet, ModeSchedule& schedule,
+                                        feet_array_t<scalar_t>& holdOrigin);
 
 }  // namespace ocs2::humanoid

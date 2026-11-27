@@ -50,10 +50,34 @@ void validateContactSyncSettings(const ContactSyncSettings& s) {
   if (s.earlyWindow == 0.0 && s.lateWindow == 0.0) {
     throw std::invalid_argument("[ContactSync] enabled with both windows 0: nothing to do; disable it instead");
   }
+  if (!(s.descentVelocity >= 0.0) || !(s.blockedHeight >= 0.0)) {
+    throw std::invalid_argument("[ContactSync] descentVelocity and blockedHeight must be >= 0");
+  }
+  if (s.blockedHeight > 0.0 && s.descentVelocity <= 0.0) {
+    throw std::invalid_argument("[ContactSync] blockedHeight needs descentVelocity > 0 to tell a stopped sole from a descending one");
+  }
 }
 
-ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, scalar_t time, const feet_array_t<scalar_t>& soleHeights,
-                                        ModeSchedule& schedule, feet_array_t<scalar_t>& holdOrigin) {
+bool contactSyncLanded(const ContactSyncSettings& s, const ContactSyncFootObservation& f) {
+  const bool nearPlane = f.soleHeight <= s.heightThreshold;
+  const bool velocityKnown = std::isfinite(f.soleVelocity);
+  if (nearPlane) {
+    // Passing the plane on the way down: the ground is lower than the plane assumed.
+    return !(s.descentVelocity > 0.0 && velocityKnown && f.soleVelocity < -s.descentVelocity);
+  }
+  if (s.blockedHeight <= 0.0 || !velocityKnown || !std::isfinite(f.plannedHeight) || !std::isfinite(f.plannedVelocity)) {
+    return false;
+  }
+  // Stopped above a descending (or finished) plan: the ground is higher than the plane assumed.
+  const bool stopped = f.soleVelocity >= -s.descentVelocity;
+  const bool planDescending = f.plannedVelocity <= 0.0;
+  return stopped && planDescending && f.soleHeight - f.plannedHeight >= s.blockedHeight;
+}
+
+
+ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, scalar_t time,
+                                        const feet_array_t<ContactSyncFootObservation>& feet, ModeSchedule& schedule,
+                                        feet_array_t<scalar_t>& holdOrigin) {
   ContactSyncResult result;
   constexpr scalar_t kNaN = std::numeric_limits<scalar_t>::quiet_NaN();
   if (!settings.enabled) {
@@ -69,7 +93,7 @@ ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, sca
   const contact_flag_t now = modeNumber2StanceLeg(modes[k]);
 
   for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
-    const bool landed = soleHeights[foot] <= settings.heightThreshold;
+    const bool landed = contactSyncLanded(settings, feet[foot]);
     if (!now[foot]) {
       // Early half: the foot swings and its touchdown is the next event.
       if (settings.earlyWindow <= 0.0 || k >= events.size() || !modeNumber2StanceLeg(modes[k + 1])[foot] || !landed) {

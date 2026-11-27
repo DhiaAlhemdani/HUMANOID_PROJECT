@@ -69,6 +69,9 @@ class SwingTrajectoryPlanner {
 
   scalar_t getImpactProximityFactor(size_t leg, scalar_t time) const;
 
+  /** True once update() has planned trajectories for `leg` (the constraint getters need a plan). */
+  bool hasTrajectory(size_t leg) const { return leg < feetHeightTrajectories_.size() && !feetHeightTrajectories_[leg].empty(); }
+
  private:
   /**
    * Extracts for each leg the contact sequence over the motion phase sequence.

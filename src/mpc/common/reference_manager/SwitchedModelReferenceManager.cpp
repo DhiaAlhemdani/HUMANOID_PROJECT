@@ -886,13 +886,28 @@ void SwitchedModelReferenceManager::updateCaptureFootholds(scalar_t initTime, co
 void SwitchedModelReferenceManager::applyContactSync(scalar_t initTime, const vector_t& initState, ModeSchedule& modeSchedule) {
   // Sole heights above the support plane the swing planner lands on (the flat-ground estimate of
   // the previous solve; 0 until the estimate is enabled). Flat ground is the only case here: the
-  // stair and terrain modes are excluded by the caller.
-  const feet_array_t<vector3_t> feet = computeFeetPositions(initState);
-  feet_array_t<scalar_t> soleHeights;
-  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
-    soleHeights[foot] = feet[foot](2) - previousGroundHeightEstimate_;
+  // stair and terrain modes are excluded by the caller. The velocity terms (measured sole velocity,
+  // the previous solve's swing plan at this time) only matter when contactSync.descentVelocity /
+  // blockedHeight are set; the swing planner is updated after this call, so its plan is the
+  // previous solve's, which covers initTime.
+  const feet_array_t<vector3_t> feetPositions = computeFeetPositions(initState);
+  const bool needVelocities = contactSync_.descentVelocity > 0.0 || contactSync_.blockedHeight > 0.0;
+  feet_array_t<scalar_t> feetVz;
+  if (needVelocities) {
+    feetVz = computeFeetVerticalVelocities(initState);
   }
-  const ContactSyncResult result = synchroniseTouchdowns(contactSync_, initTime, soleHeights, modeSchedule, contactSyncHoldOrigin_);
+  feet_array_t<ContactSyncFootObservation> feet;
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    feet[foot].soleHeight = feetPositions[foot](2) - previousGroundHeightEstimate_;
+    if (needVelocities) {
+      feet[foot].soleVelocity = feetVz[foot];
+      if (swingTrajectoryPtr_ && swingTrajectoryPtr_->hasTrajectory(foot)) {
+        feet[foot].plannedHeight = swingTrajectoryPtr_->getZpositionConstraint(foot, initTime) - previousGroundHeightEstimate_;
+        feet[foot].plannedVelocity = swingTrajectoryPtr_->getZvelocityConstraint(foot, initTime);
+      }
+    }
+  }
+  const ContactSyncResult result = synchroniseTouchdowns(contactSync_, initTime, feet, modeSchedule, contactSyncHoldOrigin_);
   if (result.advancedFoot < 0 && result.heldFoot < 0) {
     return;
   }
@@ -922,6 +937,30 @@ feet_array_t<vector3_t> SwitchedModelReferenceManager::computeFeetPositions(cons
     feetPositions[foot] = pinocchio::updateFramePlacement(model, data, frameId).translation();
   }
   return feetPositions;
+}
+
+feet_array_t<scalar_t> SwitchedModelReferenceManager::computeFeetVerticalVelocities(const vector_t& initState) {
+  const auto& model = pinocchioInterface_.getModel();
+  auto& data = pinocchioInterface_.getData();
+  const vector_t q = mpcRobotModelPtr_->getGeneralizedCoordinates(initState);
+  // Generalized velocities in the model's own layout: [base twist (6), joint rates]; the whole-body
+  // model keeps both in the state (the input is not needed and a zero one is passed).
+  const vector_t zeroInput = vector_t::Zero(mpcRobotModelPtr_->getInputDim());
+  const vector_t jointVelocities = mpcRobotModelPtr_->getJointVelocities(initState, zeroInput);
+  vector_t v(q.size());
+  v.setZero();
+  v.head<6>() = mpcRobotModelPtr_->getBaseComVelocity(initState);
+  v.tail(jointVelocities.size()) = jointVelocities;
+  pinocchio::forwardKinematics(model, data, q, v);
+
+  feet_array_t<scalar_t> feetVz;
+  const auto& contactNames = mpcRobotModelPtr_->modelSettings.contactNames;
+  for (size_t foot = 0; foot < feetVz.size(); ++foot) {
+    const auto frameId = model.getFrameId(contactNames[foot]);
+    pinocchio::updateFramePlacement(model, data, frameId);
+    feetVz[foot] = pinocchio::getFrameVelocity(model, data, frameId, pinocchio::LOCAL_WORLD_ALIGNED).linear()(2);
+  }
+  return feetVz;
 }
 
 /******************************************************************************************************/

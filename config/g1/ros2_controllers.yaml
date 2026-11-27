@@ -821,6 +821,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # (run 18 + in-session pair): lead 50 -> 30 ms (one solve period is the limit), touchdown
         # jerk concentration -25 %, suite steady jerk -20 % vs the lift-off window alone, every
         # omni hold better, 0 falls, solve rate -6 %. The late half cost balance at 0.8 m/s: off.
+        # descentVelocity / blockedHeight (run 23) make "landed" velocity-aware for uneven ground
+        # (a sole passing the plane towards a lower tile is not landed; a sole stopped on a higher
+        # tile is); both 0 = the flat-ground height-only rule, pending the terrain ladder.
         contactSync:
           enabled: true
           earlyWindow: 0.06
@@ -828,6 +831,8 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           heightThreshold: 0.002
           holdStep: 0.02
           minPhaseDuration: 0.02
+          descentVelocity: 0.0
+          blockedHeight: 0.0
 
         # Swing-foot trajectory, shared by every template.
         swingTrajectory:

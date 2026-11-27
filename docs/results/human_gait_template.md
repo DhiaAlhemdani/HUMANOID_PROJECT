@@ -942,3 +942,60 @@ in ContactSync: landed = within heightThreshold of the plane **or blocked** (sol
 above the planned swing height while the plan descends and the measured vertical speed has stalled), and the
 late half holds the switch while the foot is still descending instead of "while above the plane".
 
+### Run 22 E — humanTEV on flat (`humanTEVf` vs humanCSr1) and its strides on `suite_mild`
+
+**Flat regression (`SKIP_BUILD=1 SCRIPTS="speeds backward" run_suite.sh humanTEVf tuning_results/humanTEV.yaml
+humanCSr1`): 0 falls, modest.** Steady jerk 33.3 vs 30.7, acc_hf 0.544 vs 0.546, tau_rate 189 vs 192,
+leg_jerk 481 vs 494, transition_jerk_max 61.2 vs 62.9, v_err_max 0.192 vs 0.178. Forward holds 35.5 / 44.5 /
+60.9 / 41.0 / 34.8 vs 26.8 / 33.8 / 66.4 / 32.6 / 26.8: the **0.2 / 0.5 m/s holds are +30 %**, 0.8 is better;
+backward holds 30.5 / 35.2 / 56.1 / 33.1 / 28.2 vs 29.6 / 32.9 / 54.7 / 32.8 / 28.0: equal. Clean stops both
+ways (0.09, 0.21). Guards: `steady_arm_acc_mean 1.21 -> 1.50 (limit 1.39)` FAIL, `solve_hz 43.7 -> 39.3
+(limit 39.36)` borderline and session-dependent. The low-speed forward holds and the arm acceleration are the
+`touchDownVelocity -0.15` signature (humanTV showed the same shape on terrain); `useEstimate true` alone has
+not been measured on flat - do that before adopting either half.
+
+**Strides on `suite_mild` (`terrain_strides.py humanTEV__speeds humanTEV__backward`).** Forward 37 landings,
+edge 32 % (same as every run: edges are not the driver), largest steps **-4.3 cm** (t 39.3, vx 0.2, pitch
+5.6 deg), +2.9, +1.7, +1.7; pitch after step-downs 3.8 deg, after step-ups 1.4 deg. Backward 38 landings,
+largest -3.0 (t 32.7, vx -0.8, pitch 12 deg), +1.7, -1.7, -1.6. So the tolerance moved from ~1.7 cm
+(shipped) to ~3 cm (TE) to **4.3 cm per stride** (TEV) - the `-0.15` descent finds the lower tile before
+the plan loads the foot, the estimate then follows. **But the forward run drifts y = +3.96 m over
+x = 10.5 m** (backward y = 0.3 m over 11.3 m; TE drifted -1.85 m). That is a 20 deg course error and
+would walk off a 2 m wide course: it is the next thing to diagnose, with `tests/tuning/lateral_drift.py
+<case>` (new; data.npz only): per metre of travel it prints ground-truth yaw, the path heading and their
+difference (crab angle), body-frame lateral speed and the body-frame lateral offset of each landing foot,
+and decomposes the final y into a turning part (integral of v sin yaw) and a crabbing part (integral of
+body-frame vy). Turning = yaw drift (yaw-rate tracking / foothold yaw on the tiles); crabbing = lateral
+foothold bias or stance slip.
+
+## Run 23 — terrain-correct "landed" in ContactSync (`descentVelocity`, `blockedHeight`)
+
+Run 22 D showed the height-only rule wrong both ways on tiles. `ContactSync` now takes per-foot
+observations (`ContactSyncFootObservation`: measured sole height and vertical velocity, the previous
+solve's planned swing height and velocity at the solve time) and decides `contactSyncLanded`:
+
+- sole within `heightThreshold` of the plane **and not descending faster than `descentVelocity`** ->
+  landed (a sole passing the plane at the touchdown speed towards a lower tile is in the air);
+- sole stopped (slower than `descentVelocity`) **at least `blockedHeight` above the planned swing height
+  while the plan descends or has finished** -> landed (standing on a higher tile);
+- both knobs 0 (shipped default): the height-only rule of runs 12-18, bit for bit.
+
+The reference manager computes the sole velocities from the state's generalized velocities
+(`computeFeetVerticalVelocities`, pinocchio `getFrameVelocity` as in the tracking stream) and reads the
+swing planner's previous plan (`hasTrajectory` guard for the first solve); both only when a knob is set.
+The late half keeps its rule but with the new "landed": with `lateWindow > 0` a foot still descending past
+its planned switch is held, a foot stopped on a lower tile (plane estimate not caught up) is released.
+Unit-tested (`tests/contact_sync_test.cpp`: default rule unchanged, lower / higher tile, lagging foot,
+rising plan, no plan, through the schedule with and without the late half; contract test pins the plumbing).
+
+Proposed first measurements (all need a `colcon build`), `suite_mild`, `speeds backward`, baseline humanTEV:
+
+- humanT23a: humanTEV + `contactSync.descentVelocity 0.05` `blockedHeight 0.01` (TEV's -0.15 descent is well
+  above 0.05; the shipped -0.05 descent would need 0.03);
+- humanT23b: humanT23a + `lateWindow 0.1` (the late half becomes meaningful only with the velocity rule);
+- humanT23c: shipped flat config (`touchDownVelocity -0.05`, `useEstimate true`) + `descentVelocity 0.03`
+  `blockedHeight 0.01` - does the velocity rule replace the -0.15 descent, which is what costs the flat
+  0.2 / 0.5 holds?
+
+Pass = 0 falls both ways, largest survived step >= TEV's 4.3 cm, holds no worse than TEV, and the flat
+`speeds backward` of the winner within the humanCSr1 guards.

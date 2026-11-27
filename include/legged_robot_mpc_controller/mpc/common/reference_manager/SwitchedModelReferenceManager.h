@@ -458,6 +458,8 @@ scalar_t maxOffset = 0.6;
 
   /// Measured feet (contact frame) world positions from FK of the current state.
   feet_array_t<vector3_t> computeFeetPositions(const vector_t& initState);
+  //! Contact-frame vertical velocities [m/s] from the state's generalized velocities (base twist + joint rates).
+  feet_array_t<scalar_t> computeFeetVerticalVelocities(const vector_t& initState);
 
   /// Recompute the capture-point footholds from the current state. Solver thread
   /// only, called from modifyReferences() before the solve reads them.

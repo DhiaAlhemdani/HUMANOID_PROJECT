@@ -668,6 +668,14 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             solve time, i.e. about one MPC node", validation: {gt: [0.0]}}
         minPhaseDuration: {type: double, default_value: 0.02, description: "No phase is shortened below this [s] by
             either half", validation: {gt_eq: [0.0]}}
+        descentVelocity: {type: double, default_value: 0.0, description: "Uneven ground (run 22 D): a sole within
+            heightThreshold of the support plane that is still descending faster than this [m/s] is NOT landed (it is
+            passing the plane towards lower ground). Also the 'stopped' threshold of blockedHeight. 0 keeps the
+            height-only rule", validation: {gt_eq: [0.0]}}
+        blockedHeight: {type: double, default_value: 0.0, description: "Uneven ground (run 22 D): a sole that has
+            stopped descending at least this far [m] above its planned swing height, while the plan descends or has
+            finished, IS landed (it stands on ground higher than the plane). Needs descentVelocity > 0. 0 = off",
+            validation: {gt_eq: [0.0]}}
       swingTrajectory:
         liftOffVelocity: {type: double, default_value: 0.05, description: "Swing foot lift-off vertical velocity [m/s]"}
         touchDownVelocity: {type: double, default_value: -0.0, description: "Swing foot touch-down vertical velocity

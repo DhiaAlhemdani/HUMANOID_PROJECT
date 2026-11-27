@@ -231,6 +231,13 @@ clearances kept):
   sole is still above the threshold has its touchdown pushed `holdStep` past the solve time, every
   solve, until it lands or the window after the originally planned time is used up. This is the
   other half of the run-6 fall anatomy (the plan loading a foot that is not down yet).
+- **"landed" on uneven ground** (`descentVelocity`, `blockedHeight`, both default 0 = off; run 23 in
+  `docs/results/human_gait_template.md`): the height test alone is wrong on tiles both ways (run
+  22 D). With the knobs set, a sole within the threshold that is still descending faster than
+  `descentVelocity` is *not* landed (it is passing the plane towards lower ground), and a sole that
+  has stopped at least `blockedHeight` above the previous solve's planned swing height while that
+  plan descends *is* landed (it stands on higher ground). The sole velocities come from the state's
+  generalized velocities (`computeFeetVerticalVelocities`).
 
 Flat-ground modes only: the stair and terrain modes keep their schedules. Latency: the landing is
 seen at a solve's start and the policy with the moved event arrives ~20 ms later, so the effective
