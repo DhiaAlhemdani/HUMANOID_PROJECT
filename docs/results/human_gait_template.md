@@ -668,3 +668,15 @@ the magnitude; the leg curves (off in the shipped config) stay forward-only - th
 time-reversible. Lateral and turning commands are unchanged (stance posture). Needs a rebuild and
 the backward run again (`humanBW`): expect arm pp back to ~10-18 deg at 0.2-0.8 and no change in
 falls; the pelvis numbers decide whether the templates help backward as they did forward.
+
+**Result (`humanBW`, `backward` + `speeds`, same session as the second `humanCSr1`):** the arms swing
+backward with the forward amplitude - arm pp 10.4 / 13.2 / 18.2 deg at -0.2 / -0.5 / -0.8 (was
+1.9 / 2.9 / 3.4; forward 9.8 / 12.9 / 18-21), the user confirmed the phase in the video. Pelvis numbers
+backward are unchanged within the repeat spread (holds 27.5 / 33.2 / 57.4 / 31.8 / 27.4 vs
+29.6 / 32.9 / 54.7 / 32.8 / 28.0) and the worst ramp is better (-0.8 ramp 49.8 vs 61.5, acc_hf
+0.82 vs 1.17), falls 0, final stop 0.10. Forward is a no-op by construction (all three scales equal the
+old ones for forwardSpeed >= 0) and by the data at 0.2 / 0.5 (27.2 / 35.1 / 33.4 / 27.5 vs
+26.8 / 33.8 / 32.6 / 26.8, arm pp equal); the 0.8 hold came out at 112 vs 66 with a v_err spike to
+0.17 - one recovery step inside the hold, the known 0.8 hold-to-hold spread, not the change (the
+candidate gate flags it, read it against the per-segment table). Shipped as is: the templates are
+part of the G1 config, backward now gets them.
