@@ -30,6 +30,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #pragma once
 
 #include <limits>
+#include <vector>
 #include <ocs2_core/Types.h>
 
 #include "legged_robot_mpc_controller/mpc/common/model/Types.h"
@@ -43,16 +44,18 @@ namespace ocs2::humanoid {
  * 0.2-0.5 m/s falls or slips at 0.8 m/s, within a stride or two of a 1-3 cm step, with the hip
  * pitches at their torque limit. The walk is blind, so the only terrain signal it has is what the
  * feet report: when both feet are in contact, the difference of their sole heights is the step the
- * last stride took (frame-independent: same instant, same estimator frame). A step of at least
- * `stepThreshold` marks the ground as uneven for `holdSeconds`; while that holds, the commanded
- * planar speed is capped at `maxSpeed` (the slew limiter of the velocity command turns the cap into
- * a ramp). Flat ground never trips it: both soles sit on the same plane within millimetres.
+ * last stride took (frame-independent: same instant, same estimator frame). Tiers: a step of at least
+ * `stepKnots[i]` marks the ground as uneven at tier i for `holdSeconds`; while any tier holds, the
+ * commanded planar speed is capped at the smallest `speedKnots[i]` of the tiers that hold (the slew
+ * limiter of the velocity command turns the cap into a ramp). Run 24: 1-2 cm steps are walked at
+ * 0.5 m/s and lost at 0.8; 2-4 cm steps are walked at 0.2 and lost at 0.5. Flat ground never trips
+ * it: both soles sit on the same plane within millimetres.
  */
 struct TerrainSpeedCapSettings {
   bool enabled = false;
-  scalar_t stepThreshold = 0.01;  //!< [m] sole-height difference in double support that counts as a terrain step
-  scalar_t maxSpeed = 0.5;        //!< [m/s] planar speed cap while the ground counts as uneven
-  scalar_t holdSeconds = 3.0;     //!< [s] the cap stays after the last terrain step (about 4-5 strides)
+  std::vector<scalar_t> stepKnots{0.01, 0.025};  //!< [m] sole-height differences in double support that count as a terrain step, increasing
+  std::vector<scalar_t> speedKnots{0.5, 0.25};   //!< [m/s] planar speed cap of each tier, decreasing
+  scalar_t holdSeconds = 3.0;                    //!< [s] a tier stays after its last terrain step (about 4-5 strides)
 };
 
 void validateTerrainSpeedCapSettings(const TerrainSpeedCapSettings& settings);
@@ -69,13 +72,14 @@ class TerrainSpeedCap {
    * @param time        the solve's start time.
    * @param contacts    contact flags of the mode the schedule has at `time`.
    * @param soleHeights measured sole heights [m] (any common frame).
-   * @return the speed cap in force: `maxSpeed` while the ground counts as uneven, +inf otherwise.
+   * @return the speed cap in force: the smallest `speedKnots` of the tiers that hold, +inf otherwise.
    */
   scalar_t update(scalar_t time, const contact_flag_t& contacts, const feet_array_t<scalar_t>& soleHeights);
 
   bool active() const { return active_; }
   scalar_t lastStep() const { return lastStep_; }          //!< [m] largest step of the last double support that tripped the cap
-  scalar_t lastStepTime() const { return lastStepTime_; }  //!< [s] when it was seen (NaN = never)
+  scalar_t lastStepTime() const { return lastStepTime_; }  //!< [s] when a step was last seen (NaN = never)
+  scalar_t capValue() const { return capValue_; }          //!< [m/s] the cap in force (+inf = none)
   size_t stepCount() const { return stepCount_; }          //!< double supports that tripped the cap so far
   void reset();
 
@@ -86,6 +90,8 @@ class TerrainSpeedCap {
   bool active_ = false;
   scalar_t lastStep_ = 0.0;
   scalar_t lastStepTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
+  scalar_t capValue_ = std::numeric_limits<scalar_t>::infinity();
+  std::vector<scalar_t> tierTime_;  //!< [s] per tier: when a step of that size was last seen (NaN = never)
   scalar_t previousTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
   size_t stepCount_ = 0;
 };

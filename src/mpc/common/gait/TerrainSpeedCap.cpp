@@ -39,8 +39,19 @@ void validateTerrainSpeedCapSettings(const TerrainSpeedCapSettings& s) {
   if (!s.enabled) {
     return;
   }
-  if (!(s.stepThreshold > 0.0) || !(s.maxSpeed > 0.0) || !(s.holdSeconds > 0.0)) {
-    throw std::invalid_argument("[TerrainSpeedCap] stepThreshold, maxSpeed and holdSeconds must be > 0");
+  if (!(s.holdSeconds > 0.0)) {
+    throw std::invalid_argument("[TerrainSpeedCap] holdSeconds must be > 0");
+  }
+  if (s.stepKnots.empty() || s.stepKnots.size() != s.speedKnots.size()) {
+    throw std::invalid_argument("[TerrainSpeedCap] stepKnots and speedKnots must have the same, non-zero length");
+  }
+  for (size_t i = 0; i < s.stepKnots.size(); ++i) {
+    if (!(s.stepKnots[i] > 0.0) || !(s.speedKnots[i] > 0.0)) {
+      throw std::invalid_argument("[TerrainSpeedCap] stepKnots and speedKnots must be > 0");
+    }
+    if (i > 0 && (!(s.stepKnots[i] > s.stepKnots[i - 1]) || !(s.speedKnots[i] <= s.speedKnots[i - 1]))) {
+      throw std::invalid_argument("[TerrainSpeedCap] stepKnots must increase and speedKnots must not increase (a larger step, a lower cap)");
+    }
   }
 }
 
@@ -60,6 +71,8 @@ void TerrainSpeedCap::reset() {
   active_ = false;
   lastStep_ = 0.0;
   lastStepTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
+  capValue_ = std::numeric_limits<scalar_t>::infinity();
+  tierTime_.assign(settings_.stepKnots.size(), std::numeric_limits<scalar_t>::quiet_NaN());
   previousTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
   stepCount_ = 0;
 }
@@ -68,7 +81,11 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
   constexpr scalar_t kNoCap = std::numeric_limits<scalar_t>::infinity();
   if (!settings_.enabled) {
     active_ = false;
+    capValue_ = kNoCap;
     return kNoCap;
+  }
+  if (tierTime_.size() != settings_.stepKnots.size()) {
+    reset();
   }
   if (std::isfinite(previousTime_) && time < previousTime_) {
     reset();  // time went backwards: a new run
@@ -78,7 +95,7 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
   const bool doubleSupport = contacts[0] && contacts[1];
   if (doubleSupport) {
     const scalar_t step = std::abs(soleHeights[0] - soleHeights[1]);
-    if (std::isfinite(step) && step >= settings_.stepThreshold) {
+    if (std::isfinite(step) && step >= settings_.stepKnots.front()) {
       if (!inDoubleSupport_ || !countedThisSupport_) {
         ++stepCount_;
         countedThisSupport_ = true;
@@ -87,14 +104,25 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
         lastStep_ = std::max(lastStep_, step);
       }
       lastStepTime_ = time;
+      for (size_t i = 0; i < settings_.stepKnots.size(); ++i) {
+        if (step >= settings_.stepKnots[i]) {
+          tierTime_[i] = time;
+        }
+      }
     }
   } else {
     countedThisSupport_ = false;
   }
   inDoubleSupport_ = doubleSupport;
 
-  active_ = std::isfinite(lastStepTime_) && time - lastStepTime_ < settings_.holdSeconds;
-  return active_ ? settings_.maxSpeed : kNoCap;
+  capValue_ = kNoCap;
+  for (size_t i = 0; i < tierTime_.size(); ++i) {
+    if (std::isfinite(tierTime_[i]) && time - tierTime_[i] < settings_.holdSeconds) {
+      capValue_ = std::min(capValue_, settings_.speedKnots[i]);
+    }
+  }
+  active_ = std::isfinite(capValue_);
+  return capValue_;
 }
 
 }  // namespace ocs2::humanoid

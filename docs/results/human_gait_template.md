@@ -1137,3 +1137,36 @@ forward (jerk 69, acc_hf 1.67) and the backward stop (25.6).
 everywhere; the expected cost is the `-0.15` descent's +30 % on the flat 0.2 / 0.5 holds, Run 22 E),
 `terrain_strides.py` on the T24a cases (largest steps survived), then `suite_rough` (vs humanTR, the
 shipped config's 2-fall run) and the slope rung with the same config.
+
+### Run 24 B — humanT24a flat regression, strides, `suite_rough`: the cap is a schedule, not a switch
+
+**Flat (`humanT24af` vs humanCSr1, `speeds backward`):** 0 falls, **cap 0 % in every segment** (the
+step signal never fires on a plane). Cost as known from Run 22 E: forward 0.2 / 0.5 holds 34.2 / 44.6 vs
+26.8 / 33.8 (+28 / +32 %), 0.8 hold 63.0 vs 66.4, backward within noise (30.6 / 35.4 / 60.2 / 31.0 / 26.7
+vs 29.6 / 32.9 / 54.7 / 32.8 / 28.0); steady 34.2 vs 30.7 (primary fails at 1.11x), `steady_arm_acc` 1.74
+(guard 1.39, the TEVf finding). That is the `touchDownVelocity -0.15` descent paying on the flat 0.2 / 0.5
+holds, not the cap; the terrain signal is now available to make it conditional (see below).
+
+**Strides on `suite_mild` (`terrain_strides.py`, T24a):** 34 / 35 landings, 29 / 37 % on an edge, steps up
+to +-1.8 cm at 0.5-0.8 m/s and -2.8 cm at 0.2, all survived; pitch excursion after landing 1.1-1.5 deg,
+height excursion 2.4-4.4 cm (down-steps the largest). Nothing in the mild field is near the limit any more.
+
+**`suite_rough` (`humanT24aR` vs humanTR, 2-4 cm adjacent cells, mode 3 cm):** 2 falls at the same places
+as the shipped config - forward in the first 0.5 hold at x ~ 3 m as the field reaches full height, backward
+in the ramp to -0.5 - with the cap at 100 % both times. Of course: the cap is 0.5 and the command is 0.5,
+so on this field it changes nothing. Before the falls the 0.2 holds are fine both ways (45 / 37 vs 44 / 43).
+So the picture is a schedule, from Runs 22-24 together: **1-2 cm steps are walked at 0.5 m/s and lost at
+0.8; 2-4 cm steps are walked at 0.2 and lost at 0.5.**
+
+**Implemented (this commit):** the cap is now tiered. `terrainSpeedCap.stepKnots [0.01, 0.025]` /
+`speedKnots [0.5, 0.25]`: a step of at least `stepKnots[i]` holds tier i for `holdSeconds`, the cap is the
+smallest `speedKnots` of the tiers that hold, so the lower tier releases first and the walk speeds up in
+stages (unit test covers the release order; validation requires increasing steps and non-increasing
+speeds). The single-tier T24a / T24b configs keep `[0.01] -> [0.5]` for reproducibility;
+**humanT24c = humanT23d + the two-tier cap** is the `suite_rough` candidate (on `suite_mild` the second
+tier would only have tripped at the single -2.8 cm step during the 0.2 hold, so T24c ~ T24a there).
+
+Open after the rough result: the first 2.5 cm step is taken *before* the cap knows about it, in the 0.5
+ramp (the field's 2 m blend lets the step sizes grow from x ~ 0.5 m on). If T24c still falls at the entry,
+the next lever is the hold / threshold of tier 2 (0.02) or a terrain-conditional `touchDownVelocity`
+(-0.05 on flat, -0.15 once the cap is active), which would also recover the flat 0.2 / 0.5 holds.

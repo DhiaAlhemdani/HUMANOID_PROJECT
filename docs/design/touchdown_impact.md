@@ -243,9 +243,9 @@ Flat-ground modes only: the stair and terrain modes keep their schedules.
 
 **Blind terrain speed cap** (`reference.terrainSpeedCap`, `TerrainSpeedCap.h`, run 24): the companion
 to the touchdown rule on uneven ground. In double support the sole-height difference of the two feet
-is the step the last stride took; a step of at least `stepThreshold` marks the ground as uneven for
-`holdSeconds`, and the commanded planar speed is capped at `maxSpeed` meanwhile (applied to the
-scaled command, so the slew limiter ramps it). Off by default. Latency: the landing is
+is the step the last stride took; a step of at least `stepKnots[i]` marks the ground as uneven at tier
+i for `holdSeconds`, and the commanded planar speed is capped at the smallest `speedKnots` of the tiers
+that hold (applied to the scaled command, so the slew limiter ramps it). Off by default. Latency: the landing is
 seen at a solve's start and the policy with the moved event arrives ~20 ms later, so the effective
 advance is the lead minus one solve; the controller's contact fade follows the policy's events
 and therefore shortens accordingly — watch `alpha` in `switch_profile.py` around the touchdown.

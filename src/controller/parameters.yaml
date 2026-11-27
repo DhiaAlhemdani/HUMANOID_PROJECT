@@ -515,15 +515,17 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             change per solver iteration, limiting reference jumps at contact transitions", validation: {gt: [0.0]}}
       terrainSpeedCap:
         enabled: {type: bool, default_value: false, description: "Blind terrain speed cap (TerrainSpeedCap.h): when
-            both feet are in contact, a sole-height difference of at least stepThreshold marks the ground as uneven
-            for holdSeconds, and the commanded planar speed is capped at maxSpeed meanwhile (the command slew limiter
-            ramps it). Run 23 of docs/results/human_gait_template.md: the blind walk takes 1-3 cm tiles at
-            0.2-0.5 m/s and falls at 0.8. Flat-ground modes only; the stair and terrain modes pace themselves."}
-        stepThreshold: {type: double, default_value: 0.01, description: "Sole-height difference in double support [m]
-            that counts as a terrain step (flat ground: both soles within a few mm)", validation: {gt: [0.0]}}
-        maxSpeed: {type: double, default_value: 0.5, description: "Planar speed cap [m/s] while the ground counts as
-            uneven", validation: {gt: [0.0]}}
-        holdSeconds: {type: double, default_value: 3.0, description: "The cap stays this long [s] after the last
+            both feet are in contact, a sole-height difference of at least stepKnots[i] marks the ground as uneven
+            at tier i for holdSeconds, and the commanded planar speed is capped at the smallest speedKnots of the
+            tiers that hold (the command slew limiter ramps it). Run 24 of docs/results/human_gait_template.md:
+            the blind walk takes 1-2 cm steps at 0.5 m/s and falls at 0.8, 2-4 cm steps at 0.2 and falls at 0.5.
+            Flat-ground modes only; the stair and terrain modes pace themselves."}
+        stepKnots: {type: double_array, default_value: [0.01, 0.025], description: "Sole-height differences in double
+            support [m] that count as a terrain step of each tier, increasing (flat ground: both soles within a few
+            mm)", validation: {lower_element_bounds<>: [0.0]}}
+        speedKnots: {type: double_array, default_value: [0.5, 0.25], description: "Planar speed cap [m/s] of each
+            tier, non-increasing; same length as stepKnots", validation: {lower_element_bounds<>: [0.0]}}
+        holdSeconds: {type: double, default_value: 3.0, description: "A tier stays this long [s] after its last
             terrain step (about 4-5 strides)", validation: {gt: [0.0]}}
       targetDisplacementVelocity: {type: double, default_value: 0.5, description: "Nominal displacement velocity
           used for target arrival time [m/s]"}

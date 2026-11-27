@@ -20,8 +20,8 @@ int main() {
 
   TerrainSpeedCapSettings s;
   s.enabled = true;
-  s.stepThreshold = 0.01;
-  s.maxSpeed = 0.5;
+  s.stepKnots = {0.01, 0.025};
+  s.speedKnots = {0.5, 0.25};
   s.holdSeconds = 3.0;
   validateTerrainSpeedCapSettings(s);
 
@@ -62,6 +62,17 @@ int main() {
     assert(std::isinf(cap.update(4.20, rightOnly, flat)));
     assert(near(cap.update(4.30, both, {0.0, -0.012}), 0.5) && cap.stepCount() == 2);
   }
+  // A larger step engages the lower tier; the lower tier releases first, the first tier holds on.
+  {
+    TerrainSpeedCap cap(s);
+    assert(near(cap.update(1.00, both, {0.0, 0.03}), 0.25) && cap.stepCount() == 1 && near(cap.capValue(), 0.25));
+    assert(near(cap.update(1.50, leftOnly, flat), 0.25));
+    assert(near(cap.update(2.00, both, tile), 0.25) && cap.stepCount() == 2);  // a 1.5 cm step refreshes tier 1 only
+    assert(near(cap.update(3.99, both, flat), 0.25));
+    assert(near(cap.update(4.01, both, flat), 0.5));  // tier 2 released at 1.00 + 3.0, tier 1 holds until 5.00
+    assert(near(cap.update(4.99, both, flat), 0.5));
+    assert(std::isinf(cap.update(5.01, both, flat)) && !cap.active());
+  }
   // Below the threshold: no cap.
   {
     TerrainSpeedCap cap(s);
@@ -76,8 +87,26 @@ int main() {
   // Validation.
   {
     TerrainSpeedCapSettings bad = s;
-    bad.maxSpeed = 0.0;
+    bad.speedKnots = {0.5, 0.0};
     bool threw = false;
+    try {
+      validateTerrainSpeedCapSettings(bad);
+    } catch (const std::invalid_argument&) {
+      threw = true;
+    }
+    assert(threw);
+    bad = s;
+    bad.stepKnots = {0.01};  // length mismatch
+    threw = false;
+    try {
+      validateTerrainSpeedCapSettings(bad);
+    } catch (const std::invalid_argument&) {
+      threw = true;
+    }
+    assert(threw);
+    bad = s;
+    bad.speedKnots = {0.25, 0.5};  // a larger step must not raise the cap
+    threw = false;
     try {
       validateTerrainSpeedCapSettings(bad);
     } catch (const std::invalid_argument&) {

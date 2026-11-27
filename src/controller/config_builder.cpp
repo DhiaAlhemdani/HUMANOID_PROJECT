@@ -153,8 +153,8 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
 
   // --- blind terrain speed cap ---
   config.terrainSpeedCap.enabled = p.reference.terrainSpeedCap.enabled;
-  config.terrainSpeedCap.stepThreshold = p.reference.terrainSpeedCap.stepThreshold;
-  config.terrainSpeedCap.maxSpeed = p.reference.terrainSpeedCap.maxSpeed;
+  config.terrainSpeedCap.stepKnots = p.reference.terrainSpeedCap.stepKnots;
+  config.terrainSpeedCap.speedKnots = p.reference.terrainSpeedCap.speedKnots;
   config.terrainSpeedCap.holdSeconds = p.reference.terrainSpeedCap.holdSeconds;
   ocs2::humanoid::validateTerrainSpeedCapSettings(config.terrainSpeedCap);
 
