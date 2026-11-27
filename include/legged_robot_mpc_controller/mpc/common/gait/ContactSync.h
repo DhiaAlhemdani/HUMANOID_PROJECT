@@ -88,7 +88,17 @@ struct ContactSyncFootObservation {
   scalar_t plannedVelocity = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [m/s] planned vertical swing velocity at the solve time
 };
 
-/** The "landed" decision documented above. */
+/** Outcome of the "landed" decision documented above. */
+enum class ContactSyncLanding {
+  InAir,       //!< above the threshold, not blocked
+  OnPlane,     //!< within the threshold (and not descending through it)
+  Blocked,     //!< stopped above the descending plan: landed on higher ground
+  Descending,  //!< within the threshold but still descending: passing the plane towards lower ground
+};
+
+ContactSyncLanding contactSyncLanding(const ContactSyncSettings& settings, const ContactSyncFootObservation& foot);
+
+/** The "landed" decision: OnPlane or Blocked. */
 bool contactSyncLanded(const ContactSyncSettings& settings, const ContactSyncFootObservation& foot);
 
 void validateContactSyncSettings(const ContactSyncSettings& settings);
@@ -98,6 +108,10 @@ struct ContactSyncResult {
   scalar_t advancedBy = 0.0;    //!< [s] how much earlier the touchdown now is
   int heldFoot = -1;            //!< foot whose touchdown was pushed back, -1 = none
   scalar_t heldBy = 0.0;        //!< [s] how far past the originally planned time it now is
+  //! Diagnostics of the velocity terms, counted only where the decision was consulted (a swing foot
+  //! inside the early window; a just-switched foot in the late half).
+  int blockedLandings = 0;      //!< feet accepted as landed by the blockedHeight rule this call
+  int descendingRejections = 0; //!< feet within the threshold rejected by the descentVelocity rule this call
 };
 
 /**

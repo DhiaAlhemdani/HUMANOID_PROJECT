@@ -58,22 +58,28 @@ void validateContactSyncSettings(const ContactSyncSettings& s) {
   }
 }
 
-bool contactSyncLanded(const ContactSyncSettings& s, const ContactSyncFootObservation& f) {
+ContactSyncLanding contactSyncLanding(const ContactSyncSettings& s, const ContactSyncFootObservation& f) {
   const bool nearPlane = f.soleHeight <= s.heightThreshold;
   const bool velocityKnown = std::isfinite(f.soleVelocity);
   if (nearPlane) {
     // Passing the plane on the way down: the ground is lower than the plane assumed.
-    return !(s.descentVelocity > 0.0 && velocityKnown && f.soleVelocity < -s.descentVelocity);
+    const bool descending = s.descentVelocity > 0.0 && velocityKnown && f.soleVelocity < -s.descentVelocity;
+    return descending ? ContactSyncLanding::Descending : ContactSyncLanding::OnPlane;
   }
   if (s.blockedHeight <= 0.0 || !velocityKnown || !std::isfinite(f.plannedHeight) || !std::isfinite(f.plannedVelocity)) {
-    return false;
+    return ContactSyncLanding::InAir;
   }
   // Stopped above a descending (or finished) plan: the ground is higher than the plane assumed.
   const bool stopped = f.soleVelocity >= -s.descentVelocity;
   const bool planDescending = f.plannedVelocity <= 0.0;
-  return stopped && planDescending && f.soleHeight - f.plannedHeight >= s.blockedHeight;
+  const bool blocked = stopped && planDescending && f.soleHeight - f.plannedHeight >= s.blockedHeight;
+  return blocked ? ContactSyncLanding::Blocked : ContactSyncLanding::InAir;
 }
 
+bool contactSyncLanded(const ContactSyncSettings& s, const ContactSyncFootObservation& f) {
+  const ContactSyncLanding landing = contactSyncLanding(s, f);
+  return landing == ContactSyncLanding::OnPlane || landing == ContactSyncLanding::Blocked;
+}
 
 ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, scalar_t time,
                                         const feet_array_t<ContactSyncFootObservation>& feet, ModeSchedule& schedule,
@@ -93,14 +99,23 @@ ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, sca
   const contact_flag_t now = modeNumber2StanceLeg(modes[k]);
 
   for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
-    const bool landed = contactSyncLanded(settings, feet[foot]);
+    const ContactSyncLanding landing = contactSyncLanding(settings, feet[foot]);
+    const bool landed = landing == ContactSyncLanding::OnPlane || landing == ContactSyncLanding::Blocked;
+    const auto count = [&] {
+      result.blockedLandings += landing == ContactSyncLanding::Blocked;
+      result.descendingRejections += landing == ContactSyncLanding::Descending;
+    };
     if (!now[foot]) {
       // Early half: the foot swings and its touchdown is the next event.
-      if (settings.earlyWindow <= 0.0 || k >= events.size() || !modeNumber2StanceLeg(modes[k + 1])[foot] || !landed) {
+      if (settings.earlyWindow <= 0.0 || k >= events.size() || !modeNumber2StanceLeg(modes[k + 1])[foot]) {
         continue;
       }
       const scalar_t lead = events[k] - time;
       if (lead <= 0.0 || lead > settings.earlyWindow) {
+        continue;
+      }
+      count();
+      if (!landed) {
         continue;
       }
       // Just before the solve time: ocs2 resolves the mode at an event time as the mode before it,
@@ -117,7 +132,14 @@ ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, sca
       result.advancedBy = lead - (newTime - time);
     } else {
       // Late half: the schedule has the foot down since events[k - 1] but it is still in the air.
-      if (settings.lateWindow <= 0.0 || k == 0 || modeNumber2StanceLeg(modes[k - 1])[foot] || landed) {
+      if (settings.lateWindow <= 0.0 || k == 0 || modeNumber2StanceLeg(modes[k - 1])[foot]) {
+        holdOrigin[foot] = kNaN;
+        continue;
+      }
+      if (time - (std::isnan(holdOrigin[foot]) ? events[k - 1] : holdOrigin[foot]) <= settings.lateWindow) {
+        count();
+      }
+      if (landed) {
         holdOrigin[foot] = kNaN;
         continue;
       }

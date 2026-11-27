@@ -908,6 +908,12 @@ void SwitchedModelReferenceManager::applyContactSync(scalar_t initTime, const ve
     }
   }
   const ContactSyncResult result = synchroniseTouchdowns(contactSync_, initTime, feet, modeSchedule, contactSyncHoldOrigin_);
+  if (result.blockedLandings > 0) {
+    contactSyncBlocked_.fetch_add(static_cast<size_t>(result.blockedLandings));
+  }
+  if (result.descendingRejections > 0) {
+    contactSyncDescending_.fetch_add(static_cast<size_t>(result.descendingRejections));
+  }
   if (result.advancedFoot < 0 && result.heldFoot < 0) {
     return;
   }

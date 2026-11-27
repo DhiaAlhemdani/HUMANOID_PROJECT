@@ -250,6 +250,8 @@ scalar_t maxOffset = 0.6;
   size_t contactSyncAdvancedCount() const { return contactSyncAdvanced_.load(); }
   size_t contactSyncHeldCount() const { return contactSyncHeld_.load(); }
   scalar_t contactSyncAdvancedSeconds() const { return contactSyncAdvancedSeconds_.load(); }
+  size_t contactSyncBlockedCount() const { return contactSyncBlocked_.load(); }
+  size_t contactSyncDescendingCount() const { return contactSyncDescending_.load(); }
 
   void setArmSwingSettings(const ArmSwingSettings& settings) { armSwing_ = settings; }
   const ArmSwingSettings& getArmSwingSettings() const { return armSwing_; }
@@ -483,6 +485,8 @@ scalar_t maxOffset = 0.6;
   std::atomic<size_t> contactSyncAdvanced_{0};
   std::atomic<size_t> contactSyncHeld_{0};
   std::atomic<scalar_t> contactSyncAdvancedSeconds_{0.0};
+  std::atomic<size_t> contactSyncBlocked_{0};     //!< landings accepted by the blockedHeight rule
+  std::atomic<size_t> contactSyncDescending_{0};  //!< near-plane soles rejected by the descentVelocity rule
 
   std::shared_ptr<GaitSchedule> gaitSchedulePtr_;
   std::shared_ptr<SwingTrajectoryPlanner> swingTrajectoryPtr_;

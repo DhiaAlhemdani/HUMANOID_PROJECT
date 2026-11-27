@@ -999,3 +999,16 @@ Proposed first measurements (all need a `colcon build`), `suite_mild`, `speeds b
 
 Pass = 0 falls both ways, largest survived step >= TEV's 4.3 cm, holds no worse than TEV, and the flat
 `speeds backward` of the winner within the humanCSr1 guards.
+
+### Run 23 A — humanT23c (shipped descent `-0.05` + `useEstimate true` + velocity rule 0.03 / 0.01, `suite_mild`, vs humanTEV): FAIL
+
+Only the T23c comparison came back (T23a / T23b not run). **1 fall, forward 0.8 hold** (TEV survives it at
+jerk 109); forward 0.2 / 0.5 holds 34.6 / 58.5 vs TEV 48.2 / 52.6; v_err_max 0.63. Backward 0 falls but
+every hold worse: 44.8 / 67.1 / 82.4 / 70.3 / 51.1 vs 34.0 / 50.4 / 75.7 / 44.2 / 41.8 (+20-60 %), clean stop
+(0.17 vs TEV's noisy 16.6). So the velocity-aware "landed" with the shipped -0.05 descent does **not**
+replace the -0.15 descent: it is no better than humanTE (`useEstimate` alone walked the forward ladder and
+fell in the stop). Whether the rule fired at all could not be read from the run - the stream had no
+contactSync telemetry - so the solver row now carries cumulative `contact_sync/advanced`, `held`,
+`blocked`, `descending` counters (`plot_tracking.py` prints the per-window deltas in its DIAG line and
+`diag.json` -> `solver.contact_sync`). Re-run T23c once with the counters before drawing a conclusion
+about the rule itself; T23a / T23b (on top of TEV) remain the configs to measure.

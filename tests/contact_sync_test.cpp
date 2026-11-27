@@ -244,6 +244,11 @@ int main() {
     feet[1].plannedVelocity = -0.05;
     const auto r = synchroniseTouchdowns(terrain, 0.26, feet, sch, hold);
     assert(r.advancedFoot == 1 && near(sch.eventTimes[1], 0.259));
+    assert(r.blockedLandings == 1 && r.descendingRejections == 0);
+    // Outside the window the decision is not consulted and not counted.
+    auto sch2 = makeSchedule();
+    const auto r2 = synchroniseTouchdowns(terrain, 0.2, feet, sch2, hold);
+    assert(r2.advancedFoot == -1 && r2.blockedLandings == 0);
   }
   {
     auto sch = makeSchedule();
@@ -256,15 +261,18 @@ int main() {
     feet[1].plannedVelocity = -0.15;
     const auto r = synchroniseTouchdowns(terrain, 0.26, feet, sch, hold);
     assert(r.advancedFoot == -1 && near(sch.eventTimes[1], 0.3));
+    assert(r.descendingRejections == 1 && r.blockedLandings == 0);
     // With the late half on, the same foot past its planned touchdown is held while it still descends.
     ContactSyncSettings late = terrain;
     late.lateWindow = 0.1;
     const auto h = synchroniseTouchdowns(late, 0.31, feet, sch, hold);
     assert(h.heldFoot == 1 && near(sch.eventTimes[1], 0.33) && near(hold[1], 0.3));
+    assert(h.descendingRejections == 1);
     // Once it stops (landed on the lower tile, plane estimate not yet caught up) the hold is released.
     feet[1].soleVelocity = 0.0;
     const auto done = synchroniseTouchdowns(late, 0.33, feet, sch, hold);
     assert(done.heldFoot == -1 && std::isnan(hold[1]));
+    assert(done.descendingRejections == 0 && done.blockedLandings == 0);
   }
   return 0;
 }

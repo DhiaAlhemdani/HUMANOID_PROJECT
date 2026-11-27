@@ -578,6 +578,13 @@ if "solver" in d.files and d["solver"].size and len(d["solver_names"]):
         # well inside the feasible set, so a "share of the total" would be meaningless.
         means = {n: float(np.nanmean(S[sw, sc[n]])) for n in cost_cols}
         diag["solver"]["cost_terms_mean"] = {n: round(v, 3) for n, v in sorted(means.items(), key=lambda kv: -abs(kv[1]))[:12]}
+        if "contact_sync/advanced" in sc:
+            # Cumulative counters: the number of decisions inside the window is the last minus the first finite value.
+            def _delta(name):
+                v = S[sw, sc[name]]
+                v = v[np.isfinite(v)]
+                return int(v[-1] - v[0]) if v.size else 0
+            diag["solver"]["contact_sync"] = {k: _delta(f"contact_sync/{k}") for k in ("advanced", "held", "blocked", "descending")}
         if "eq_sse_near" in sc:
             diag["solver"]["eq_sse_near_mean"] = float(np.nanmean(S[sw, sc["eq_sse_near"]]))
             near = [n for n in sn if n.startswith("eq_sse_near/")]
@@ -614,4 +621,6 @@ print(f"DIAG {TITLE} | base z sd plan {B['plan_z_sd_mm']} / obs {B['obs_z_sd_mm'
       + f" | cmd transients ({diag['command']['profile']}, {len(diag['command']['events'])} events) acc_hf max {diag['command']['transient_acc_hf_max']},"
         f" z pp {diag['command']['transient_z_pp_mm_max']} mm, pitch max {diag['command']['transient_pitch_max_deg']} deg"
       + (f" | solve {diag['solver']['advance_ms_mean']} ms mean, {diag['solver']['advance_ms_p95']} p95, {diag['solver']['solve_hz']} Hz, eq_sse {diag['solver']['eq_sse_mean']:.1e}"
-         f" (first 3 nodes {diag['solver'].get('eq_sse_near_mean', float('nan')):.1e})" if "solver" in diag else ""))
+         f" (first 3 nodes {diag['solver'].get('eq_sse_near_mean', float('nan')):.1e})" if "solver" in diag else "")
+      + (" | contact_sync " + " ".join(f"{k} {v}" for k, v in diag["solver"]["contact_sync"].items())
+         if "solver" in diag and "contact_sync" in diag["solver"] else ""))
