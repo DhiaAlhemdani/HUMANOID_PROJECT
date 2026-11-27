@@ -12,6 +12,8 @@ copies under `tuning_results/` kept disappearing between sessions. Pass the path
 | `humanT24a.yaml` | humanT23d + `terrainSpeedCap.enabled true`, single tier `[0.01] -> [0.5]` (run 24 A: walks `suite_mild` both ways) |
 | `humanT24b.yaml` | humanTEV + the same single-tier cap (run 24 A) |
 | `humanT24c.yaml` | humanT23d + the two-tier cap `[0.01, 0.025] -> [0.5, 0.25]` (run 24 C, for `suite_rough`) |
+| `humanT24d.yaml` | humanT24c with tier 2 earlier and slower: `[0.01, 0.02] -> [0.5, 0.2]` (run 24 D) |
+| `humanT24e.yaml` | three tiers `[0.01, 0.02, 0.035] -> [0.5, 0.2, 0.1]` (run 24 D) |
 
 Regenerate, e.g.:
 
@@ -21,4 +23,6 @@ tests/tuning/make_config.py config/tuning/humanT23d.yaml --in config/tuning/huma
 tests/tuning/make_config.py config/tuning/humanT24a.yaml --in config/tuning/humanT23d.yaml ocs2.reference.terrainSpeedCap.enabled=true "ocs2.reference.terrainSpeedCap.stepKnots=[0.01]" "ocs2.reference.terrainSpeedCap.speedKnots=[0.5]"
 tests/tuning/make_config.py config/tuning/humanT24b.yaml --in config/tuning/humanTEV.yaml ocs2.reference.terrainSpeedCap.enabled=true "ocs2.reference.terrainSpeedCap.stepKnots=[0.01]" "ocs2.reference.terrainSpeedCap.speedKnots=[0.5]"
 tests/tuning/make_config.py config/tuning/humanT24c.yaml --in config/tuning/humanT23d.yaml ocs2.reference.terrainSpeedCap.enabled=true
+tests/tuning/make_config.py config/tuning/humanT24d.yaml --in config/tuning/humanT24c.yaml "ocs2.reference.terrainSpeedCap.stepKnots=[0.01, 0.02]" "ocs2.reference.terrainSpeedCap.speedKnots=[0.5, 0.2]"
+tests/tuning/make_config.py config/tuning/humanT24e.yaml --in config/tuning/humanT24c.yaml "ocs2.reference.terrainSpeedCap.stepKnots=[0.01, 0.02, 0.035]" "ocs2.reference.terrainSpeedCap.speedKnots=[0.5, 0.2, 0.1]"
 ```

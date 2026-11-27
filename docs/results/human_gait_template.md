@@ -1170,3 +1170,30 @@ Open after the rough result: the first 2.5 cm step is taken *before* the cap kno
 ramp (the field's 2 m blend lets the step sizes grow from x ~ 0.5 m on). If T24c still falls at the entry,
 the next lever is the hold / threshold of tier 2 (0.02) or a terrain-conditional `touchDownVelocity`
 (-0.05 on flat, -0.15 once the cap is active), which would also recover the flat 0.2 / 0.5 holds.
+
+### Run 24 C — humanT24c (two-tier cap) on `suite_rough` vs humanT24aR: 3 m further, then an edge
+
+Still 2 falls, but a different run. **Forward:** the 0.5 hold that killed every config so far is walked
+(74 vs fall), the 0.8 segments go by at the tier-2 cap (strides: 0.25-0.33 m/s from x ~ 2.7 m, jerk 24 /
+48), ten landings at full field height with +-3.3-3.5 cm steps and 2.5-3.3 cm edges survive with 0.4-2.8 deg
+pitch (one -3.3 cm step at 0.44 m/s, just before the cap took hold, cost 11.6 deg) - and then at 33.95 s /
+x 4.95 m the left foot lands straddling a **5.6 cm edge** (no height step between the feet, the sole half
+on a cell 5.6 cm higher), pitch 29 deg in one stride, fall. The cap was at 100 %, the actual speed 0.25.
+**Backward:** fell at 22.6 s / x -1.5 m, same place as T24a and the shipped config: the +2.5 cm step at
+21.1 s did not register as tier 2 (the estimator saw a hair under 0.025; forward the same step did not trip
+it either - tier 2 engaged only at the +3.5 cm step at 24.0 s), so the ramp to -0.5 went ahead and the
+next two landings sat on 2.4 / 2.5 cm edges at 0.3-0.4 m/s; pitch 56 deg.
+
+Two readings. (1) **Tier 2 is a hair late and a hair fast**: 0.025 misses the field's typical first
+step; 0.02 catches it (the field's adjacent differences start at 2 cm), and 0.2 is the speed at which 2.5
+cm edges were taken calmly in the 0.2 holds of every rough run. (2) **Edge landings, not height steps, are
+what end the rough runs** (45 % of T24c's landings were on an edge > 4 mm; the two fatal ones were 5.6 and
+2.4 / 2.5 cm with *zero* step between the feet). The cap cannot see an edge until the foot is on it; the
+walk needs to be slow enough when it happens, which is what the tiers buy. Beyond that the lever is the
+foot itself (partial / line contact instead of the flat-sole assumption) - a different piece of work.
+
+Run 24 D (config only, no build): **humanT24d** = T24c with `[0.01, 0.02] -> [0.5, 0.2]`; **humanT24e** =
+three tiers `[0.01, 0.02, 0.035] -> [0.5, 0.2, 0.1]` (a 3.5 cm step says "the big edges are here").
+Pass: 0 falls both ways on `suite_rough`; then `suite_mild` and flat must be unchanged (tier 2 at 0.02 may
+now trip on mild's -2.8 cm step; watch the cap column). Lateral drift forward on rough (y +0.98 m at x 5 m)
+is noted for the drift work.
