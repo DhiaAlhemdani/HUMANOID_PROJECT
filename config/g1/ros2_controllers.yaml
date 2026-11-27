@@ -500,9 +500,11 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           rightWeights: 
             [2.0, 2.0, 1.0, 8.0, 0.2, 0.2]
 
-        # Double-support load-share cost (D2/D3): 0 disables; sweep picks a value
-        # (docs/results/ after tests/tuning/run_loadshare_sweep.sh).
+        # Double-support load-share cost (D2/D3): 0 disables. Whole-DS shaping (windows 0) fell at
+        # 0.8 m/s at every weight >= 0.01 (run 13); the end windows shape only the switch ends.
         contactLoadShareWeight: 0.0
+        contactLoadShareLiftOffWindow: 0.0
+        contactLoadShareTouchDownWindow: 0.0
         # Wrench-as-state layout: share of the rate weight charged at the anchored first node (see parameters.yaml).
         wrenchRateFirstNodeScale: 1.0
 

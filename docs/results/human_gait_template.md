@@ -437,3 +437,32 @@ lifting foot 1 -> 0 - so both switches are force-continuous; total-invariant, so
 the dynamics. Its sweep then (1e-6..1e-3, old layout, trot, `cmd_tau_jump_at_switch` as primary)
 shipped nothing; with the rate-priced layout and pelvis jerk at lift-off as the target it is the
 first candidate, at weights 10-1000x the old sweep.
+
+## Run 13 — whole-DS load share (`contactLoadShareWeight` 0.01 / 0.1 / 1.0, speeds, vs humanUB4)
+
+All three **fell on the 0.8 m/s hold**; at 0.2 / 0.5 the hold jerk is unchanged (36.3 / 46.3 vs
+35.4 / 44.2) although the lift-off energy is gone:
+
+| 0.2 hold | lift-off share, conc | touchdown share, conc | bin 0 | lift-off fz at -10 ms / step |
+|---|---|---|---|---|
+| humanUB4 | 37-49 %, 3.5-3.9x | 14-23 %, 1.3-1.9x | 15-18 % | 113 N / 113 N |
+| LS 0.1 | **4 %, 0.4x** | 33 %, 2.9x | **47 %** | 5.7 N / ~0 (ramp 224 -> 0 over 150 ms) |
+
+The jerk moved: lift-off energy 540 -> 53 (units of jerk^2 share), touchdown 250 -> 435-620. The
+profile shows why. The foot is physically down at -45 ms while the plan still drives it to -2 mm;
+the body is pushed up (az +1.6 at -10 ms, jerk 84), then the plan starts loading the landed foot
+from **zero** at the planned switch (5 N at +10 ms, 35 N at +50, 105 N at +90) - before, it put
+129 N on it at once, which was closer to the physics. At 0.8 m/s (DS 0.12 s) a landing foot that
+reaches half load only 60 ms after the switch is a fall; the whole-DS shape also takes the split,
+the optimizer's balance lever in double support, away at every weight tried.
+
+Built: end windows for the cost (`costs.contactLoadShareLiftOffWindow`, `...TouchDownWindow`, s):
+the weight ramps up as (1 - tau/window)^2 towards the switch and is zero elsewhere in the DS, so
+the lifting foot's force reaches zero continuously (the dump) while the mid-DS split and the
+touchdown loading stay as they are. Same CppAD function (the scale goes in through the parameter),
+no codegen. Run 14 = lift-off window only: (0.1, 0.06), (0.1, 0.04), (0.01, 0.06).
+
+Touchdown is the next item once the dump is gone: the plan reaches the ground 50 ms after the foot
+(20-40 ms of it by construction - touchDownVelocity -0.05 and offset -1 mm cross z = 0 before the
+switch - plus the tracking lead). Candidates: the 2.C-timing set A winners (offset 0 / +1 mm,
+acc_hf -16 / -25 %, never shipped because of a noisy stop metric), then a contact-triggered switch.

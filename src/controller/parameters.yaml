@@ -371,6 +371,16 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           double-support load-share cost (0 disables it): pulls the free vertical-force split between
           the feet toward a C1 smoothstep transfer across each DS window, shaping the contact-handover
           force rate (D2/D3); registered only when > 0", validation: {gt_eq: [0.0]}}
+      contactLoadShareLiftOffWindow: {type: double, default_value: 0.0, description: "Load-share cost end
+          window [s] before each planned lift-off: > 0 shapes the split only there (weight ramps up as
+          (1 - tau/window)^2 towards the switch, so the lifting foot's force reaches zero continuously
+          instead of dropping in one node) and leaves the rest of the double support free. 0 with the
+          touchdown window also 0 = the whole-DS smoothstep", validation: {gt_eq: [0.0]}}
+      contactLoadShareTouchDownWindow: {type: double, default_value: 0.0, description: "Load-share cost end
+          window [s] after each planned touchdown (landing foot loaded from zero continuously). 0 = off
+          at that end. Note the foot is physically down ~50 ms before the planned switch (G1), so holding
+          its planned force at zero there moved the jerk onto the touchdown in run 13",
+        validation: {gt_eq: [0.0]}}
       wrenchRateFirstNodeScale: {type: double, default_value: 1.0, description: "Wrench-as-state layout
           (ocs2.model.wrenchState): share of costs.r.contactWrenchRates charged at the first node of each
           solve, whose wrench is anchored to the previous plan; the remaining share is charged on every

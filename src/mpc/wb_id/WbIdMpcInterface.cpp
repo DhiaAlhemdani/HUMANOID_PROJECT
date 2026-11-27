@@ -145,7 +145,8 @@ void WbIdMpcInterface::setupOptimalControlProblem() {
   // Double-support load-transfer shaping (D2/D3); registered only when explicitly weighted.
   if (config_.contactLoadShareWeight > 0.0) {
     problemPtr_->costPtr->add("contactLoadShareCost", std::make_unique<WbIdContactLoadShareCost>(
-                                                          config_.contactLoadShareWeight, *referenceManagerPtr_,
+                                                          config_.contactLoadShareWeight, config_.contactLoadShareLiftOffWindow,
+                                                          config_.contactLoadShareTouchDownWindow, *referenceManagerPtr_,
                                                           *mpcRobotModelADPtr_, modelSettings_));
   }
 

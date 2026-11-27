@@ -100,10 +100,18 @@ inline bool dsBrackets(double time, const std::vector<double>& eventTimes, GetFl
  *
  * Inactive outside double support, where the split is pinned. The interface registers
  * this cost only when the weight is > 0 (shipped default 0 = disabled).
+ *
+ * End windows (2026-11-27, docs/results/human_gait_template.md run 12/13): with liftOffWindow
+ * and/or touchDownWindow > 0 the weight is scaled by (1 - tau / window)^2, tau = time to the
+ * DS exit (lift-off) / since the DS entry (touchdown), and is zero elsewhere in the window, so
+ * only the ends of the transfer are shaped (force-continuous switches) and the mid-DS split stays
+ * the optimizer's balance lever. Shaping the whole DS (both windows 0) at weights >= 0.01 fell at
+ * 0.8 m/s and moved the lift-off jerk to the touchdown, which the plan reaches ~50 ms after the foot.
  */
 class WbIdContactLoadShareCost final : public StateInputCostGaussNewtonAd {
  public:
-  WbIdContactLoadShareCost(scalar_t weight, const SwitchedModelReferenceManager& referenceManager,
+  WbIdContactLoadShareCost(scalar_t weight, scalar_t liftOffWindow, scalar_t touchDownWindow,
+                           const SwitchedModelReferenceManager& referenceManager,
                            const WbIdMpcRobotModel<ad_scalar_t>& mpcRobotModelAD, const ModelSettings& modelSettings);
   ~WbIdContactLoadShareCost() override = default;
   WbIdContactLoadShareCost* clone() const override { return new WbIdContactLoadShareCost(*this); }
@@ -111,9 +119,14 @@ class WbIdContactLoadShareCost final : public StateInputCostGaussNewtonAd {
   //! Only double support leaves the split free; single stance and swing nodes are skipped.
   bool isActive(scalar_t time) const override;
 
-  //! [sqrt(weight), phi_left, phi_right] for this evaluation time.
+  //! [sqrt(weight) * sqrt(window scale), phi_left, phi_right] for this evaluation time.
   vector_t getParameters(scalar_t time, const TargetTrajectories& targetTrajectories,
                          const PreComputation& preComputation) const override;
+
+  //! Weight scale in [0, 1] of the end windows at `time` inside the DS [entryTime, exitTime];
+  //! 1 everywhere when both windows are 0 (whole-DS smoothstep). Plain doubles, unit-testable.
+  static double endWindowScale(double time, double entryTime, double exitTime, double liftOffWindow,
+                               double touchDownWindow);
 
  private:
   WbIdContactLoadShareCost(const WbIdContactLoadShareCost& other);
@@ -123,6 +136,8 @@ class WbIdContactLoadShareCost final : public StateInputCostGaussNewtonAd {
 
   const SwitchedModelReferenceManager* referenceManagerPtr_;
   double sqrtWeight_;
+  double liftOffWindow_ = 0.0;
+  double touchDownWindow_ = 0.0;
 };
 
 }  // namespace ocs2::humanoid

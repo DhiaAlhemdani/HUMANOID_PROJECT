@@ -335,6 +335,8 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
 
   // --- double-support load-transfer shaping (D2/D3); 0 keeps the shipped behavior ---
   config.contactLoadShareWeight = p.costs.contactLoadShareWeight;
+  config.contactLoadShareLiftOffWindow = p.costs.contactLoadShareLiftOffWindow;
+  config.contactLoadShareTouchDownWindow = p.costs.contactLoadShareTouchDownWindow;
   if (p.model.wrenchState) {
     // One node of rate cost per node of swing: Ws held through a swing costs many one-node dumps.
     const auto& rates = p.costs.r.contactWrenchRates;
