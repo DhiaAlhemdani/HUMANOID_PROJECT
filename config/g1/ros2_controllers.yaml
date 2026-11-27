@@ -748,8 +748,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # -kneeOffset/2) and defaultBaseHeight should match (kneeOffset 0.3 -> 0.785 m on the G1).
         humanGait:
           enabled: true
-          # Upper body only: the leg curves fell at >= 0.6 m/s in runs 3-5 (before the torque-window
-          # fix, d2dc4f8) and are not re-qualified yet; HUMAN_LEGS=true in the recipe retests them.
+          # Upper body only: the leg curves fell at >= 0.6 m/s in runs 3-5 and again on the fixed
+          # controller (run 11: fell on the ramp to 0.8, +55 % jerk at 0.2 / 0.5 before that). The
+          # leg reference fights the optimizer's own leg solution; it stays off (HUMAN_LEGS=true).
           legs: false
           arms: true
           waist: true

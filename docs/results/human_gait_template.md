@@ -376,3 +376,30 @@ the new default, in order of expected payoff: the leg curves (`HUMAN_LEGS=true`,
 the torque-window fallback, now held), wrench-rate 2e-4 / 5e-4 (1e-3 made the arms shake before
 the arm template existed), template amplitude (`HUMAN_MAXSCALE`), then the C++ items: force-only
 wrench state for the solve rate, yaw rate into the waist template for the turn, the 1-in-3 noisy stop.
+
+## Run 11 — pushing the shipped config: leg curves and the wrench-rate weight (speeds, vs humanUB4)
+
+| | humanUB4 | humanL5 (legs on) | humanW2 (2e-4) | humanW5 (5e-4) |
+|---|---|---|---|---|
+| steady jerk / acc_hf / tau-rate | 38.2 / 0.64 / 210 | 155 / 2.77 / 287, **fell** (0.8 ramp) | 37.8 / 0.61 / 205 | 38.9 / 0.59 / 193 |
+| transition max jerk / tau-rate | 67.2 / 362 | 290 / 713 | 65.5 / 327 | 64.8 / 309 |
+| hold 0.2 / 0.5 / 0.8 | 35.4 / 44.2 / 69.7 | 55.7 / 67.4 / - | 36.5 / 43.2 / 70.0 | 37.5 / 45.3 / **60.4** |
+| final stop | 0.15 | - | 0.10 | 5.9 |
+| solve Hz | 41.4 | 44.0 | 43.5 | 37.8 |
+
+- **Leg curves: dead.** On the fixed controller the template's hip / knee / ankle reference still
+  falls at the 0.8 ramp and is 55 % rougher at 0.2 and 0.5 before it (arm acc x3: the arms work
+  against the leg reference). The falls of runs 3-5 had two causes, the fallback and the reference
+  itself; the fix removed one. `legs: false` is the shipped value with that note.
+- **Wrench-rate weight: on its plateau.** 2e-4 is a wash. 5e-4 buys the 0.8 hold (-13 %), acc_hf
+  (-7 %) and tau-rate (-8 / -15 %) and pays at 0.2 (+6 %), the stop (5.9) and the solve rate
+  (-9 %). Pelvis jerk is flat from 1e-4 to 5e-4: the force-rate pricing has given what it can; 1e-4
+  stays shipped (5e-4 is the choice if high-speed smoothness is worth 4 Hz).
+
+What is left is not a weight. The remaining jerk sits at the events of the stride; the normal
+0.8 m/s stride lands 49 +- 22 ms before the planned contact switch (run 6), i.e. for ~9 % of each
+step the robot stands on a foot the plan still treats as airborne. `tests/tuning/jerk_attribution.py`
+(new) measures how much of a hold's jerk energy lies within +-40 ms of the measured touchdowns, the
+planned switches and the lift-offs, and the energy profile over the stride phase - the input for
+deciding between contact-triggered schedule adaptation (switch when the foot lands) and a
+touchdown-aware swing end.
