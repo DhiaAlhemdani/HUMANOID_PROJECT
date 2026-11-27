@@ -787,3 +787,23 @@ vs 27.5 / 33.2, acc_hf 0.56 / 0.59 vs 0.43 / 0.50, the -0.8 ramp acc_hf 0.91 vs 
 arms unchanged (10-18 deg), 0 falls. **Decision: keep z weight 50 (option 2).** The slider is the
 standing height; walking, it moves the pelvis ~1 cm forward and ~3 cm backward and that is the
 controller's property, not a tuning target. Run 20 closed.
+
+## Run 21 (planned) — a 10 cm crouch on command while walking
+
+Target (user): the slider must move the walking pelvis ~10 cm, not 3. That is a crouch gait, not a
+height offset: 0.74 -> 0.64 m means the knee at ~80-90 deg through stance instead of 35-40, roughly
+twice the knee torque, and - the hard part - the **ankle dorsiflexion limit** (-0.873 rad = 50 deg).
+With a flat foot and an upright trunk a 0.64 m pelvis needs a shank inclination of ~38 deg at mid
+stance and 55-60 deg by toe-off: beyond the joint limit, so the late-stance posture has to come from
+more knee / hip flexion (and the `jointPositionLimits` barrier, mu 1200 / delta 0.1 rad, is active the
+whole time) or from a forward trunk pitch, which the pitch weight 100 forbids. That is why eight times
+the height weight bought 2 cm (Run 20): the optimizer is not ignoring the slider, it is paying a barrier.
+
+Step 1 (measurement, references only): `crouch` script (0.3 and 0.5 m/s, 0.72 -> 0.62 -> 0.72) on the
+shipped config and on `humanCR` = posture table (legs referenced at the crouch) + z weight 400 +
+defaultBaseHeight / maxBaseHeight 0.72 (the table's safe top: 0.72 walked in Run 20, 0.75 fell). Reads:
+`z_m` in the 0.62 holds (how much of the 10 cm the walk delivers), `knee_ms`, falls, jerk; `speeds`
+for the regression. Step 2, if the ankle limit is the wall: a trunk-pitch reference that follows the
+commanded height (e.g. 0 at 0.74, 12 deg at 0.62) and the step length / cadence scaled with the height
+(Froude). Step 3: touchdown re-tune at the crouch. Each step is a run cycle; the use case decides how far
+to go (ducking under an obstacle at 0.3 m/s is a much smaller target than a crouch gait at 0.8).
