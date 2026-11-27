@@ -590,10 +590,43 @@ touchdown passes with the foot still in the air, hold the event until it lands, 
 mechanism also removes the late-touchdown half of the run-6 fall anatomy at 0.8. Config-only
 levers on the touchdown are exhausted (runs 15-17).
 
-## Run 18 (planned) — contact-synchronised touchdown (`gait.contactSync`, build)
+## Run 18 — contact-synchronised touchdown (`gait.contactSync`, speeds, vs the humanLO repeat)
 
-Design in `docs/design/touchdown_impact.md` §8. Cases on the shipped config: `humanCS` (early
-window 60 ms, threshold 2 mm), `humanCS_t1` (threshold 1 mm), `humanCS_late` (early 60 ms + late
-40 ms). Read: `lead_ms` (50 → one solve period or less), touchdown concentration (3.0–3.5 → ?),
-the 0.2 / 0.5 holds (repeatable to ±2) and 0 falls; the 0.8 hold is noise-bound (62–72 across
-repeats) and only counts if it moves by more than that.
+| | humanLO | CS (early 60 ms, 2 mm) | CS_t1 (1 mm) | CS_late (+ late 40 ms) |
+|---|---|---|---|---|
+| steady jerk / acc_hf | 34.8 / 0.59 | 31.9 / 0.60 | 31.1 / 0.59 | 33.5 / 0.61 |
+| hold 0.2 / 0.5 / 0.8 / 0.5 / 0.2 | 29.7 / 33.8 / 72.0 / 37.4 / 36.1 | 28.6 / 34.8 / 67.1 / 33.4 / 25.7 | 24.9 / 33.1 / 64.7 / 32.5 / 28.1 | 26.1 / 33.3 / 80.3 / 33.7 / 27.0 |
+| transition max | 67.4 | 57.9 | 61.2 | 79.4 (fail) |
+| falls / solve Hz | 0 / 45.1 | 0 / 39.9 | 0 / 38.8 | 0 / 39.7 |
+| lead ms (0.2 / 0.5 / 0.8) | 50+-2 / 51+-1 / 39+-24 | 30+-4 / 38+-5 / 32+-18 | 37+-1 / 38+-7 / 37+-25 | 31+-5 / 32+-7 / 19+-25 |
+| td concentration (0.2 / 0.5) | 1.9-2.1 / 2.0-2.2 | 1.3-1.6 / 1.4-1.7 | 1.3-1.8 / 1.5 | 1.5-1.8 / 1.3-1.7 |
+| sw_td concentration (0.2 / 0.5) | 2.8-3.4 / 2.2-2.4 | 2.7 / 2.1-2.8 | 2.7-3.1 / 2.4-2.5 | 3.0-3.3 / 1.9-2.5 |
+
+The rule fires as designed and its limit is the one predicted: the lead drops 50 -> 30-38 ms and
+its spread grows from +-1 to +-5 ms, i.e. the landing is caught at the next solve and the policy
+carrying the moved event arrives one solve period later. The profile at 0.2 confirms it: the sole
+is down at -20 ms (was -30), the plan loads it 0 -> 102 N at the switch, `alpha` goes 0.96 -> 0.00
+in one step (the fade is one-sided now: an event the controller did not see coming) and back to
+1.0 by +30 ms. The jerk before the switch is lower (25 vs 31-35 at 0.2) but the peak **after** it
+is unchanged in shape and size (59 / 72 / 64 at +20..+40 ms, LO 46-62): the foot has been down for
+40 ms by then, so this is the weight transfer itself - the new foot 102 -> 169 N and the old one
+256 -> 185 N over 40 ms, pelvis az -1.2 -> +0.75 - not the landing. The touchdown concentration
+drops by a quarter (1.9-2.2 -> 1.3-1.8); the holds follow at 0.2 (-4 / -29 %, -16 / -22 % with the
+1 mm threshold) and are a wash at 0.5 / 0.8. Steady jerk -8 / -11 %. 0 falls.
+
+Late half: the 0.8 hold is worse (80 vs 72) and the 0.8 ramp fails the guard: holding the event
+while the foot is still up at 0.8 m/s costs balance, exactly as loading it early did in run 13.
+**`lateWindow` stays 0.**
+
+Not shipped from this run: the one guard it fails is the solve rate (39-40 vs 45 Hz), which is
+only comparable within a session, and the 0.2 gain is of the order of the repeat spread. An
+in-session pair decides it: `humanLO` again and `humanCS` (early 60 ms, threshold 2 mm; the 1 mm
+threshold is within noise of it and trips 7 ms later), speeds + omni + stops. Ship if the solve
+rate is within the guard against the same-session baseline, 0 falls, and the 0.2 / 0.5 holds are
+not worse.
+
+What is left of the touchdown after this is the double-support weight transfer (the post-switch
+peak above), the mirror image of the lift-off dump the end window removed - and run 13 / 17 showed
+that shaping the landing force costs balance at 0.8. That is the floor of this lever family on the
+touchdown side; the next step change is elsewhere (lead 0 at 0.8 remains part of the run-6 anatomy
+and the late half does not fix it).
