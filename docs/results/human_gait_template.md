@@ -630,3 +630,13 @@ peak above), the mirror image of the lift-off dump the end window removed - and 
 that shaping the landing force costs balance at 0.8. That is the floor of this lever family on the
 touchdown side; the next step change is elsewhere (lead 0 at 0.8 remains part of the run-6 anatomy
 and the late half does not fix it).
+
+**In-session pair (`humanLOr2` vs `humanCSr1`, speeds + omni + stops, same session):** steady
+jerk 30.2 -> 24.0 (-20 %), acc_hf 0.505 -> 0.462, tau-rate 180 -> 159, transition max 62.8 -> 62.9,
+0 falls in all six suites, solve rate 43.4 -> 40.9 (-6 %, inside the guard). Speeds holds
+27.6 / 48.9 / 65.3 / 41.1 / 33.6 -> 26.8 / 33.8 / 66.4 / 32.6 / 26.8; every omni hold better
+(0.3: 45.8 -> 25.9, turn 32.2 -> 27.1, 0.6: 63.0 -> 49.9, 0.2+0.1 lateral 42.2 -> 28.4, -0.2:
+33.0 -> 28.2); stops holds 46.2 / 36.2 / 36.2 -> 33.6 / 34.6 / 35.2 and the baseline's one noisy
+final stop (17.8) does not recur (1.55). **Shipped: `gait.contactSync.enabled: true`** (early
+window 60 ms, threshold 2 mm, late half off). Shipped G1 = humanUB4 + lift-off end window +
+contact-synchronised touchdown.

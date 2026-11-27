@@ -36,10 +36,13 @@ class ContactSyncContractTest(unittest.TestCase):
             self.assertEqual(schema[key]["default_value"], value, key)
             self.assertIn(f"scalar_t {key} = {value};", SYNC_H.replace("0.060", "0.06"), key)
 
-    def test_g1_block_present_and_off(self):
+    def test_g1_ships_the_early_half_only(self):
+        # Run 18 (docs/results/human_gait_template.md): the early half is a suite-wide win; the late half
+        # (holding the event while the foot is still up) cost balance at 0.8 m/s and stays off.
         block = PARAMS["ocs2"]["gait"]["contactSync"]
         self.assertEqual(tuple(block), KEYS)
-        self.assertFalse(block["enabled"])
+        self.assertTrue(block["enabled"])
+        self.assertEqual(block["lateWindow"], 0.0)
         for key in KEYS[1:]:
             self.assertEqual(block[key], SCHEMA["ocs2"]["gait"]["contactSync"][key]["default_value"], key)
 

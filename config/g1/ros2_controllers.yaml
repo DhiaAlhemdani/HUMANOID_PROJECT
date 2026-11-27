@@ -811,9 +811,12 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # docs/results/human_gait_template.md: the swing spline spends its last 27 ms inside the
         # final millimetre, the plan sags 1-2 mm under it, and the scheduled switch then steps the
         # foot's force 0 -> 120 N with the foot already down). earlyWindow moves the event to the
-        # solve time; lateWindow (0 = off) holds it while the foot is still in the air.
+        # solve time; lateWindow (0 = off) holds it while the foot is still in the air. Shipped on
+        # (run 18 + in-session pair): lead 50 -> 30 ms (one solve period is the limit), touchdown
+        # jerk concentration -25 %, suite steady jerk -20 % vs the lift-off window alone, every
+        # omni hold better, 0 falls, solve rate -6 %. The late half cost balance at 0.8 m/s: off.
         contactSync:
-          enabled: false
+          enabled: true
           earlyWindow: 0.06
           lateWindow: 0.0
           heightThreshold: 0.002
