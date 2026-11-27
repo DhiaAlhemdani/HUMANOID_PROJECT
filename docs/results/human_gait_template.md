@@ -1106,3 +1106,34 @@ Plan (`suite_mild`, `speeds backward`): humanT24a = humanT23d + `terrainSpeedCap
 (defaults), vs humanTEV; humanT24b = humanTEV + cap (is the velocity rule still needed once the speed is
 right?); then the flat check of the winner vs humanCSr1 (`speeds backward`, cap must read 0 %), then
 `suite_rough` and the next rungs with the same config.
+
+### Run 24 A — humanT24a / humanT24b on `suite_mild` vs humanTEV: **both walk, T24a wins**
+
+Build picked up the telemetry (SUITE lines carry the counters). **0 falls both ways for both.** The only
+guard that fails is `v_err_max` (0.42 / 0.44 vs limit 0.33): the 0.8 m/s segments ran at 0.5 under the
+cap, by construction. (`score_suite.py` now tracks min(|command|, cap) in `v_err` and keeps the script
+value as `v_err_raw`, so the next comparisons judge the effective command.)
+
+| segment | humanTEV | **humanT24a** (T23d + cap) | humanT24b (TEV + cap) |
+| --- | --- | --- | --- |
+| fwd holds 0.2 / 0.5 / 0.8 / 0.5 / 0.2 | 48 / 53 / 109 / 35 / 73 | **37.5 / 46.9 / 64.3 / 36.5 / 61.1** | 30.0 / 69.9 / 55.1 / 45.5 / 35.0 |
+| fwd stop | 0.2 | 0.1 | 15.8 (noisy) |
+| bwd holds | 34 / 50 / 76 / 44 / 42 | **27.5 / 47.5 / 45.8 / 45.5 / 42.0** | 28.2 / 69.2 / 49.2 / 47.6 / 51.1 |
+| bwd stop | 16.6 (noisy) | 25.6 | 0.2 |
+| steady jerk / acc_hf / tau_rate | 48.4 / 0.76 / 250 | **40.0 / 0.73 / 218** | 41.4 / 0.71 / 216 |
+| transition jerk max / tau_rate max | 96 / 428 | **69 / 339** | 70 / 344 |
+| cap share (speeds / backward) | - | 61 % / 71 % | 55 % / 58 % |
+| contactSync blocked / descending | - | 9 / 64, 6 / 70 | 0 / 0 |
+
+Cap behaviour as designed: 0 % in the first 0.2 ramp (no tile step yet), 21-25 % in the first 0.2 hold
+(first steps), ~100 % from the 0.5 ramp on, released during the stops; 8-13 double supports tripped it
+per run. With the speed right, the 0.8 "hold" (at 0.5) is the quietest fast segment any config has
+produced on tiles (64 vs 109), and the ramp down from it no longer spikes (T23d fell there). The
+velocity-aware "landed" still earns its keep on top of the cap: T24a's 0.5 holds are 47 / 48 vs T24b's
+70 / 69 both ways and its forward stop is clean. T24a's remaining soft spots: the 0.5 -> 0.2 ramp
+forward (jerk 69, acc_hf 1.67) and the backward stop (25.6).
+
+**Adopt humanT24a as the terrain candidate.** Next: its flat regression vs humanCSr1 (cap must read 0 %
+everywhere; the expected cost is the `-0.15` descent's +30 % on the flat 0.2 / 0.5 holds, Run 22 E),
+`terrain_strides.py` on the T24a cases (largest steps survived), then `suite_rough` (vs humanTR, the
+shipped config's 2-fall run) and the slope rung with the same config.

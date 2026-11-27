@@ -303,6 +303,14 @@ for s in segs:
         if mm.sum() > 50:
             r["ds"] = float(np.mean(pm_all[mm] == 3))
     r["v_err"] = float(np.sqrt(np.mean((fwd_v[tail] - cmd[0]) ** 2 + (lat_v[tail] - cmd[1]) ** 2))) if tail.sum() > 5 else float("nan")
+    cap_t = sc("terrain/cap")
+    if cap_t is not None and tail.sum() > 5:
+        # Under the terrain speed cap the robot is asked for min(|cmd|, cap): track THAT. v_err_raw keeps the script command.
+        c = np.interp(tt[tail], sc("t"), np.nan_to_num(cap_t))
+        speed = math.hypot(cmd[0], cmd[1])
+        scale = np.where((c > 0) & (speed > c), c / max(speed, 1e-9), 1.0)
+        r["v_err_raw"] = r["v_err"]
+        r["v_err"] = float(np.sqrt(np.mean((fwd_v[tail] - cmd[0] * scale) ** 2 + (lat_v[tail] - cmd[1] * scale) ** 2)))
     r.update(limb_metrics(s0, s1))
     if s["kind"] == "steady" and abs(cmd[0]) > 0.05 and abs(cmd[1]) < 0.05 and abs(cmd[2]) < 0.05 and cmd[0] > 0:
         r.update(human_likeness(s0, s1, r.get("step_l", float("nan"))))
