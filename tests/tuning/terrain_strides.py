@@ -11,7 +11,12 @@ ray-cast at the four sole corners, so every touchdown gets:
   gnd_cm    ground height under the foot centre
   step_cm   gnd under this foot minus gnd under the other (stance) foot: the terrain step of this stride
   edge_cm   max - min of the ground height at the four sole corners: > --edge-mm means the foot straddles an
-            edge and rests on heel or toe only (the partial-contact landing)
+            edge and rests on heel or toe only (the partial-contact landing). On a ramp this is the ramp's own
+            rise under the sole (0.17 m x tan 10 deg = 3.0 cm) whatever the foot does: read `tilt` there.
+  tilt_deg  sole pitch relative to the ground under it, 0.2 s after the switch (the foot settled): the true
+            base pose (ground truth) and the measured joint angles posed in the scene, the ankle-roll link's x
+            axis against the ground's rise from heel to toe corners; positive = toe up (resting on the heel),
+            negative = toe down (on the toe). Needs meas_q/* in the tracking stream and the robot in scene.xml.
   pitch_pp  true base pitch excursion over the 0.4 s after the switch [deg]
   dz_pp     true base height excursion over the same window [cm]
   FELL      the run's fall lies within 1.5 s after this switch
@@ -62,6 +67,28 @@ class Ground:
             self.d.qpos[:3] = [0.0, 100.0, 5.0]
         mujoco.mj_forward(self.m, self.d)
         self.geomid = np.zeros(1, dtype=np.int32)
+        free = [i for i in range(self.m.njnt) if self.m.jnt_type[i] == mujoco.mjtJoint.mjJNT_FREE]
+        self.base_qadr = self.m.jnt_qposadr[free[0]] if len(free) == 1 else None
+        self.pose = mujoco.MjData(self.m)
+
+    def sole_pitch(self, base, joints, body):
+        """World pitch of the ankle-roll link's x axis [rad], toe up positive; nan without a posable robot."""
+        bid = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, body)
+        if self.base_qadr is None or bid < 0:
+            return math.nan
+        x, y, z, roll, pitch, yaw = base
+        cr, sr, cp, sp, cy, sy = (math.cos(roll / 2), math.sin(roll / 2), math.cos(pitch / 2), math.sin(pitch / 2),
+                                  math.cos(yaw / 2), math.sin(yaw / 2))
+        self.pose.qpos[self.base_qadr:self.base_qadr + 3] = [x, y, z]
+        self.pose.qpos[self.base_qadr + 3:self.base_qadr + 7] = [cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy,
+                                                                cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy]
+        for name, q in joints:
+            jid = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_JOINT, name)
+            if jid >= 0:
+                self.pose.qpos[self.m.jnt_qposadr[jid]] = q
+        mujoco.mj_kinematics(self.m, self.pose)
+        ex = self.pose.xmat[bid].reshape(3, 3)[:, 0]  # the link's x axis in the world
+        return math.asin(max(-1.0, min(1.0, float(ex[2]))))
 
     def z(self, x, y):
         dist = mujoco.mj_ray(self.m, self.d, np.array([x, y, 5.0]), np.array([0.0, 0.0, -1.0]), None, 1, -1, self.geomid)
@@ -108,6 +135,9 @@ for case in a.cases:
     by_side = {side(f): f for f in feet}
     swinging = {1: "l", 2: "r"}  # RF (1) = right in contact, left swings
     ob = {ax: sig(f"obs_base/{ax}") for ax in ("x", "y")}
+    meas_q = [(n.split("/", 1)[1], col[n]) for n in TN if n.startswith("meas_q/")]
+    ankle_body = {s: f"{'left' if s == 'l' else 'right'}_ankle_roll_link" for s in ("l", "r")}
+    n_settle = int(round(0.2 / float(np.median(np.diff(t)))))
 
     def foot_world(f, k):
         fx, fy = sig(f"obs_foot/{f}/x")[k], sig(f"obs_foot/{f}/y")[k]
@@ -138,11 +168,25 @@ for case in a.cases:
         gz = ground.z(x, y)
         oz = ground.z(ox, oy)
         k1 = min(len(t) - 1, k + n_after)
+        # Sole tilt relative to the ground 0.2 s after the switch (the foot has settled): world sole pitch from
+        # the posed robot minus the ground's pitch from heel to toe under it.
+        tilt = math.nan
+        ks = min(len(t) - 1, k + n_settle)
+        if meas_q and np.all(np.isfinite(cz)):
+            xs, ys = foot_world(f, ks)
+            czs = corners(xs, ys, g["yaw"][ks])
+            heel_z, toe_z = np.nanmean(czs[:2]), np.nanmean(czs[2:])
+            ground_pitch = math.atan2(toe_z - heel_z, a.toe - a.heel)
+            # True base pose, but the ground-truth x/y shifted by the foot's own estimate error (as foot_world).
+            base = (g["x"][ks], g["y"][ks], g["z"][ks], g["roll"][ks], g["pitch"][ks], g["yaw"][ks])
+            sole = ground.sole_pitch(base, [(n, TR[ks, c]) for n, c in meas_q], ankle_body[s])
+            tilt = math.degrees(sole - ground_pitch) if np.isfinite(sole) and np.isfinite(ground_pitch) else math.nan
         pitch_pp = math.degrees(np.ptp(g["pitch"][k:k1 + 1]))
         dz_pp = 100 * np.ptp(g["z"][k:k1 + 1])
         fell_here = fell_sim is not None and 0 <= fell_sim - t[k] <= 1.5
         rows.append(dict(case=tag, t=t[k], vx=vx_cmd[k], foot=s, x=x, y=y, gnd_cm=100 * gz, step_cm=100 * (gz - oz),
-                         edge_cm=100 * (np.nanmax(cz) - np.nanmin(cz)), pitch_pp=pitch_pp, dz_pp=dz_pp, FELL=fell_here))
+                         edge_cm=100 * (np.nanmax(cz) - np.nanmin(cz)), tilt_deg=tilt, pitch_pp=pitch_pp, dz_pp=dz_pp,
+                         FELL=fell_here))
     if not rows:
         print(f"{tag}: no touchdowns", file=sys.stderr)
         continue
@@ -153,11 +197,11 @@ for case in a.cases:
         kf = int(np.searchsorted(t, fell_sim))
         kf = min(kf, len(t) - 1)
         print(f"  FELL at sim {fell_sim:.2f} s, base at x {g['x'][kf]:.2f} y {g['y'][kf]:.2f} (vx cmd {vx_cmd[kf]:.1f})")
-    hdr = f"{'t':>7} {'vx':>4} {'ft':>2} {'x':>6} {'y':>6} {'gnd':>5} {'step':>5} {'edge':>5} {'pitch':>6} {'dz':>5}  "
+    hdr = f"{'t':>7} {'vx':>4} {'ft':>2} {'x':>6} {'y':>6} {'gnd':>5} {'step':>5} {'edge':>5} {'tilt':>5} {'pitch':>6} {'dz':>5}  "
     print("  " + hdr)
     for r in rows:
         print(f"  {r['t']:7.2f} {r['vx']:4.1f} {r['foot']:>2} {r['x']:6.2f} {r['y']:6.2f} {r['gnd_cm']:5.1f} {r['step_cm']:+5.1f} "
-              f"{r['edge_cm']:5.1f} {r['pitch_pp']:6.2f} {r['dz_pp']:5.1f}  {'FELL' if r['FELL'] else ''}")
+              f"{r['edge_cm']:5.1f} {r['tilt_deg']:5.1f} {r['pitch_pp']:6.2f} {r['dz_pp']:5.1f}  {'FELL' if r['FELL'] else ''}")
 
     R = np.array([(r["step_cm"], r["edge_cm"], r["pitch_pp"], r["dz_pp"], r["FELL"]) for r in rows], dtype=float)
     edge = R[:, 1] > a.edge_mm / 10
@@ -174,6 +218,12 @@ for case in a.cases:
           f"up {mean(up, 2)} | down {mean(down, 2)} | flat {mean(~up & ~down, 2)}")
     print(f"  height excursion after landing [cm]:  edge {mean(edge, 3)} | no edge {mean(~edge, 3)} | "
           f"up {mean(up, 3)} | down {mean(down, 3)} | flat {mean(~up & ~down, 3)}")
+    tilts = np.array([r["tilt_deg"] for r in rows], dtype=float)
+    if np.isfinite(tilts).any():
+        ok = np.isfinite(tilts)
+        print(f"  sole tilt to the ground 0.2 s after landing [deg]: mean {np.mean(tilts[ok]):+5.2f} | mean |tilt| "
+              f"{np.mean(np.abs(tilts[ok])):5.2f} | max |tilt| {np.max(np.abs(tilts[ok])):5.2f} | "
+              f"> 3 deg on {100 * np.mean(np.abs(tilts[ok]) > 3):.0f} % of landings")
     big = sorted(rows, key=lambda r: -abs(r["step_cm"]))[:4]
     print("  largest steps: " + "; ".join(
         f"{r['step_cm']:+.1f} cm at t {r['t']:.1f} (vx {r['vx']:.1f}, pitch {r['pitch_pp']:.1f}{', FELL' if r['FELL'] else ''})"
@@ -181,7 +231,7 @@ for case in a.cases:
     if fell_sim is not None:
         last = [r for r in rows if r["FELL"]]
         print("  strides before the fall: " + "; ".join(
-            f"{r['foot']} step {r['step_cm']:+.1f} edge {r['edge_cm']:.1f} cm" for r in last[-3:]))
+            f"{r['foot']} step {r['step_cm']:+.1f} edge {r['edge_cm']:.1f} cm tilt {r['tilt_deg']:+.1f} deg" for r in last[-3:]))
 
 if a.csv and rows_all:
     import csv

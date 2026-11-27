@@ -1510,3 +1510,47 @@ had to go before the re-run.
 
 Re-run both `slope_10` legs from the fixed build (`humanT25c2S10`); the `suite_mild` re-check
 (`humanT25cM`) is still outstanding (its SUITE file came back empty).
+
+### Run 25 C″ — `slope_10` re-run from the fixed build (humanT25c2S10): forward solved, the *backward stop* still falls
+
+Both legs of `slope_10` with humanT25c from `2528503`, against the T25a baseline (humanT25aS10). The
+telemetry tail is right this time (cap 0.12-0.28 m/s on the ramps, 100 % under cap there, contactSync
+counters plausible), so the numbers below are the first valid read of `followSlope` on 10 deg.
+
+- **Forward (`speeds`): 0 falls including the stop.** Holds 35.5 / 29.7 / 36.0 / 40.3 / 36.5 jerk vs
+  T25a 40.7 / 39.7 / 47.0 / 27.3 / 40.5; the ramp-to-stop transition 28.3 (T25a fell there), the stop
+  hold 3.39 at z 1.374 (the top plateau). Steady jerk 30.2, acc_hf 0.47, tau_rate 172; contactSync
+  advanced 26 / held 0 / blocked 20 / descending 14; 24 terrain steps, 75 % of the run under cap.
+- **Backward: FELL at 36.5 s, in the stop** - the same place as T25a and as the buggy T25c run. The
+  walk itself is now *better* than T25a: hold z 0.867 / 1.029 / 1.200 / 1.228 / 1.221 vs
+  0.863 / 1.006 / 1.104 / 1.079 / 1.143 (it climbs further at every speed, no stall), hold jerk
+  37.5 / 32.7 / 32.4 / 34.8 / 44.3 vs 28-55. But the -0.2 m/s *return* hold is already poor (step_l
+  0.06, v_err 0.24, leg_jerk 541) and the ramp-to-stop transition peaks at jerk 424 / tau_rate 509 with
+  arm_pp 59.4 deg; the stop hold ends at z 0.364 (on the ground). `descending` counted 45 vs 14 forward.
+
+So `followSlope` fixed what it was built for - the references on the incline - and forward 10 deg is a
+pass. What it did not fix is **stopping on the incline while facing downhill**, which fails identically
+with or without the slope references. Two things differ between the two stops: (1) the trailing foot
+at the stop is the *uphill* one going backward (the robot faces −x, walks +x: the rear foot in travel
+terms is the front foot in body terms); below `standingSpeed` the plan anchors at the feet's midpoint
+with v = 0, so both stance references move to the plane at the midpoint - fine for the sole heights,
+but the plane *normal* keeps the heading's sign, and the swing-free stance has nothing to correct a
+reference that is tilted the wrong way about the body's y; (2) the backward `descending` count is
+3x forward, i.e. contactSync had many more "foot still descending at the switch" events - landings on
+the toe (the uphill corner going backward) that never settle. Which of the two it is cannot be read
+from the SUITE tables; the strides table decides it.
+
+`terrain_strides.py` now prints a **`tilt` column**: the sole's pitch relative to the ground under it
+0.2 s after each touchdown (the ground-truth base pose plus the measured joint angles posed in the
+scene, the ankle-roll link's x axis against the ramp's heel-to-toe rise; positive = toe up / resting on
+the heel, negative = on the toe). On a ramp `edge` is just the ramp's own 3.0 cm rise under the sole and
+says nothing about the foot; `tilt` does. Checked on a synthetic case: a level sole on the +10 deg
+up-ramp reads −10.0, the same ankle pitched 10 deg nose-down reads −20.0.
+
+Next: `terrain_strides.py tuning_results/humanT25c2S10__backward tuning_results/humanT25c2S10__speeds`
+and `fall_anatomy.py tuning_results/humanT25c2S10__backward` - if backward landings carry a consistent
+non-zero `tilt` where forward ones do not, the stop fails because the feet never sat flat on the ramp
+(contactSync / touchdown-velocity territory); if `tilt` is small on both and the fall starts after the
+last step, it is the standing reference (the midpoint anchor and the normal's sign) and the fix is in
+`planSlopeFootReference`'s standing branch and `getContactNormal`. `followSlope` stays off in the
+shipped config until this is settled; humanT25cM (`suite_mild`) is still outstanding.
