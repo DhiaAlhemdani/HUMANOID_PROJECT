@@ -752,3 +752,12 @@ range 0.60-0.79 stays (0.60-0.68 untested walking; standing it is fine). Do not 
 above ~0.745 (posture table, higher `q.basePose[2]`, straight-leg `defaultJointState`) without
 re-tuning the whole stack. If a crouched walk at the low end matters (0.68 at 0.8 m/s), the lever is the
 height weight, not the posture.
+
+**`height` script, shipped config (`humanCSr1__height`):** walking at 0.5 m/s the command 0.785 -> 0.70
+moves the walked height 0.734 -> 0.725 m (9 mm for an 85 mm command), transitions 29.8 / 32.4 = the
+steady level, no visible change in the video; standing, 0.740 -> 0.661 -> 0.741, tracked. So the slider
+is a standing-height control; walking, the gait keeps its own height. If the walk is to follow the slider,
+the lever is `q.basePose[2]` (50) with the range capped at the natural walking height (`defaultBaseHeight`
+0.735, `maxBaseHeight` 0.745) so a stiffer height cost can never push the walk into the straight-leg
+regime: `humanHZ200` / `humanHZ400` (z weight 200 / 400, Q and Qf), `height` + `speeds` against
+`humanCSr1` - the cost is vertical stiffness at touchdown (acc_hf, jerk), the ladder decides.
