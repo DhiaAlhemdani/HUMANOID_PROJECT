@@ -500,10 +500,14 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           rightWeights: 
             [2.0, 2.0, 1.0, 8.0, 0.2, 0.2]
 
-        # Double-support load-share cost (D2/D3): 0 disables. Whole-DS shaping (windows 0) fell at
-        # 0.8 m/s at every weight >= 0.01 (run 13); the end windows shape only the switch ends.
-        contactLoadShareWeight: 0.0
-        contactLoadShareLiftOffWindow: 0.0
+        # Double-support load-share cost (D2/D3). Shipped as a lift-off end window (run 14,
+        # docs/results/human_gait_template.md): the plan used to drop the lifting foot's force
+        # (113 N) in one node, the pelvis jerk sat there (3.5-4x the stride average); with the last
+        # 60 ms shaped the force reaches zero continuously, hold jerk -10..-25 % at 0.2-0.8 m/s,
+        # 0 falls. Whole-DS shaping (windows 0) fell at 0.8 m/s at every weight >= 0.01 (run 13) and
+        # the touchdown window moved the jerk onto the (50 ms early) touchdown: both stay off.
+        contactLoadShareWeight: 0.1
+        contactLoadShareLiftOffWindow: 0.06
         contactLoadShareTouchDownWindow: 0.0
         # Wrench-as-state layout: share of the rate weight charged at the anchored first node (see parameters.yaml).
         wrenchRateFirstNodeScale: 1.0

@@ -39,8 +39,16 @@ class LoadShareContractTest(unittest.TestCase):
         self.assertEqual(entry["default_value"], 0.0)
         self.assertIn("gt_eq", entry["validation"])
 
-    def test_shipped_configs_pin_weight_off(self):
-        self.assertEqual(PARAMS["ocs2"]["costs"]["contactLoadShareWeight"], 0.0)
+    def test_shipped_config_shapes_the_lift_off_end_only(self):
+        # G1 ships the lift-off end window (docs/results/human_gait_template.md run 14): the whole-DS
+        # smoothstep (both windows 0) fell at 0.8 m/s and moved the jerk onto the touchdown.
+        costs = PARAMS["ocs2"]["costs"]
+        self.assertEqual(costs["contactLoadShareWeight"], 0.1)
+        self.assertEqual(costs["contactLoadShareLiftOffWindow"], 0.06)
+        self.assertEqual(costs["contactLoadShareTouchDownWindow"], 0.0)
+        for key in ("contactLoadShareLiftOffWindow", "contactLoadShareTouchDownWindow"):
+            self.assertEqual(SCHEMA["ocs2"]["costs"][key]["default_value"], 0.0)
+            self.assertIn(f"config.{key} = p.costs.{key};", BUILDER)
 
     def test_builder_maps_weight(self):
         self.assertIn("config.contactLoadShareWeight = p.costs.contactLoadShareWeight;", BUILDER)

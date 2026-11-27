@@ -466,3 +466,31 @@ Touchdown is the next item once the dump is gone: the plan reaches the ground 50
 (20-40 ms of it by construction - touchDownVelocity -0.05 and offset -1 mm cross z = 0 before the
 switch - plus the tracking lead). Candidates: the 2.C-timing set A winners (offset 0 / +1 mm,
 acc_hf -16 / -25 %, never shipped because of a noisy stop metric), then a contact-triggered switch.
+
+## Run 14 — lift-off end window (speeds, vs humanUB4) → shipped
+
+| | humanUB4 | **LO 0.1 / 60 ms** | LO 0.1 / 40 ms | LO 0.01 / 60 ms |
+|---|---|---|---|---|
+| steady jerk / acc_hf / tau-rate | 38.2 / 0.64 / 210 | **33.1 / 0.59 / 213** (-13 / -9 %) | 35.8 / 0.61 / 217 | 37.3 / 0.63 / 220 |
+| hold 0.2 / 0.5 / 0.8 / 0.5 / 0.2 | 35.4 / 44.2 / 69.7 / 42.0 / 37.8 | **27.8 / 39.6 / 62.8 / 39.6 / 28.5** | 31.6 / 35.3 / 74.6 / 43.1 / 30.3 | 32.1 / 36.4 / 83.7 / 41.3 / 29.8 |
+| transition max | 67.2 | 73.4 (0.8 ramp) | 60.8 | 79.4 (fail) |
+| final stop | 0.15 | 0.10 | 0.22 | 0.47 |
+| falls / solve Hz | 0 / 41.4 | **0** / 45.8 | 0 / 43.9 | 0 / 40.3 |
+| lift-off conc (0.2 / 0.5) | 3.7-3.9 / 3.1-3.5 | 1.1-1.5 / 1.4-1.6 | 1.7-2.3 / 1.5-1.8 | 1.1-1.2 / 1.5-2.0 |
+
+Profile at 0.2 m/s: the lifting foot's planned force 164 N at -90 ms -> 6.5 N at -10 ms -> 0
+(was 113 -> 0 in one node); jerk at the switch 26-41 (was 104). At 0.8 m/s a 16 N residual and the
+whole-body motion remain (jerk 90 around the switch, az -2.5 at -10 ms). Touchdown unchanged
+(139 N step at the planned switch, 50 ms after the foot) and now the dominant event everywhere
+(sw_td concentration 3.0-3.6).
+
+**Shipped: `contactLoadShareWeight 0.1`, `contactLoadShareLiftOffWindow 0.06`.** -21 / -10 / -10 %
+at the 0.2 / 0.5 / 0.8 holds, -25 % on the way down, 0 falls, no solve-rate cost (the cost was
+already compiled). Against the fixed-controller baseline humanC4 (49.3 / 55.5 / 88.6) the holds
+are now **-44 / -29 / -29 %**.
+
+Next: the touchdown. The plan reaches the ground 50 +- 2 ms after the foot at every step at 0.2 /
+0.5 (20-40 ms of it by construction: `touchDownVelocity -0.05` with `touchDownHeightOffset -1 mm`
+crosses z = 0 before the switch, then presses to -2 mm). Config candidates first (2.C-timing set A:
+offset 0 / +1 mm gave acc_hf -16 / -25 % in steady walk; `touchDownVelocity` 0 / -0.02), then a
+contact-triggered switch.
