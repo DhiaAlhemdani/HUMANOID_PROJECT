@@ -138,6 +138,8 @@ class WbIdMpcInterface final : public RobotInterface {
     TerrainSpeedCapSettings terrainSpeedCap;
     bool useTerrainHeightEstimate = false;
     scalar_t maxTerrainHeightStep = 0.01;
+    //! Foot references follow the incline the cap reads (SlopeFootReference.h); needs both of the above on.
+    bool followSlope = false;
 
     std::vector<TaskSpaceCostConfig> taskSpaceCosts;
   };

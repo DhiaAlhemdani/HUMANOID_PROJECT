@@ -1415,3 +1415,55 @@ max 60.2; forward steady 38.7 / 223, transitions 46.4 / 282 (T24eM: 36.7 forward
 Rung status unchanged: `suite_mild` pass (1 standing-edge fall in 4 T25a/T24e legs), `suite_rough`
 parked (foot), `slope_5` pass, `slope_10` walks / falls in the stop (25 C), `curb_4` pass, `curb_8` not
 worth running until the swing height follows the cap tier.
+
+### Run 25 C — foot references on the incline the cap reads (`groundHeight.followSlope`, humanT25c)
+
+**What the flat-ground references do wrong on a ramp.** The swing update gives both feet one support
+height - `computeGroundHeightEstimate`, the *mean* of the stance soles - and the stance equality
+constraint tracks it with `positionZ` gain 200: on a 10 deg ramp the stance feet differ by 3.5 cm, so
+the rear foot is pulled up and the front foot down by 1.75 cm, all the time. Every foot orientation term
+- the task-space foot cost (orientation weight 1000), the stance orientation feedback
+(`orientationErrorGain` 20), the friction cone and the initializer - reads
+`SwitchedModelReferenceManager::getContactNormal()`, which is the world vertical outside the terrain
+modes: the sole is held level on a 10 deg plane and rests on its heel or toe edge. That is the
+`edge` 3.0 cm at every `slope_10` landing (1.5 on 5 deg), and standing on two edges is how both
+`slope_10` runs ended (run 25 B). The swing touchdown height is the same mean, so the foot lands
+3.5 cm early going up and late going down per 0.2 m stride, which contactSync has been absorbing.
+
+**Change** (`SlopeFootReference.h/.cpp`, `reference.groundHeight.followSlope`, default off; the G1
+file off, `config/tuning/humanT25c.yaml` = T24e / T25a + the flag):
+- while the cap's slope samples agree (`terrainSlope() != 0`), the flat-ground branch of
+  `modifyReferences` plans per-foot support heights instead of the single mean: **a stance foot's
+  reference is its own measured sole height** (no pull, whatever the plane fit); the plan is anchored at
+  the leading stance foot (furthest along the travel direction - the one that landed last) and the
+  n-th touchdown in the horizon is planned at `anchor height + slope x v x (t_touchdown - t_anchor)`
+  (footfalls of a periodic gait at speed v are v x elapsed time apart), the lift-off height of the
+  foot in the air from the same rule at its lift-off time; below 0.05 m/s the anchor is the feet's
+  midpoint and every touchdown is planned at its height (a first step from standing lands next to the
+  feet). `touchDownHeightOffset` is applied as on the flat path. Base height adaptation is unchanged
+  (still the mean, rate-limited).
+- `getContactNormal()` returns the plane's normal, `normalize(-slope x heading, 1)`, published by
+  `updateTerrainSpeedCap` as a world-frame gradient (zero while flat or when the flag is off), so the
+  foot cost, the stance orientation feedback, the cone and the initializer all pitch the sole to the
+  ramp without touching their code.
+- Gates: `useEstimate` (the heights are measured) and `terrainSpeedCap.enabled` (the slope); the
+  builder refuses the flag without them. Flat ground and tile fields never read a consistent slope
+  (`slopeConsistency` 0.03), so `suite_mild` / flat are unchanged by construction; the plane is dropped
+  at the first double support whose sample disagrees (plateau after a ramp: one step of lag, same as
+  the cap, and that step lands as it does today).
+- Telemetry `terrain/next_touchdown` (the planned plane height of the next touchdown, NaN while flat).
+  Tests: `tests/slope_foot_reference_test.cpp` (up / down / standing / flat / flight / normal),
+  `tests/slope_foot_reference_contract_test.py` (plumbing, candidate = T24e + the flag).
+
+**Expectation.** `slope_10`: `edge` 3.0 -> < 1 cm at the landings, the stop survivable (both soles flat
+on the ramp), pitch per landing lower; `slope_5` at least unchanged. Not addressed: a tile edge under
+the mid-sole (`suite_mild` stop fall, `suite_rough`) - a plane has no edges.
+
+Run (the slope_10 pair first, then slope_5 and the mild re-check for no regression):
+
+```bash
+TERRAIN=slope_10 SCRIPTS="speeds backward" tests/tuning/run_suite.sh humanT25cS10 config/tuning/humanT25c.yaml humanT25aS10
+SKIP_BUILD=1 TERRAIN=slope_5 SCRIPTS="speeds backward" tests/tuning/run_suite.sh humanT25cS5 config/tuning/humanT25c.yaml humanT25aS5
+SKIP_BUILD=1 TERRAIN=uneven_suite_mild SCRIPTS="speeds backward" tests/tuning/run_suite.sh humanT25cM config/tuning/humanT25c.yaml humanT25aM
+~/.venvs/replay/bin/python tests/tuning/terrain_strides.py tuning_results/humanT25cS10__speeds tuning_results/humanT25cS10__backward
+```

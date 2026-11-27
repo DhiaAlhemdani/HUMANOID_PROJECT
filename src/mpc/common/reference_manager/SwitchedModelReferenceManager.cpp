@@ -721,8 +721,15 @@ void SwitchedModelReferenceManager::modifyReferences(scalar_t initTime,
     planner.getHeightSequences(modeSchedule, liftOffHeightSequence, touchDownHeightSequence);
     swingTrajectoryPtr_->update(modeSchedule, liftOffHeightSequence, touchDownHeightSequence, swingHeights);
   } else {
-    scalar_t terrainHeight = adaptToCurrentGroundHeight(targetTrajectories, initState, initMode);
-    swingTrajectoryPtr_->update(modeSchedule, terrainHeight, swingHeights);
+    const scalar_t terrainHeight = adaptToCurrentGroundHeight(targetTrajectories, initState, initMode);
+    const bool wellFormed = modeSchedule.eventTimes.size() + 1 == modeSchedule.modeSequence.size();
+    if (slopeFootReference_ && useTerrainHeightEstimate_ && terrainSlope_.load() != 0.0 && wellFormed) {
+      // On an incline the cap has read: per-foot support heights on the plane (SlopeFootReference.h).
+      updateSwingOnSlope(initTime, initState, modeSchedule, swingHeights);
+    } else {
+      swingTrajectoryPtr_->update(modeSchedule, terrainHeight, swingHeights);
+      slopeNextTouchDownHeight_.store(std::numeric_limits<scalar_t>::quiet_NaN());
+    }
   }
 
   modeSchedule_ = modeSchedule;
@@ -939,6 +946,8 @@ void SwitchedModelReferenceManager::updateTerrainSpeedCap(scalar_t initTime, con
                                                           const ModeSchedule& modeSchedule) {
   if (!terrainSpeedCap_.getSettings().enabled) {
     terrainSpeedCapValue_.store(std::numeric_limits<scalar_t>::infinity());
+    slopeGradientX_.store(0.0);
+    slopeGradientY_.store(0.0);
     return;
   }
   // The schedule after contactSync: an advanced touchdown counts as double support at once.
@@ -956,7 +965,57 @@ void SwitchedModelReferenceManager::updateTerrainSpeedCap(scalar_t initTime, con
   terrainSpeedCapValue_.store(cap);
   terrainStepCount_.store(terrainSpeedCap_.stepCount());
   terrainLastStep_.store(terrainSpeedCap_.lastStep());
-  terrainSlope_.store(terrainSpeedCap_.slopeConsistent() ? terrainSpeedCap_.slope() : 0.0);
+  const scalar_t slope = terrainSpeedCap_.slopeConsistent() ? terrainSpeedCap_.slope() : 0.0;
+  terrainSlope_.store(slope);
+  // The plane the foot references follow (getContactNormal, the swing update): zero while flat or off.
+  const scalar_t followed = slopeFootReference_ ? slope : 0.0;
+  slopeGradientX_.store(followed * heading(0));
+  slopeGradientY_.store(followed * heading(1));
+}
+
+void SwitchedModelReferenceManager::updateSwingOnSlope(scalar_t initTime, const vector_t& initState,
+                                                       const ModeSchedule& modeSchedule, const scalar_array_t& swingHeights) {
+  // Same frame as the cap's slope sample: sole heights and positions along the heading.
+  const scalar_t yaw = mpcRobotModelPtr_->getBasePose(initState)(3);
+  const vector2_t heading(std::cos(yaw), std::sin(yaw));
+  const feet_array_t<vector3_t> feet = computeFeetPositions(initState);
+  SlopeFootReferenceInput input;
+  input.initTime = initTime;
+  input.slope = terrainSlope_.load();
+  input.velocityAlong = mpcRobotModelPtr_->getBaseComLinearVelocity(initState).head<2>().dot(heading);
+  input.contacts = modeNumber2StanceLeg(modeSchedule.modeAtTime(initTime));
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    input.soleHeights[foot] = feet[foot](2);
+    input.soleAlong[foot] = feet[foot].head<2>().dot(heading);
+  }
+  input.touchDownHeightOffset = swingTrajectoryPtr_->getConfig().touchDownHeightOffset;
+
+  feet_array_t<std::vector<bool>> contactSequence;
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    contactSequence[foot].reserve(modeSchedule.modeSequence.size());
+  }
+  for (const size_t mode : modeSchedule.modeSequence) {
+    const contact_flag_t flags = modeNumber2StanceLeg(mode);
+    for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+      contactSequence[foot].push_back(flags[foot]);
+    }
+  }
+  const SlopeFootReferencePlan plan = planSlopeFootReference(input, modeSchedule.eventTimes, contactSequence);
+  swingTrajectoryPtr_->update(modeSchedule, plan.liftOffHeights, plan.touchDownHeights, swingHeights);
+
+  // Diagnostics: the next touchdown's planned height.
+  scalar_t next = std::numeric_limits<scalar_t>::quiet_NaN();
+  const auto& eventTimes = modeSchedule.eventTimes;
+  const size_t current = static_cast<size_t>(std::upper_bound(eventTimes.begin(), eventTimes.end(), initTime) - eventTimes.begin());
+  for (size_t e = current; e < eventTimes.size() && std::isnan(next); ++e) {
+    for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+      if (!contactSequence[foot][e] && contactSequence[foot][e + 1]) {
+        next = plan.touchDownHeights[foot][e];
+        break;
+      }
+    }
+  }
+  slopeNextTouchDownHeight_.store(next);
 }
 
 feet_array_t<vector3_t> SwitchedModelReferenceManager::computeFeetPositions(const vector_t& initState) {

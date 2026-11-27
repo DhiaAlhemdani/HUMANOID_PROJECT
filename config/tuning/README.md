@@ -14,6 +14,7 @@ copies under `tuning_results/` kept disappearing between sessions. Pass the path
 | `humanT24c.yaml` | humanT23d + the two-tier cap `[0.01, 0.025] -> [0.5, 0.25]` (run 24 C, for `suite_rough`; `make_config` from a current G1 file now needs the knots set explicitly, the defaults moved to T24e's) |
 | `humanT24d.yaml` | humanT24c with tier 2 earlier and slower: `[0.01, 0.02] -> [0.5, 0.2]` (run 24 D) |
 | `humanT24e.yaml` | three tiers `[0.01, 0.02, 0.035] -> [0.5, 0.2, 0.1]` (run 24 D; **the terrain candidate**: `suite_mild` 0 falls, flat unchanged - now the G1 defaults of the block). From run 25 A every file here also carries the slope tiers `slopeKnots [0.05, 0.12] -> [0.3, 0.2]` (the block's defaults). |
+| `humanT25c.yaml` | humanT24e / T25a + `groundHeight.followSlope true` (run 25 C: on an incline the cap reads, per-foot support heights on the plane and the plane's normal for the foot orientation; generated from the current G1 file with the T24e keys set explicitly) |
 | `humanT24f.yaml` | humanT24e + a smaller planned support polygon: `contactGeometry.rectangle [0.05, -0.05, 0.02, -0.02]` (from +-0.09 / +-0.03), WB-ID CoP clip 0.06 / 0.025 (run 24 E: edge landings) |
 
 Regenerate, e.g.:
@@ -26,5 +27,6 @@ tests/tuning/make_config.py config/tuning/humanT24b.yaml --in config/tuning/huma
 tests/tuning/make_config.py config/tuning/humanT24c.yaml --in config/tuning/humanT23d.yaml ocs2.reference.terrainSpeedCap.enabled=true
 tests/tuning/make_config.py config/tuning/humanT24d.yaml --in config/tuning/humanT24c.yaml "ocs2.reference.terrainSpeedCap.stepKnots=[0.01, 0.02]" "ocs2.reference.terrainSpeedCap.speedKnots=[0.5, 0.2]"
 tests/tuning/make_config.py config/tuning/humanT24e.yaml --in config/tuning/humanT24c.yaml "ocs2.reference.terrainSpeedCap.stepKnots=[0.01, 0.02, 0.035]" "ocs2.reference.terrainSpeedCap.speedKnots=[0.5, 0.2, 0.1]"
+tests/tuning/make_config.py config/tuning/humanT25c.yaml ocs2.reference.groundHeight.useEstimate=true ocs2.gait.swingTrajectory.touchDownVelocity=-0.15 ocs2.gait.contactSync.descentVelocity=0.05 ocs2.gait.contactSync.blockedHeight=0.01 ocs2.gait.contactSync.heightThreshold=0.01 ocs2.reference.terrainSpeedCap.enabled=true ocs2.reference.groundHeight.followSlope=true
 tests/tuning/make_config.py config/tuning/humanT24f.yaml --in config/tuning/humanT24e.yaml "ocs2.model.contactGeometry.rectangle=[0.05, -0.05, 0.02, -0.02]" control.wholeBody.soleHalfLength=0.06 control.wholeBody.soleHalfWidth=0.025
 ```

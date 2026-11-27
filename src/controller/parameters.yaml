@@ -513,6 +513,12 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             not itself pin contact heights to zero; does not supply a terrain map or surface normals."}
         maxStepPerSolve: {type: double, default_value: 0.01, description: "Bound [m] on the support-height reference
             change per solver iteration, limiting reference jumps at contact transitions", validation: {gt: [0.0]}}
+        followSlope: {type: bool, default_value: false, description: "Foot references follow the incline the terrain
+            speed cap reads (SlopeFootReference.h, run 25 C): while the cap's slope samples agree the ground is a
+            plane, each stance foot's height reference is its own sole height, the swing touchdowns are planned on
+            the plane one stride further along, and the foot orientation terms (task-space foot cost, stance
+            orientation feedback, friction cone) use the plane's normal instead of the vertical. Flat ground and
+            tile fields are unchanged (no consistent slope). Needs useEstimate and terrainSpeedCap.enabled."}
       terrainSpeedCap:
         enabled: {type: bool, default_value: false, description: "Blind terrain speed cap (TerrainSpeedCap.h): when
             both feet are in contact, a sole-height difference of at least stepKnots[i] marks the ground as uneven

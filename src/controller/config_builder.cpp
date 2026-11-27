@@ -442,6 +442,12 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
 
   config.useTerrainHeightEstimate = p.reference.groundHeight.useEstimate;
   config.maxTerrainHeightStep = p.reference.groundHeight.maxStepPerSolve;
+  config.followSlope = p.reference.groundHeight.followSlope;
+  if (config.followSlope && !(config.useTerrainHeightEstimate && config.terrainSpeedCap.enabled)) {
+    throw std::invalid_argument(
+      "[whole_body_inverse_dynamics_mpc_config_builder] reference.groundHeight.followSlope needs "
+      "reference.groundHeight.useEstimate (the heights are measured) and reference.terrainSpeedCap.enabled (the slope)");
+  }
 
   config.torsoTiltCost.activate = p.costs.torsoTiltCost.activate;
   config.torsoTiltCost.linkName = p.costs.torsoTiltCost.linkName;

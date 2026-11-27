@@ -2234,8 +2234,9 @@ void HumanoidWholeBodyInverseDynamicsMpcController::configure_tracking()
     solver_names.push_back(name);
   }
   // Blind terrain speed cap (TerrainSpeedCap.h): cap in force (0 = none), double supports that tripped it, last step [m],
-  // incline along the heading the feet agree on (rise / run, 0 = none).
-  for (const auto* name : {"terrain/cap", "terrain/steps", "terrain/last_step", "terrain/slope"}) {
+  // incline along the heading the feet agree on (rise / run, 0 = none), and the plane height planned for the next
+  // touchdown when the foot references follow that incline (SlopeFootReference.h; NaN while flat / off).
+  for (const auto* name : {"terrain/cap", "terrain/steps", "terrain/last_step", "terrain/slope", "terrain/next_touchdown"}) {
     solver_names.push_back(name);
   }
   solver_row_.data.assign(solver_names.size(), std::numeric_limits<double>::quiet_NaN());
@@ -2344,6 +2345,7 @@ void HumanoidWholeBodyInverseDynamicsMpcController::publish_solver_metrics(doubl
     put(static_cast<double>(reference_manager->terrainStepCount()));
     put(reference_manager->terrainLastStep());
     put(reference_manager->terrainSlope());
+    put(reference_manager->slopeNextTouchDownHeight());
   }
   solver_publisher_->publish(solver_row_);
 }

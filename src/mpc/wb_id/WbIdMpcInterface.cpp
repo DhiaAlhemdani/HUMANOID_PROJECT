@@ -91,6 +91,7 @@ WbIdMpcInterface::WbIdMpcInterface(Config config, bool setupOCP)
   referenceManagerPtr_->setTerrainSpeedCapSettings(config_.terrainSpeedCap);
   referenceManagerPtr_->setCaptureFootPlacementSettings(config_.captureFootPlacement);
   referenceManagerPtr_->setUseTerrainHeightEstimate(config_.useTerrainHeightEstimate, config_.maxTerrainHeightStep);
+  referenceManagerPtr_->setSlopeFootReference(config_.followSlope);
 
   if (config_.initialState.size() != static_cast<Eigen::Index>(mpcRobotModelPtr_->getStateDim())) {
     throw std::invalid_argument("[WbIdMpcInterface] initialState size (" + std::to_string(config_.initialState.size()) +

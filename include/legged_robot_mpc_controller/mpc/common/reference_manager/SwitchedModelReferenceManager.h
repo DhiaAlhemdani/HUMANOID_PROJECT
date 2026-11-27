@@ -45,6 +45,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "legged_robot_mpc_controller/mpc/common/gait/ContactSync.h"
 #include "legged_robot_mpc_controller/mpc/common/gait/GaitSchedule.h"
 #include "legged_robot_mpc_controller/mpc/common/gait/MotionPhaseDefinition.h"
+#include "legged_robot_mpc_controller/mpc/common/gait/SlopeFootReference.h"
 #include "legged_robot_mpc_controller/mpc/common/gait/TerrainSpeedCap.h"
 #include "legged_robot_mpc_controller/mpc/common/reference_manager/StairClimbingPlan.h"
 #include "legged_robot_mpc_controller/mpc/common/reference_manager/TerrainFootholdPlanner.h"
@@ -271,6 +272,17 @@ scalar_t maxOffset = 0.6;
   scalar_t terrainLastStep() const { return terrainLastStep_.load(); }
   scalar_t terrainSlope() const { return terrainSlope_.load(); }  //!< [-] incline along the heading the feet agree on (0 = none / flat)
 
+  /**
+   * Foot references follow the incline the cap reads (SlopeFootReference.h, run 25 C): per-foot support
+   * heights on the plane for the swing planner and the plane's normal for the foot orientation terms
+   * (getContactNormal). Needs the ground height estimate (the heights are measured) and the cap (the
+   * slope). Solver thread only; off = the flat-ground references.
+   */
+  void setSlopeFootReference(bool enabled) { slopeFootReference_ = enabled; }
+  bool slopeFootReferenceEnabled() const { return slopeFootReference_; }
+  //! [m] the plane height the last solve planned for the next touchdown (diagnostics; NaN while flat).
+  scalar_t slopeNextTouchDownHeight() const { return slopeNextTouchDownHeight_.load(); }
+
   void setArmSwingSettings(const ArmSwingSettings& settings) { armSwing_ = settings; }
   const ArmSwingSettings& getArmSwingSettings() const { return armSwing_; }
 
@@ -416,7 +428,16 @@ scalar_t maxOffset = 0.6;
   void setTerrainWalkActive(bool active) { terrainWalkActive_.setBuffer(active); }
   bool isTerrainWalkActive() const { return terrainWalkActive_.get() && terrainFootholdPlannerPtr_ != nullptr; }
   vector3_t getContactNormal(size_t foot, scalar_t time) const {
-    return isTerrainWalkActive() ? terrainFootholdPlannerPtr_->getContactNormal(foot, time) : vector3_t(0.0, 0.0, 1.0);
+    if (isTerrainWalkActive()) {
+      return terrainFootholdPlannerPtr_->getContactNormal(foot, time);
+    }
+    // The incline the blind cap reads, when the foot references follow it (zero gradient otherwise).
+    const scalar_t gx = slopeGradientX_.load();
+    const scalar_t gy = slopeGradientY_.load();
+    if (gx != 0.0 || gy != 0.0) {
+      return vector3_t(-gx, -gy, 1.0).normalized();
+    }
+    return vector3_t(0.0, 0.0, 1.0);
   }
 
   /**
@@ -508,11 +529,20 @@ scalar_t maxOffset = 0.6;
 
   /// Terrain speed cap: solver thread only (modifyReferences); the atomics are its published state.
   void updateTerrainSpeedCap(scalar_t initTime, const vector_t& initState, const ModeSchedule& modeSchedule);
+  /// Swing planner update with per-foot heights on the incline the cap reads (solver thread only).
+  void updateSwingOnSlope(scalar_t initTime, const vector_t& initState, const ModeSchedule& modeSchedule,
+                          const scalar_array_t& swingHeights);
   TerrainSpeedCap terrainSpeedCap_;
   std::atomic<scalar_t> terrainSpeedCapValue_{std::numeric_limits<scalar_t>::infinity()};
   std::atomic<size_t> terrainStepCount_{0};
   std::atomic<scalar_t> terrainLastStep_{0.0};
   std::atomic<scalar_t> terrainSlope_{0.0};
+
+  /// Incline foot references: solver thread only (modifyReferences); the gradient atomics feed getContactNormal.
+  bool slopeFootReference_ = false;
+  std::atomic<scalar_t> slopeGradientX_{0.0};  //!< slope x heading, world xy; zero = flat references
+  std::atomic<scalar_t> slopeGradientY_{0.0};
+  std::atomic<scalar_t> slopeNextTouchDownHeight_{std::numeric_limits<scalar_t>::quiet_NaN()};
 
   std::shared_ptr<GaitSchedule> gaitSchedulePtr_;
   std::shared_ptr<SwingTrajectoryPlanner> swingTrajectoryPtr_;
