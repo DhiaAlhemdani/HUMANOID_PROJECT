@@ -281,24 +281,45 @@ node. Shipped: `torqueConstraintNodes: 4` in `config/g1/ros2_controllers.yaml` (
 (N-1)*dt effective window), `holdOnTorqueWindowOverrun: true`. Both apply to the baseline too; a
 `human4` baseline run with the shipped config is the pending comparison.
 
-## Run 9 — `humanUB4` (shipped config + recipe, speeds + omni) and a wrong baseline
+## Run 9 — fixed-controller baseline `humanC4` and `humanUB4` (speeds + omni)
 
-`human4` was run with `default`, i.e. the shipped four-rung gait ladder, not the `human` baseline
-(= shipped config + `ocs2.gait.continuous.enabled=true`, step B). Not comparable - but informative
-on its own: the ladder at 0.8 m/s holds with jerk **270.8** / acc_hf 5.66 / tau-rate 1062 (steps 0.24 m,
-hl_leg 11), against 88.7 for the continuous law and 69.7 for the template; at 0.2 m/s it trots 7 cm
-steps at jerk 69 (law 47, template 35). The continuous law should ship on.
+`humanC4` = shipped config (nodes 4 + hold) + `gait.continuous.enabled=true`, HEIGHT 0.795 — the
+`human` baseline rerun on the fixed controller. (A first attempt used `default`, i.e. the shipped
+four-rung ladder: not comparable, but it measured the ladder at 0.8 m/s for the first time — hold
+jerk **270.8** / acc_hf 5.66 / tau-rate 1062 against 88.7 for the continuous law, and 7 cm trot steps
+at jerk 69 at 0.2 m/s against 47. The law is a large win on its own and should ship on.)
 
-`humanUB4` (upper-body recipe on the fixed controller, 0 falls, 40.6 Hz), against the *old* `human`:
+**Controller fix on the baseline: neutral.** humanC4 vs human: steady 43.5 / 0.799 / 214 vs
+43.0 / 0.802 / 216; 0.8 hold 88.6 vs 88.7; the only guard fail is the 0.8 ramp 83.2 vs 73.6
+(ramp spread across repeats is +-15, see runs 7/8). The baseline never fell before the fix and is
+not smoother after it: the fallback mechanism cost the *template* runs their 0.8 m/s hold, it is not
+what makes the baseline rough at 0.8. humanC4 solved at 64.1 Hz against 45.5 for `human`, with no
+config change that could explain it (shipped yaml diff since `9754d1b`: new keys, all off) — the
+machine load differs between sessions, so solve rates are only comparable within a session.
 
-| segment | human (old) | humanUB4 |
-|---|---|---|
-| speeds hold 0.2 / 0.5 / 0.8 | 47.0 / 56.6 / 88.7 | **35.4 / 44.2 / 69.7** |
-| speeds ramps max | 73.6 | 67.2 |
-| speeds final stop | 0.2 | 0.15 |
-| omni 0.3 / +turn / 0.3 | 47.8 / 51.1 / - | 32.8 / 53.7 / 39.9 |
-| omni 0.6 / diag / back | 65.6 / 48.1 / 48.5 | 51.5 / 39.4 / 38.7 |
-| omni stops | ~1 / 0.3 | 1.1 / 2.3 |
+**Template on the fixed controller: ~20 % smoother everywhere but the turn, 0 falls.**
 
-Pending: the proper fixed-controller baseline `humanC4` (continuous law + nodes 4 + hold) to split the
-gain between the controller fix and the template.
+| | humanC4 (baseline) | humanUB4 | delta |
+|---|---|---|---|
+| steady jerk / acc_hf / tau-rate | 43.5 / 0.80 / 214 | **34.9 / 0.58 / 189** | -20 % / -27 % / -12 % |
+| transition max jerk / acc_hf / tau-rate | 83.2 / 1.22 / 399 | **67.2 / 1.05 / 362** | -19 % |
+| speeds hold 0.2 / 0.5 / 0.8 | 49.3 / 55.5 / 88.6 | **35.4 / 44.2 / 69.7** | -28 / -20 / -21 % |
+| speeds 0.5 / 0.2 on the way down | 54.4 / 47.2 | 42.0 / 37.8 | -23 / -20 % |
+| omni 0.3 / +turn 0.4 / 0.3 | 49.7 / 49.9 / 48.9 | 32.8 / **53.7** / 39.9 | -34 / +8 / -18 % |
+| omni 0.6 / diag / back | 67.7 / 45.2 / 48.0 | 51.5 / 39.4 / 38.7 | -24 / -13 / -19 % |
+| stops (speeds; omni x2) | 3.6; 0.2 / 0.3 | 0.15; 1.1 / 2.3 | quiet both |
+| v_err max | 0.172 | 0.193 | |
+| arm swing pp (0.5 / 0.8) | 1.1 / 1.5 deg | 5.9 / 8.5 deg | template |
+| solve Hz | 64.1 | 40.6 | **-37 %, guard fail** |
+
+The turn (+8 %, ~4 units) is the one segment the template does not improve; the arm / waist
+template is phase-locked to the stride and the yaw-rate command is not in it. The solve-rate drop is
+the open cost: the recipe carries the wrench-state layout (+12 states, +12 inputs) and the
+per-node template; earlier sessions measured both at a few percent (44.1 / 42.0 vs 45.5) when
+everything ran near 45 Hz, which now looks like a load-bound number. To be split before shipping:
+a `humanC4W` run (humanC4 + wrench state 1e-4, no template) in the same session as a `humanUB4`
+repeat, and `[MPC_TIMING] average advance` from both sim.logs.
+
+Decision: nodes 4 + hold stay shipped (robustness, neutral on the baseline). Continuous law:
+ship on. Template: suite says ship for 0.2-0.8 m/s + omni; owner's video verdict and the solve-rate
+split are the two gates left.
