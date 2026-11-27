@@ -520,10 +520,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             tiers that hold (the command slew limiter ramps it). Run 24 of docs/results/human_gait_template.md:
             the blind walk takes 1-2 cm steps at 0.5 m/s and falls at 0.8, 2-4 cm steps at 0.2 and falls at 0.5.
             Flat-ground modes only; the stair and terrain modes pace themselves."}
-        stepKnots: {type: double_array, default_value: [0.01, 0.025], description: "Sole-height differences in double
+        stepKnots: {type: double_array, default_value: [0.01, 0.02, 0.035], description: "Sole-height differences in double
             support [m] that count as a terrain step of each tier, increasing (flat ground: both soles within a few
             mm)", validation: {lower_element_bounds<>: [0.0]}}
-        speedKnots: {type: double_array, default_value: [0.5, 0.25], description: "Planar speed cap [m/s] of each
+        speedKnots: {type: double_array, default_value: [0.5, 0.2, 0.1], description: "Planar speed cap [m/s] of each
             tier, non-increasing; same length as stepKnots", validation: {lower_element_bounds<>: [0.0]}}
         holdSeconds: {type: double, default_value: 3.0, description: "A tier stays this long [s] after its last
             terrain step (about 4-5 strides)", validation: {gt: [0.0]}}

@@ -130,7 +130,7 @@ def main():
     tags = [a.base] + cands
     runs = {t: load(a.root, t, a.scripts) for t in tags}
     has_cap = any("cap_frac" in seg for t in tags for j in runs[t].values() for seg in j.get("segments", []))
-    print("\nper segment (jerk | acc_hf | tau_rate" + (" | cap = share of solves under the terrain speed cap" if has_cap else "")
+    print("\nper segment (jerk | acc_hf | tau_rate" + (" | cap = share of solves under the terrain speed cap @ the cap [m/s]" if has_cap else "")
           + "; F = fell in this segment):")
     for s in a.scripts:
         if s not in base_runs:
@@ -142,7 +142,7 @@ def main():
             for t in tags:
                 segs = runs[t].get(s, {}).get("segments", [])
                 r = segs[i] if i < len(segs) else None
-                cap = (f" {r['cap_frac']:4.0%}" if r and "cap_frac" in r else "     ") if has_cap else ""
+                cap = (f" {r['cap_frac']:4.0%}" + (f"@{r['cap_mean']:.2f}" if r.get("cap_mean") else "     ") if r and "cap_frac" in r else " " * 10) if has_cap else ""
                 cells.append(f"{r['jerk']:6.2f} {r['acc_hf']:6.3f} {r.get('tau_rate', float('nan')):7.0f}" + cap + ("F" if r.get("fell") else " ")
                              if r else " " * (22 + len(cap)))
             print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells))

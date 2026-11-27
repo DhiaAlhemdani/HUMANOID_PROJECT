@@ -33,7 +33,7 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         schema = SCHEMA["ocs2"]["reference"]["terrainSpeedCap"]
         self.assertEqual(tuple(schema), KEYS)
         self.assertFalse(schema["enabled"]["default_value"])
-        for key, value in (("stepKnots", [0.01, 0.025]), ("speedKnots", [0.5, 0.25]), ("holdSeconds", 3.0)):
+        for key, value in (("stepKnots", [0.01, 0.02, 0.035]), ("speedKnots", [0.5, 0.2, 0.1]), ("holdSeconds", 3.0)):
             self.assertEqual(schema[key]["default_value"], value, key)
             if isinstance(value, list):
                 self.assertIn(f"std::vector<scalar_t> {key}{{{', '.join(str(v) for v in value)}}};", CAP_H, key)

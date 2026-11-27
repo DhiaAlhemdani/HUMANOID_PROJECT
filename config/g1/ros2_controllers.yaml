@@ -736,12 +736,13 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
 
         # Blind terrain speed cap (TerrainSpeedCap.h, run 24): a sole-height difference of stepKnots[i]
         # between the two stance feet marks the ground as uneven at tier i for holdSeconds and caps the
-        # commanded planar speed at the smallest speedKnots of the tiers that hold. Off pending the terrain
-        # ladder (run 24: 1-2 cm steps are walked at 0.5 m/s and lost at 0.8, 2-4 cm steps at 0.2 and lost at 0.5).
+        # commanded planar speed at the smallest speedKnots of the tiers that hold. Tiers from run 24: 1-2 cm
+        # steps are walked at 0.5 m/s and lost at 0.8, 2-4 cm steps at 0.2 and lost at 0.5, a 3.5 cm step means
+        # the big edges are here. Off pending the terrain ladder (humanT24e: suite_mild 0 falls, flat unchanged).
         terrainSpeedCap:
           enabled: false
-          stepKnots: [0.01, 0.025]
-          speedKnots: [0.5, 0.25]
+          stepKnots: [0.01, 0.02, 0.035]
+          speedKnots: [0.5, 0.2, 0.1]
           holdSeconds: 3.0
 
         # Gait-phase-locked arm swing superimposed on the nominal arm posture (left arm forward while

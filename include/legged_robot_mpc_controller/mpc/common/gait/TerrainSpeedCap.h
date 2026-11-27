@@ -48,13 +48,15 @@ namespace ocs2::humanoid {
  * `stepKnots[i]` marks the ground as uneven at tier i for `holdSeconds`; while any tier holds, the
  * commanded planar speed is capped at the smallest `speedKnots[i]` of the tiers that hold (the slew
  * limiter of the velocity command turns the cap into a ramp). Run 24: 1-2 cm steps are walked at
- * 0.5 m/s and lost at 0.8; 2-4 cm steps are walked at 0.2 and lost at 0.5. Flat ground never trips
+ * 0.5 m/s and lost at 0.8; 2-4 cm steps are walked at 0.2 and lost at 0.5; a 3.5 cm step says the
+ * big edges are here (0.1). Note that a sole straddling an edge reads about half the edge height, so
+ * the knots are set below the terrain steps they are meant to catch. Flat ground never trips
  * it: both soles sit on the same plane within millimetres.
  */
 struct TerrainSpeedCapSettings {
   bool enabled = false;
-  std::vector<scalar_t> stepKnots{0.01, 0.025};  //!< [m] sole-height differences in double support that count as a terrain step, increasing
-  std::vector<scalar_t> speedKnots{0.5, 0.25};   //!< [m/s] planar speed cap of each tier, decreasing
+  std::vector<scalar_t> stepKnots{0.01, 0.02, 0.035};  //!< [m] sole-height differences in double support that count as a terrain step, increasing
+  std::vector<scalar_t> speedKnots{0.5, 0.2, 0.1};  //!< [m/s] planar speed cap of each tier, decreasing
   scalar_t holdSeconds = 3.0;                    //!< [s] a tier stays after its last terrain step (about 4-5 strides)
 };
 

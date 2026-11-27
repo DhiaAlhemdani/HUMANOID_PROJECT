@@ -1252,3 +1252,29 @@ contact mode - a different piece of work, listed with the lateral drift. The lad
 may now trip on mild's larger steps - the cap column tells; acceptable if mild stays at 0 falls and the
 0.5 segments keep their speed most of the time), flat re-check vs humanT24af (cap must stay 0 %), then
 `slope_5`.
+
+### Run 24 F — humanT24e re-checks (`suite_mild`, flat) pass; `slope_5` fails forward, passes backward
+
+**`suite_mild` (humanT24eM vs humanT24a):** 0 falls; steady 36.7 vs 40.0, transition max 60 vs 69; the
+tiers cap *less* than T24a's single tier did (0.5 hold 47 % vs 90 %, the last 0.2 hold 31 at 0 % vs 61 at
+100 %) - the holds release in stages instead of one 3 s blanket. **Flat (humanT24ef vs humanT24af):** 0
+falls, cap 0 % in every segment, steady 34.5 vs 34.2, segment by segment within noise. **The three tiers
+`[0.01, 0.02, 0.035] -> [0.5, 0.2, 0.1]` are now the schema and G1 defaults of the block** (still off).
+
+**`slope_5` (humanT24eS5, 6 m up at 5 deg from x 1.5 m, 2 m plateau, 6 m down; mirrored for -x):**
+forward fell in the first 0.5 hold - on the first metres of the up-ramp - at cap 100 % (jerk 141, then
+389); backward walked the whole ladder *up the mirrored ramp and down the other side* with cap 100 % from
+the 0.5 ramp on, holds 34 / 47 / 46 / 47 / 42 - the slope is read as rough, as predicted (two stance feet
+on a 5 deg slope differ by stride x sin 5 deg, 2-3 cm, tier 2), and the ramp is walked at 0.2. The
+forward / backward asymmetry on the same incline is new. Hypothesis: the blind swing targets the current
+support height, so going up a slope the foot lands early and toe-first (the ground rises under the toe),
+going backward up the same slope it lands early heel-first - and the heel-first early landing is the one
+contactSync's early window handles. Needs the anatomy before anything is built.
+
+`score_suite` / `compare_suite` now print the cap *value* next to the share (`100%@0.20`), so the tier in
+force is visible per segment.
+
+Next: `fall_anatomy.py` + `terrain_strides.py` on `humanT24eS5__speeds`. The likely build is a slope-aware
+touchdown: the same two-foot signal, signed and divided by the feet's separation along the travel
+direction, is a slope estimate; the swing landing height becomes support height + slope x step length and
+the cap stops reading a consistent incline as roughness (Run 25).
