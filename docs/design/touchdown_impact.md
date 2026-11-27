@@ -245,7 +245,10 @@ Flat-ground modes only: the stair and terrain modes keep their schedules.
 to the touchdown rule on uneven ground. In double support the sole-height difference of the two feet
 is the step the last stride took; a step of at least `stepKnots[i]` marks the ground as uneven at tier
 i for `holdSeconds`, and the commanded planar speed is capped at the smallest `speedKnots` of the tiers
-that hold (applied to the scaled command, so the slew limiter ramps it). Off by default. Latency: the landing is
+that hold (applied to the scaled command, so the slew limiter ramps it). Inclines (run 25): the signed step
+over the feet's separation along the heading is a slope sample; three agreeing samples make the ground a
+plane - the roughness step becomes the residual from it and `slopeKnots -> slopeSpeedKnots` cap the
+incline instead. Off by default. Latency: the landing is
 seen at a solve's start and the policy with the moved event arrives ~20 ms later, so the effective
 advance is the lead minus one solve; the controller's contact fade follows the policy's events
 and therefore shortens accordingly — watch `alpha` in `switch_profile.py` around the touchdown.

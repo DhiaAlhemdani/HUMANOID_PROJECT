@@ -323,6 +323,9 @@ for s in segs:
         if ms.sum() > 5:
             r["cap_frac"] = float(np.mean(cap[ms] > 0))  # share of solves with the terrain speed cap in force
             r["cap_mean"] = float(np.mean(cap[ms][cap[ms] > 0])) if (cap[ms] > 0).any() else None  # the cap in force [m/s]
+            slope = sc("terrain/slope")
+            if slope is not None:
+                r["slope"] = float(np.mean(slope[ms]))  # incline along the heading the feet agree on (rise / run)
             steps = sc("terrain/steps")[ms]
             r["terrain_steps"] = int(steps[-1] - steps[0]) if np.isfinite(steps).all() else 0
     if TR is not None and legs:
@@ -383,6 +386,7 @@ for r in rows:
           f"{r.get('hip_rom', float('nan')):7.1f} {r.get('knee_sw', float('nan')):7.1f} {r.get('arm_amp', float('nan')):7.1f} "
           f"{r.get('arm_ph', float('nan')):6.0f}  {r.get('modes', '')}"
           + (f"  cap {r['cap_frac']:.0%}" + (f"@{r['cap_mean']:.2f}" if r.get("cap_mean") else "") + f"/{r['terrain_steps']}" if "cap_frac" in r else "")
+          + (f" slope {r['slope']:+.3f}" if "slope" in r else "")
           + ("  FELL" if r["fell"] else ""))
 
 # ---- figure ------------------------------------------------------------------------------------

@@ -744,6 +744,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           stepKnots: [0.01, 0.02, 0.035]
           speedKnots: [0.5, 0.2, 0.1]
           holdSeconds: 3.0
+          slopeKnots: [0.05, 0.12]      # run 25: a consistent incline is a plane, not roughness; 3 deg / 7 deg tiers
+          slopeSpeedKnots: [0.3, 0.2]
+          slopeMinSeparation: 0.08
+          slopeConsistency: 0.03
 
         # Gait-phase-locked arm swing superimposed on the nominal arm posture (left arm forward while
         # the right leg swings). Off: the arms only hold the nominal posture, and whatever arm motion

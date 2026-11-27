@@ -269,6 +269,7 @@ scalar_t maxOffset = 0.6;
   bool terrainSpeedCapActive() const { return std::isfinite(terrainSpeedCapValue_.load()); }
   size_t terrainStepCount() const { return terrainStepCount_.load(); }
   scalar_t terrainLastStep() const { return terrainLastStep_.load(); }
+  scalar_t terrainSlope() const { return terrainSlope_.load(); }  //!< [-] incline along the heading the feet agree on (0 = none / flat)
 
   void setArmSwingSettings(const ArmSwingSettings& settings) { armSwing_ = settings; }
   const ArmSwingSettings& getArmSwingSettings() const { return armSwing_; }
@@ -511,6 +512,7 @@ scalar_t maxOffset = 0.6;
   std::atomic<scalar_t> terrainSpeedCapValue_{std::numeric_limits<scalar_t>::infinity()};
   std::atomic<size_t> terrainStepCount_{0};
   std::atomic<scalar_t> terrainLastStep_{0.0};
+  std::atomic<scalar_t> terrainSlope_{0.0};
 
   std::shared_ptr<GaitSchedule> gaitSchedulePtr_;
   std::shared_ptr<SwingTrajectoryPlanner> swingTrajectoryPtr_;

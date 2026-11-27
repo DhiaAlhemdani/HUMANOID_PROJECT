@@ -73,6 +73,85 @@ int main() {
     assert(near(cap.update(4.99, both, flat), 0.5));
     assert(std::isinf(cap.update(5.01, both, flat)) && !cap.active());
   }
+  // Incline: strides of 0.3 m up a 5 deg ramp (rise 0.026 m per stride). The raw step would be a tier-2
+  // roughness step every stride; once three samples agree the ground is a plane, the roughness residual is
+  // zero and the incline cap (tier 1 of slopeKnots, 0.05 -> 0.3 m/s) holds instead.
+  TerrainSpeedCapSettings d;  // the defaults: [0.01, 0.02, 0.035] -> [0.5, 0.2, 0.1], slopes [0.05, 0.12] -> [0.3, 0.2]
+  d.enabled = true;
+  {
+    TerrainSpeedCap cap(d);
+    const scalar_t rise = 0.3 * std::tan(5.0 * M_PI / 180.0);  // 0.0262
+    scalar_t t = 0.0, lastTouchdown = 0.0;
+    scalar_t zBack = 0.0, dBack = 0.0;
+    size_t lead = 0;  // foot in front
+    for (int stride = 0; stride < 8; ++stride) {
+      const size_t back = 1 - lead;
+      const scalar_t zFront = zBack + rise, dFront = dBack + 0.3;
+      feet_array_t<scalar_t> z, dd;
+      z[lead] = zFront; z[back] = zBack; dd[lead] = dFront; dd[back] = dBack;
+      contact_flag_t swing = lead == 0 ? contact_flag_t{false, true} : contact_flag_t{true, false};
+      cap.update(t, swing, z, dd);  // single support (the leading foot in flight): no sample
+      t += 0.5;
+      lastTouchdown = t;
+      const scalar_t c = cap.update(t, both, z, dd);  // touchdown: double support
+      t += 0.2;
+      if (stride < 2) {
+        assert(near(c, 0.2) && !cap.slopeConsistent());  // not yet three samples: the raw 2.6 cm step reads as tier 2 roughness
+      } else {
+        assert(cap.slopeConsistent() && near(cap.slope(), rise / 0.3) && near(cap.lastStep(), rise));
+      }
+      zBack = zFront; dBack = dFront; lead = back;
+    }
+    // Roughness tiers released (last raw step at the second touchdown, > 3 s ago); the incline cap holds at 0.3.
+    assert(near(cap.capValue(), 0.3) && cap.active() && cap.stepCount() == 2);
+    // Standing still on the ramp (feet side by side along the heading) adds no samples and keeps the incline cap:
+    // the ground has not changed. (A single-support pause, no double-support refresh, lets it expire.)
+    assert(near(cap.update(lastTouchdown + 5.0, both, {0.1, 0.1}, {0.0, 0.0}), 0.3));
+    assert(near(cap.update(lastTouchdown + 5.5, leftOnly, {0.1, 0.1}, {0.0, 0.0}), 0.3));
+    assert(std::isinf(cap.update(lastTouchdown + 8.6, leftOnly, {0.1, 0.1}, {0.0, 0.0})));
+    // Walking off the ramp onto the flat: the first flat sample breaks the agreement (back to the raw step, which
+    // is zero on the flat), three flat samples make the plane flat again; nothing trips, nothing holds.
+    scalar_t tf = lastTouchdown + 9.0;
+    for (int stride = 0; stride < 3; ++stride) {
+      cap.update(tf, stride % 2 ? leftOnly : rightOnly, {0.2, 0.2}, {dBack + 0.3, dBack});
+      cap.update(tf + 0.5, both, {0.2, 0.2}, {dBack + 0.3, dBack});
+      tf += 0.7;
+    }
+    assert(cap.slopeConsistent() && std::abs(cap.slope()) < 1e-9);
+    assert(std::isinf(cap.capValue()) && cap.stepCount() == 2);
+  }
+  // A 10 deg incline engages the second incline tier (0.12 -> 0.2 m/s); walking down it (negative slope) too.
+  for (const scalar_t sign : {1.0, -1.0}) {
+    TerrainSpeedCap cap(d);
+    const scalar_t slope = sign * std::tan(10.0 * M_PI / 180.0);  // 0.176
+    for (int stride = 0; stride < 7; ++stride) {  // the first two raw 5.3 cm steps trip roughness tier 3 (0.1) for 3 s
+      const scalar_t t = 0.7 * stride;
+      cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
+      cap.update(t + 0.5, both, {0.0, 0.3 * slope}, {0.0, 0.3});
+    }
+    assert(cap.slopeConsistent() && near(cap.slope(), slope) && near(cap.capValue(), 0.2));
+  }
+  // Tiles: steps of random sign do not agree, so they keep the raw step and the roughness tiers (no incline cap).
+  {
+    TerrainSpeedCap cap(d);
+    const scalar_t steps[] = {0.015, -0.012, 0.016, -0.015};
+    scalar_t t = 0.0;
+    for (const scalar_t dz : steps) {
+      cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
+      assert(near(cap.update(t + 0.5, both, {0.0, dz}, {0.0, 0.3}), 0.5));  // tier 1 roughness, 0.5 m/s
+      t += 0.7;
+    }
+    assert(!cap.slopeConsistent() && cap.stepCount() == 4);
+  }
+  // Flat ground with the heading projection supplied: slope 0, consistent, no cap.
+  {
+    TerrainSpeedCap cap(d);
+    for (int stride = 0; stride < 4; ++stride) {
+      cap.update(0.7 * stride, rightOnly, flat, {0.3, 0.0});
+      assert(std::isinf(cap.update(0.7 * stride + 0.5, both, flat, {0.3, 0.0})));
+    }
+    assert(cap.slopeConsistent() && std::abs(cap.slope()) < 0.01 && cap.stepCount() == 0);
+  }
   // Below the threshold: no cap.
   {
     TerrainSpeedCap cap(s);
@@ -113,6 +192,19 @@ int main() {
       threw = true;
     }
     assert(threw);
+    bad = s;
+    bad.slopeSpeedKnots = {0.3};  // length mismatch with slopeKnots
+    threw = false;
+    try {
+      validateTerrainSpeedCapSettings(bad);
+    } catch (const std::invalid_argument&) {
+      threw = true;
+    }
+    assert(threw);
+    bad = s;
+    bad.slopeKnots.clear();
+    bad.slopeSpeedKnots.clear();
+    validateTerrainSpeedCapSettings(bad);  // no incline cap is allowed
     bad = s;
     bad.holdSeconds = -1.0;
     threw = false;

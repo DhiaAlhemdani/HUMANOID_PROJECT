@@ -53,7 +53,28 @@ void validateTerrainSpeedCapSettings(const TerrainSpeedCapSettings& s) {
       throw std::invalid_argument("[TerrainSpeedCap] stepKnots must increase and speedKnots must not increase (a larger step, a lower cap)");
     }
   }
+  if (s.slopeKnots.size() != s.slopeSpeedKnots.size()) {
+    throw std::invalid_argument("[TerrainSpeedCap] slopeKnots and slopeSpeedKnots must have the same length (empty = no incline cap)");
+  }
+  for (size_t i = 0; i < s.slopeKnots.size(); ++i) {
+    if (!(s.slopeKnots[i] > 0.0) || !(s.slopeSpeedKnots[i] > 0.0)) {
+      throw std::invalid_argument("[TerrainSpeedCap] slopeKnots and slopeSpeedKnots must be > 0");
+    }
+    if (i > 0 && (!(s.slopeKnots[i] > s.slopeKnots[i - 1]) || !(s.slopeSpeedKnots[i] <= s.slopeSpeedKnots[i - 1]))) {
+      throw std::invalid_argument("[TerrainSpeedCap] slopeKnots must increase and slopeSpeedKnots must not increase");
+    }
+  }
+  if (!(s.slopeMinSeparation > 0.0) || !(s.slopeConsistency > 0.0)) {
+    throw std::invalid_argument("[TerrainSpeedCap] slopeMinSeparation and slopeConsistency must be > 0");
+  }
 }
+
+namespace {
+scalar_t medianOf3(std::array<scalar_t, 3> v) {
+  std::sort(v.begin(), v.end());
+  return v[1];
+}
+}  // namespace
 
 TerrainSpeedCap::TerrainSpeedCap(TerrainSpeedCapSettings settings) : settings_(std::move(settings)) {
   validateTerrainSpeedCapSettings(settings_);
@@ -75,9 +96,15 @@ void TerrainSpeedCap::reset() {
   tierTime_.assign(settings_.stepKnots.size(), std::numeric_limits<scalar_t>::quiet_NaN());
   previousTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
   stepCount_ = 0;
+  slopeSamples_.fill(0.0);
+  slopeSampleCount_ = 0;
+  slope_ = 0.0;
+  slopeConsistent_ = false;
+  slopeTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
 }
 
-scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, const feet_array_t<scalar_t>& soleHeights) {
+scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, const feet_array_t<scalar_t>& soleHeights,
+                                 const feet_array_t<scalar_t>& soleAlong) {
   constexpr scalar_t kNoCap = std::numeric_limits<scalar_t>::infinity();
   if (!settings_.enabled) {
     active_ = false;
@@ -94,7 +121,23 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
 
   const bool doubleSupport = contacts[0] && contacts[1];
   if (doubleSupport) {
-    const scalar_t step = std::abs(soleHeights[0] - soleHeights[1]);
+    const scalar_t dz = soleHeights[0] - soleHeights[1];
+    const scalar_t dd = soleAlong[0] - soleAlong[1];
+    // One slope sample per double support, from the first solve in it (the landed foot is on the ground).
+    if (!inDoubleSupport_ && std::isfinite(dz) && std::isfinite(dd) && std::abs(dd) >= settings_.slopeMinSeparation) {
+      slopeSamples_[slopeSampleCount_ % slopeSamples_.size()] = dz / dd;
+      ++slopeSampleCount_;
+      if (slopeSampleCount_ >= slopeSamples_.size()) {
+        const auto [lo, hi] = std::minmax_element(slopeSamples_.begin(), slopeSamples_.end());
+        slopeConsistent_ = (*hi - *lo) <= settings_.slopeConsistency;
+        slope_ = medianOf3(slopeSamples_);
+      }
+    }
+    if (slopeConsistent_) {
+      slopeTime_ = time;
+    }
+    // Roughness: the step out of the plane the feet agree on (the raw step while they do not).
+    const scalar_t step = std::abs(dz - (slopeConsistent_ ? slope_ * dd : 0.0));
     if (std::isfinite(step) && step >= settings_.stepKnots.front()) {
       if (!inDoubleSupport_ || !countedThisSupport_) {
         ++stepCount_;
@@ -119,6 +162,13 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
   for (size_t i = 0; i < tierTime_.size(); ++i) {
     if (std::isfinite(tierTime_[i]) && time - tierTime_[i] < settings_.holdSeconds) {
       capValue_ = std::min(capValue_, settings_.speedKnots[i]);
+    }
+  }
+  if (std::isfinite(slopeTime_) && time - slopeTime_ < settings_.holdSeconds) {
+    for (size_t i = 0; i < settings_.slopeKnots.size(); ++i) {
+      if (std::abs(slope_) >= settings_.slopeKnots[i]) {
+        capValue_ = std::min(capValue_, settings_.slopeSpeedKnots[i]);
+      }
     }
   }
   active_ = std::isfinite(capValue_);

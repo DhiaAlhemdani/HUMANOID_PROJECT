@@ -29,6 +29,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #pragma once
 
+#include <array>
 #include <limits>
 #include <vector>
 #include <ocs2_core/Types.h>
@@ -52,12 +53,25 @@ namespace ocs2::humanoid {
  * big edges are here (0.1). Note that a sole straddling an edge reads about half the edge height, so
  * the knots are set below the terrain steps they are meant to catch. Flat ground never trips
  * it: both soles sit on the same plane within millimetres.
+ *
+ * Slopes (run 24 F / 25): on an incline the two stance feet differ in height by stride x slope, so
+ * the raw step reads a 5 deg ramp as roughness - and, worse, as roughness proportional to the
+ * speed, which makes the cap release at a crawl and re-trip after the next long stride (the slope_5
+ * forward fall). The signed step divided by the feet's separation along the heading is a slope
+ * sample; when the last three agree within `slopeConsistency` the ground is a plane, the roughness
+ * step becomes the residual from that plane, and the incline gets its own cap: `|slope| >=
+ * slopeKnots[i]` holds `slopeSpeedKnots[i]`. Tile fields do not agree stride to stride (random
+ * sign), so they keep the raw step and the roughness tiers.
  */
 struct TerrainSpeedCapSettings {
   bool enabled = false;
   std::vector<scalar_t> stepKnots{0.01, 0.02, 0.035};  //!< [m] sole-height differences in double support that count as a terrain step, increasing
-  std::vector<scalar_t> speedKnots{0.5, 0.2, 0.1};  //!< [m/s] planar speed cap of each tier, decreasing
-  scalar_t holdSeconds = 3.0;                    //!< [s] a tier stays after its last terrain step (about 4-5 strides)
+  std::vector<scalar_t> speedKnots{0.5, 0.2, 0.1};     //!< [m/s] planar speed cap of each tier, decreasing
+  scalar_t holdSeconds = 3.0;                          //!< [s] a tier stays after its last terrain step (about 4-5 strides)
+  std::vector<scalar_t> slopeKnots{0.05, 0.12};        //!< [-] |rise / run| along the heading that counts as an incline (0.05 ~ 3 deg, 0.12 ~ 7 deg), increasing
+  std::vector<scalar_t> slopeSpeedKnots{0.3, 0.2};     //!< [m/s] planar speed cap on each incline tier, non-increasing
+  scalar_t slopeMinSeparation = 0.08;                  //!< [m] feet closer than this along the heading give no slope sample (standing)
+  scalar_t slopeConsistency = 0.03;                    //!< [-] spread of the last three slope samples below which the ground counts as a plane
 };
 
 void validateTerrainSpeedCapSettings(const TerrainSpeedCapSettings& settings);
@@ -74,14 +88,21 @@ class TerrainSpeedCap {
    * @param time        the solve's start time.
    * @param contacts    contact flags of the mode the schedule has at `time`.
    * @param soleHeights measured sole heights [m] (any common frame).
-   * @return the speed cap in force: the smallest `speedKnots` of the tiers that hold, +inf otherwise.
+   * @param soleAlong   sole positions projected on the heading [m] (same frame); feeds the slope estimate.
+   * @return the speed cap in force: the smallest `speedKnots` / `slopeSpeedKnots` of the tiers that hold, +inf otherwise.
    */
-  scalar_t update(scalar_t time, const contact_flag_t& contacts, const feet_array_t<scalar_t>& soleHeights);
+  scalar_t update(scalar_t time, const contact_flag_t& contacts, const feet_array_t<scalar_t>& soleHeights,
+                  const feet_array_t<scalar_t>& soleAlong);
+  scalar_t update(scalar_t time, const contact_flag_t& contacts, const feet_array_t<scalar_t>& soleHeights) {
+    return update(time, contacts, soleHeights, feet_array_t<scalar_t>{0.0, 0.0});  // no slope samples
+  }
 
   bool active() const { return active_; }
   scalar_t lastStep() const { return lastStep_; }          //!< [m] largest step of the last double support that tripped the cap
   scalar_t lastStepTime() const { return lastStepTime_; }  //!< [s] when a step was last seen (NaN = never)
   scalar_t capValue() const { return capValue_; }          //!< [m/s] the cap in force (+inf = none)
+  scalar_t slope() const { return slope_; }                //!< [-] median of the last slope samples along the heading (0 until three agree)
+  bool slopeConsistent() const { return slopeConsistent_; }
   size_t stepCount() const { return stepCount_; }          //!< double supports that tripped the cap so far
   void reset();
 
@@ -94,6 +115,11 @@ class TerrainSpeedCap {
   scalar_t lastStepTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
   scalar_t capValue_ = std::numeric_limits<scalar_t>::infinity();
   std::vector<scalar_t> tierTime_;  //!< [s] per tier: when a step of that size was last seen (NaN = never)
+  std::array<scalar_t, 3> slopeSamples_{};
+  size_t slopeSampleCount_ = 0;
+  scalar_t slope_ = 0.0;
+  bool slopeConsistent_ = false;
+  scalar_t slopeTime_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [s] last solve with a consistent incline sample
   scalar_t previousTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
   size_t stepCount_ = 0;
 };

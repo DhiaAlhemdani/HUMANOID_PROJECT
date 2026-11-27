@@ -2233,8 +2233,9 @@ void HumanoidWholeBodyInverseDynamicsMpcController::configure_tracking()
   for (const auto* name : {"contact_sync/advanced", "contact_sync/held", "contact_sync/blocked", "contact_sync/descending"}) {
     solver_names.push_back(name);
   }
-  // Blind terrain speed cap (TerrainSpeedCap.h): cap in force (0 = none), double supports that tripped it, last step [m].
-  for (const auto* name : {"terrain/cap", "terrain/steps", "terrain/last_step"}) {
+  // Blind terrain speed cap (TerrainSpeedCap.h): cap in force (0 = none), double supports that tripped it, last step [m],
+  // incline along the heading the feet agree on (rise / run, 0 = none).
+  for (const auto* name : {"terrain/cap", "terrain/steps", "terrain/last_step", "terrain/slope"}) {
     solver_names.push_back(name);
   }
   solver_row_.data.assign(solver_names.size(), std::numeric_limits<double>::quiet_NaN());
@@ -2318,7 +2319,7 @@ void HumanoidWholeBodyInverseDynamicsMpcController::publish_solver_metrics(doubl
   } catch (const std::exception&) {
   }
   // Append mesh diagnostics independently of optional cost-evaluation failures.
-  k = row.size() - 11;
+  k = row.size() - 12;
   put(static_cast<double>(solver_primal_.timeTrajectory_.size()));
   double min_dt = std::numeric_limits<double>::infinity(), max_dt = 0.0, fine_max_dt = 0.0;
   const auto& times = solver_primal_.timeTrajectory_;
@@ -2342,6 +2343,7 @@ void HumanoidWholeBodyInverseDynamicsMpcController::publish_solver_metrics(doubl
     put(std::isfinite(cap) ? cap : 0.0);
     put(static_cast<double>(reference_manager->terrainStepCount()));
     put(reference_manager->terrainLastStep());
+    put(reference_manager->terrainSlope());
   }
   solver_publisher_->publish(solver_row_);
 }

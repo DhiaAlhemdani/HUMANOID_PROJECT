@@ -25,7 +25,7 @@ CAP_H = (ROOT / "include/legged_robot_mpc_controller/mpc/common/gait/TerrainSpee
 CONTROLLER_CPP = (ROOT / "src/controller/controller.cpp").read_text()
 CMAKE = (ROOT / "CMakeLists.txt").read_text()
 
-KEYS = ("enabled", "stepKnots", "speedKnots", "holdSeconds")
+KEYS = ("enabled", "stepKnots", "speedKnots", "holdSeconds", "slopeKnots", "slopeSpeedKnots", "slopeMinSeparation", "slopeConsistency")
 
 
 class TerrainSpeedCapContractTest(unittest.TestCase):
@@ -33,7 +33,9 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         schema = SCHEMA["ocs2"]["reference"]["terrainSpeedCap"]
         self.assertEqual(tuple(schema), KEYS)
         self.assertFalse(schema["enabled"]["default_value"])
-        for key, value in (("stepKnots", [0.01, 0.02, 0.035]), ("speedKnots", [0.5, 0.2, 0.1]), ("holdSeconds", 3.0)):
+        for key, value in (("stepKnots", [0.01, 0.02, 0.035]), ("speedKnots", [0.5, 0.2, 0.1]), ("holdSeconds", 3.0),
+                           ("slopeKnots", [0.05, 0.12]), ("slopeSpeedKnots", [0.3, 0.2]), ("slopeMinSeparation", 0.08),
+                           ("slopeConsistency", 0.03)):
             self.assertEqual(schema[key]["default_value"], value, key)
             if isinstance(value, list):
                 self.assertIn(f"std::vector<scalar_t> {key}{{{', '.join(str(v) for v in value)}}};", CAP_H, key)
@@ -75,7 +77,7 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         self.assertIn("speedCap_.load()", TARGET_CPP[scale:TARGET_CPP.index("WalkingVelocityTarget::setMinimumWalkSpeed")])
 
     def test_telemetry_and_unit_test(self):
-        for name in ("terrain/cap", "terrain/steps", "terrain/last_step"):
+        for name in ("terrain/cap", "terrain/steps", "terrain/last_step", "terrain/slope"):
             self.assertIn(f'"{name}"', CONTROLLER_CPP, name)
         self.assertIn("terrain_speed_cap_test", CMAKE)
         self.assertTrue((ROOT / "tests/terrain_speed_cap_test.cpp").exists())

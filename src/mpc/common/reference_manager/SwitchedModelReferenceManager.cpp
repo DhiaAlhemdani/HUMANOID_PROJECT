@@ -944,14 +944,19 @@ void SwitchedModelReferenceManager::updateTerrainSpeedCap(scalar_t initTime, con
   // The schedule after contactSync: an advanced touchdown counts as double support at once.
   const contact_flag_t contacts = modeNumber2StanceLeg(modeSchedule.modeAtTime(initTime));
   const feet_array_t<vector3_t> feet = computeFeetPositions(initState);
-  feet_array_t<scalar_t> soleHeights;
+  // Sole positions along the heading: the signed step divided by this separation is the slope sample.
+  const scalar_t yaw = mpcRobotModelPtr_->getBasePose(initState)(3);
+  const vector2_t heading(std::cos(yaw), std::sin(yaw));
+  feet_array_t<scalar_t> soleHeights, soleAlong;
   for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
     soleHeights[foot] = feet[foot](2);
+    soleAlong[foot] = feet[foot].head<2>().dot(heading);
   }
-  const scalar_t cap = terrainSpeedCap_.update(initTime, contacts, soleHeights);
+  const scalar_t cap = terrainSpeedCap_.update(initTime, contacts, soleHeights, soleAlong);
   terrainSpeedCapValue_.store(cap);
   terrainStepCount_.store(terrainSpeedCap_.stepCount());
   terrainLastStep_.store(terrainSpeedCap_.lastStep());
+  terrainSlope_.store(terrainSpeedCap_.slopeConsistent() ? terrainSpeedCap_.slope() : 0.0);
 }
 
 feet_array_t<vector3_t> SwitchedModelReferenceManager::computeFeetPositions(const vector_t& initState) {

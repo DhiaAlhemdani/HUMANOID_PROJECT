@@ -527,6 +527,19 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             tier, non-increasing; same length as stepKnots", validation: {lower_element_bounds<>: [0.0]}}
         holdSeconds: {type: double, default_value: 3.0, description: "A tier stays this long [s] after its last
             terrain step (about 4-5 strides)", validation: {gt: [0.0]}}
+        slopeKnots: {type: double_array, default_value: [0.05, 0.12], description: "Incline tiers [rise / run along
+            the heading], increasing (0.05 ~ 3 deg, 0.12 ~ 7 deg). The signed step between the stance feet divided
+            by their separation along the heading is a slope sample; when the last three agree within
+            slopeConsistency the ground is a plane, the roughness step becomes the residual from it and the incline
+            is capped at slopeSpeedKnots. Empty = no incline cap (a ramp then reads as roughness).",
+            validation: {lower_element_bounds<>: [0.0]}}
+        slopeSpeedKnots: {type: double_array, default_value: [0.3, 0.2], description: "Planar speed cap [m/s] on
+            each incline tier, non-increasing; same length as slopeKnots", validation: {lower_element_bounds<>: [0.0]}}
+        slopeMinSeparation: {type: double, default_value: 0.08, description: "Feet closer than this along the heading
+            [m] give no slope sample (standing, side steps)", validation: {gt: [0.0]}}
+        slopeConsistency: {type: double, default_value: 0.03, description: "Spread of the last three slope samples
+            [rise / run] below which the ground counts as a plane (tile fields never agree, ramps do)",
+            validation: {gt: [0.0]}}
       targetDisplacementVelocity: {type: double, default_value: 0.5, description: "Nominal displacement velocity
           used for target arrival time [m/s]"}
       targetRotationVelocity: {type: double, default_value: 0.5, description: "Nominal rotation velocity used for

@@ -156,6 +156,10 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   config.terrainSpeedCap.stepKnots = p.reference.terrainSpeedCap.stepKnots;
   config.terrainSpeedCap.speedKnots = p.reference.terrainSpeedCap.speedKnots;
   config.terrainSpeedCap.holdSeconds = p.reference.terrainSpeedCap.holdSeconds;
+  config.terrainSpeedCap.slopeKnots = p.reference.terrainSpeedCap.slopeKnots;
+  config.terrainSpeedCap.slopeSpeedKnots = p.reference.terrainSpeedCap.slopeSpeedKnots;
+  config.terrainSpeedCap.slopeMinSeparation = p.reference.terrainSpeedCap.slopeMinSeparation;
+  config.terrainSpeedCap.slopeConsistency = p.reference.terrainSpeedCap.slopeConsistency;
   ocs2::humanoid::validateTerrainSpeedCapSettings(config.terrainSpeedCap);
 
   // --- swing trajectory ---

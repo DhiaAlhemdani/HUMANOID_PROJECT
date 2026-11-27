@@ -1278,3 +1278,40 @@ Next: `fall_anatomy.py` + `terrain_strides.py` on `humanT24eS5__speeds`. The lik
 touchdown: the same two-foot signal, signed and divided by the feet's separation along the travel
 direction, is a slope estimate; the swing landing height becomes support height + slope x step length and
 the cap stops reading a consistent incline as roughness (Run 25).
+
+### Run 24 G — `slope_5` anatomy: the cap's own feedback loop, not the landing
+
+The strides table (ground under each landing, 5 deg ramp from x 1.5 m): forward the walk shortened on
+the ramp - strides of 0.11-0.13 m every 0.72 s (0.16 m/s) from 27.4 s, steps of 0.9-1.1 cm between the
+feet, pitch 0.3-0.6 deg, nothing wrong - and then one stride of **0.42 m** at 31.0 s, +2.6 cm under the
+foot, pitch 1.3 -> 28.6 deg within 100 ms of the scheduled switch, both hip pitches and the waist at
+their limits, fall. Mode-switch detail: the right foot was 2.4 cm above the planned ground and moving
+*up* (vz +0.01) when the schedule said contact, i.e. loaded in the air on a rising ramp (the T23a
+anatomy again).
+
+Why the long stride: on a ramp the stance feet differ in height by stride x slope, so at a 0.12 m stride
+the step reads 1.0 cm - **below tier 2 (0.02)**. Tier 2 expired 3 s after the last 2 cm step (27.4 +
+3.0 = 30.4 s), the cap jumped from 0.2 to 0.5, the slew limiter ramped the command up and the next swing
+was planned 0.42 m ahead on a flat-ground height; the ramp was 3.7 cm higher there. The cap, on a slope,
+has a feedback loop: slow -> short strides -> small steps -> release -> long stride -> trip; forward the
+release came mid-ramp. Backward it never released (strides of 0.17-0.28 m kept the steps at 1.5-2.6 cm)
+and the ramp was walked at 0.2, up and down, with pitch excursions below 1.2 deg at 44 landings.
+
+So the slope itself is walkable at 0.2-0.3 as the stack stands; what is not is reading a slope as
+roughness. **Run 25 A (this commit): slope-aware cap.** The signed step between the stance feet divided
+by their separation along the heading (`feet xy . [cos yaw, sin yaw]`) is a slope sample, one per double
+support; when the last three agree within `slopeConsistency` (0.03, about 1.7 deg) the ground is a plane:
+the roughness step becomes the residual out of that plane (zero on a ramp, so no tier flapping), and the
+incline gets its own tiers, `slopeKnots [0.05, 0.12] -> slopeSpeedKnots [0.3, 0.2]` (3 deg -> 0.3 m/s,
+7 deg -> 0.2), held `holdSeconds` after the last consistent double support (standing on a ramp keeps it;
+walking onto the flat ends the agreement at the first flat sample and the flat plane follows two strides
+later). Tile fields never agree stride to stride (random sign), so they keep the raw step and the
+roughness tiers exactly as before; flat ground reads slope 0, consistent, no cap. Unit test covers the 5
+deg ramp (tier 2 for the first two strides, then the incline cap at 0.3 and the roughness residual 0), 10
+deg up and down (0.2), the tile sequence (raw step, no incline), flat with the projection, and the
+validation. Telemetry row `terrain/slope`; `score_suite` prints the mean slope per segment.
+
+Expected on `slope_5` forward: 100 % cap at 0.3 from the third ramp stride, no release until the plateau,
+0.2 strides, no 0.42 m stride. Then `slope_10` (second incline tier, 0.2 m/s; the 10 deg ramp also lands
+the swing foot 3.5 cm early per 0.2 m stride, which is where Run 25 B - the slope in the swing touchdown
+height - would come in if it is needed).

@@ -738,12 +738,19 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # between the two stance feet marks the ground as uneven at tier i for holdSeconds and caps the
         # commanded planar speed at the smallest speedKnots of the tiers that hold. Tiers from run 24: 1-2 cm
         # steps are walked at 0.5 m/s and lost at 0.8, 2-4 cm steps at 0.2 and lost at 0.5, a 3.5 cm step means
-        # the big edges are here. Off pending the terrain ladder (humanT24e: suite_mild 0 falls, flat unchanged).
+        # the big edges are here. Slopes (run 25): the stance feet's signed step over their separation along the
+        # heading is a slope sample; three agreeing samples make the ground a plane (roughness = the residual)
+        # and cap the incline at slopeSpeedKnots. Off pending the terrain ladder (humanT24e: suite_mild 0 falls,
+        # flat unchanged).
         terrainSpeedCap:
           enabled: false
           stepKnots: [0.01, 0.02, 0.035]
           speedKnots: [0.5, 0.2, 0.1]
           holdSeconds: 3.0
+          slopeKnots: [0.05, 0.12]      # run 25: a consistent incline is a plane, not roughness; 3 deg / 7 deg tiers
+          slopeSpeedKnots: [0.3, 0.2]
+          slopeMinSeparation: 0.08
+          slopeConsistency: 0.03
 
         # Gait-phase-locked arm swing superimposed on the nominal arm posture (left arm forward while
         # the right leg swings). Off: the arms only hold the nominal posture, and whatever arm motion
