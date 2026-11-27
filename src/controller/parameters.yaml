@@ -663,7 +663,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             disables the late half", validation: {gt_eq: [0.0]}}
         heightThreshold: {type: double, default_value: 0.002, description: "Sole height above the support plane [m] at
             or below which the foot counts as landed (the G1 sole rests at ~0.3 mm; the swing passes 2 mm about
-            40 ms before the planned touchdown at 0.2 m/s)", validation: {gt_eq: [0.0]}}
+            40 ms before the planned touchdown at 0.2 m/s). Only with descentVelocity > 0 can it be opened to
+            ~1 cm (a stopped sole on a slightly higher tile): the descent test then keeps airborne soles out",
+            validation: {gt_eq: [0.0]}}
         holdStep: {type: double, default_value: 0.02, description: "A held touchdown is pushed this far [s] past the
             solve time, i.e. about one MPC node", validation: {gt: [0.0]}}
         minPhaseDuration: {type: double, default_value: 0.02, description: "No phase is shortened below this [s] by

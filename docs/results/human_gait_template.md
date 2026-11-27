@@ -1012,3 +1012,25 @@ contactSync telemetry - so the solver row now carries cumulative `contact_sync/a
 `blocked`, `descending` counters (`plot_tracking.py` prints the per-window deltas in its DIAG line and
 `diag.json` -> `solver.contact_sync`). Re-run T23c once with the counters before drawing a conclusion
 about the rule itself; T23a / T23b (on top of TEV) remain the configs to measure.
+
+### Run 23 B — humanT23a / humanT23b on `suite_mild` vs humanTEV: late half closed for good, early rule has a dead band
+
+**humanT23a** (TEV + `descentVelocity 0.05`, `blockedHeight 0.01`): forward **1 fall in the ramp to 0.8**
+(jerk 210 / tau_rate 720 in the ramp, leg_jerk 3091, arm_acc 12.4 - a violent 2-3 s, not a trip); before it
+the 0.2 / 0.5 holds were *better* than TEV (31.4 / 44.6 vs 48.2 / 52.6). Backward 0 falls, holds 41.1 /
+47.1 / 84.7 / 47.9 / 38.9 vs 34.0 / 50.4 / 75.7 / 44.2 / 41.8 (equal within noise), clean stop (0.8 vs 16.6).
+**humanT23b** (T23a + `lateWindow 0.1`): **2 falls**, both in the ramp to 0.5, with the 0.2 holds already
+at jerk 152 / 208 (3-4x) - the late half is destructive on tiles, as in Run 22 B (humanTC) and Run 18 on
+flat. Mechanism: with `heightThreshold 0.002` and `blockedHeight 0.01` the rule has a **dead band**: a
+sole stopped 2-10 mm above the plane (a slightly higher tile, or any tile before the estimate catches up)
+is neither "on the plane" nor "blocked". In the early half that only means no advance (the shipped
+behaviour); in the late half it means the switch is pushed back 20 ms per solve for up to 100 ms while the
+foot stands pressed on the tile and the re-stretched swing spline lifts it again. `lateWindow` stays 0 -
+third and last time.
+
+The dead band is also the most likely reason T23a is not better than TEV: on `suite_mild` most tiles
+differ by < 1 cm, exactly the band the early rule ignores. Fix without a new mechanism: with the descent
+test active, an airborne sole cannot be "stopped" near the plane, so `heightThreshold` can be opened to
+~1 cm -> landed = stopped and within 1 cm of the plane, or stopped and >= `blockedHeight` above a descending
+plan. Next: **humanT23d** = T23a + `heightThreshold 0.01`; the `contact_sync` counters (new in Run 23 A)
+and `fall_anatomy.py` on `humanT23a__speeds` to see whether the 0.8 ramp fall involved the rule at all.
