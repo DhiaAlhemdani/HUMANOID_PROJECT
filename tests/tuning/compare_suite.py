@@ -140,7 +140,7 @@ def main():
             print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells) + ("  FELL" if seg.get("fell") else ""))
     # limbs table (only when the baseline has joint-state metrics)
     if any("leg_acc" in seg for j in base_runs.values() for seg in j["segments"]):
-        print("\nper segment limbs (step_l m | v_err | leg_acc | leg_jerk | arm_acc | arm_pp deg || hl_leg | knee_ms | hip_rom | knee_sw | arm_amp deg):")
+        print("\nper segment limbs (z_m m | step_l m | v_err | leg_acc | leg_jerk | arm_acc | arm_pp deg || hl_leg | knee_ms | hip_rom | knee_sw | arm_amp deg):")
         for s in a.scripts:
             if s not in base_runs:
                 continue
@@ -151,7 +151,7 @@ def main():
                     segs = runs[t].get(s, {}).get("segments", [])
                     r = segs[i] if i < len(segs) else None
                     nan = float("nan")
-                    cells.append(f"{r.get('step_l', nan):5.2f} {r.get('v_err', nan):5.2f} {r.get('leg_acc', nan):6.2f} {r.get('leg_jerk', nan):6.0f} {r.get('arm_acc', nan):6.2f} {r.get('arm_pp', nan):5.1f} || "
+                    cells.append(f"{r.get('z_m', nan):5.3f} {r.get('step_l', nan):5.2f} {r.get('v_err', nan):5.2f} {r.get('leg_acc', nan):6.2f} {r.get('leg_jerk', nan):6.0f} {r.get('arm_acc', nan):6.2f} {r.get('arm_pp', nan):5.1f} || "
                                  f"{r.get('hl_leg', nan):5.1f} {r.get('knee_ms', nan):5.1f} {r.get('hip_rom', nan):5.1f} {r.get('knee_sw', nan):5.1f} {r.get('arm_amp', nan):5.1f}" if r else " " * 71)
                 print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells))
     print("\nwinners: " + (", ".join(c for c, (v, _) in verdicts.items() if v.startswith("WINNER")) or "NONE"))

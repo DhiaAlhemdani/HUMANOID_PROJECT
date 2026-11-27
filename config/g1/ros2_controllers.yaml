@@ -711,15 +711,21 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         maxDisplacementVelocityX: 1.0
         maxDisplacementVelocityY: 0.5
         maxRotationVelocity: 1.5708
-        defaultBaseHeight: 0.785  # kneeOffset 0.3 standing (humanGait); 0.795 = straight leg
-        minBaseHeight: 0.395
-        maxBaseHeight: 1.195
+        defaultBaseHeight: 0.785  # kneeOffset 0.3 standing (humanGait); 0.793 = straight leg
+        # Commanded height range (GUI slider ends, command clamp): the leg's range. 0.60 m is the
+        # defaultJointState crouch (knee 1.6 rad), 0.79 m the straight leg minus a knee margin (0.19 rad);
+        # above it the height is unreachable with flat feet and the knee is at its singularity.
+        # config/g1/compute_posture_table.py gives the symmetric posture of each height in this range.
+        minBaseHeight: 0.60
+        maxBaseHeight: 0.79
         basePosePositionTolerance: 0.02
         basePoseOrientationTolerance: 0.03
         
         # Slew limits on the scaled walking command: ax, ay [m/s^2], height rate [m/s], yaw acceleration [rad/s^2]
+        # Height rate 0.2: a slider move while walking is a reference ramp of a few stride-fractions, not a
+        # step inside one single support (0.5 made a 5 cm move a 0.1 s kick).
         velocityCommandRateLimits:
-          [0.5, 0.5, 0.5, 2.0]
+          [0.5, 0.5, 0.2, 2.0]
         # Jerk limits on the same axes (S-curve slew); 0 = plain rate clamp (legacy behaviour).
         velocityCommandJerkLimits:
           [0.0, 0.0, 0.0, 0.0]

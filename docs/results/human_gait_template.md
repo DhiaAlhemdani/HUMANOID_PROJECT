@@ -680,3 +680,42 @@ old ones for forwardSpeed >= 0) and by the data at 0.2 / 0.5 (27.2 / 35.1 / 33.4
 0.17 - one recovery step inside the hold, the known 0.8 hold-to-hold spread, not the change (the
 candidate gate flags it, read it against the per-segment table). Shipped as is: the templates are
 part of the G1 config, backward now gets them.
+
+## Run 20 (planned) — commanded height: does the gait hold up away from 0.785 m?
+
+Question: the GUI slider commands the pelvis height; the whole tuning (runs 1-19) was done at
+`HEIGHT=0.785`. What depends on it, and can the performance be the same at any height?
+
+**What the height can be.** Straight leg = 0.793 m pelvis (MJCF, flat sole). The shipped
+`defaultJointState` (hip -0.8, knee 1.6, ankle -0.8) is the symmetric posture of **0.600 m**, not of
+0.785: the posture cost (knee weight 0.1) and the height cost (weight 50) pull against each other and the
+walking height is their compromise (`knee_ms` 35-41 deg at mid stance = a pelvis around 0.76 m, not the
+commanded 0.785). The old slider range 0.395-1.195 m was generic: above 0.793 the height is unreachable
+and the knee is singular, below ~0.60 the robot is in a deep crouch no part of the stack was designed for.
+
+**What is independent of it** (nothing to do): step timing / double support / swing clearance (the gait
+law and the swing planner work above the ground, not below the pelvis), contactSync (sole height),
+the arm / waist / pelvis templates, the capture point (uses the measured CoM height: omega = sqrt(g/z)).
+
+**Changes (this commit):**
+- `minBaseHeight 0.60`, `maxBaseHeight 0.79` (slider ends = the leg's range), height slew 0.5 -> 0.2 m/s
+  (a slider move while walking is a ramp over a few stride fractions, not a 0.1 s kick in one single
+  support).
+- `score_suite.py` reports `z_m`, the pelvis height actually walked at (per segment, also in the
+  `compare_suite.py` limbs table).
+- `config/g1/compute_posture_table.py`: the symmetric flat-foot posture of every height in the range from
+  the real MJCF kinematics (0.60: knee 1.600, 0.70: 1.095, 0.75: 0.739, 0.785: ~0.30, 0.79: 0.194 rad),
+  printed as `postureHeights / postureJointStates` or written into a candidate config. With the table the
+  joint reference is the posture of the commanded height (the mechanism the Upkie ships), so the only
+  height-dependent term in the reference is the height itself.
+- `run_height_ladder.sh <tag> <config> [heights]`: the `speeds` ladder at several heights, compared
+  against the first.
+
+**Plan.** (1) Ladder on the shipped config: 0.785 / 0.75 / 0.72 / 0.68 (`humanH`). Read `z_m` (where it
+really walks per commanded height), falls, the 0.8 hold, `knee_ms`. (2) If the numbers hold to ~0.70 the
+answer is "the same within the slider range" and the slider range stays as set; if they fall off, the
+posture-table candidate (`humanPT`, same ladder) is the structural fix to test - note it also changes the
+0.785 operating point (the posture reference becomes knee ~0.3 instead of 1.6, the robot will walk
+higher / straighter), so its 0.785 entry must be read against the shipped run before anything else.
+(3) Only after that: per-height scaling of the gait timing (Froude: step time ~ sqrt(h)) if a trend
+remains.

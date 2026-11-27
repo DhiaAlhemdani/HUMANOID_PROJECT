@@ -15,4 +15,9 @@ the test, not controlled.
 | lateral | side-steps both ways, diagonal | 39 s |
 | stops | three start/stop cycles at 0.5 m/s | 31 s |
 | omni | a joystick-like mixture incl. backward | 42 s |
-| backward | the speeds ladder in reverse: -0.2 -> -0.5 -> -0.8 -> -0.5 -> -0.2 -> 0 m/s (the human-gait arm / waist / pelvis templates are forward-only and stay off here) | 40 s |
+| backward | the speeds ladder in reverse: -0.2 -> -0.5 -> -0.8 -> -0.5 -> -0.2 -> 0 m/s (the human-gait arm / waist templates run in reverse, see Run 19) | 40 s |
+
+All scripts command the pelvis height `HEIGHT` (default 0.785 m, the shipped `defaultBaseHeight`).
+`run_height_ladder.sh <tag> <config> [heights...]` runs one script (default `speeds`) at several heights
+(default 0.785 0.75 0.72 0.68) and compares them with the first as the baseline; `z_m` in the limbs table is
+the pelvis height the robot actually walked at.

@@ -39,7 +39,9 @@ class RobotLaunchTest(unittest.TestCase):
         return context, description
 
     def test_robot_defaults_and_yaml_height_are_shared_with_gui(self):
-        for robot, height in (('g1', .795), ('h2', 1.02)):
+        # G1: the slider range is the leg's range, 0.60 m (the defaultJointState crouch) to 0.79 m (straight leg
+        # 0.793 m minus a knee margin); the H2 keeps the generic +-0.4 m.
+        for robot, height, limits in (('g1', .785, (.60, .79)), ('h2', 1.02, (.62, 1.42))):
             context, description = self.resolve(robot)
             values = context.launch_configurations
             config = yaml.safe_load(Path(values['controllersParamsFile']).read_text())
@@ -48,8 +50,8 @@ class RobotLaunchTest(unittest.TestCase):
             self.assertEqual(float(values['guiRefBaseHeight']), height)
             self.assertEqual(float(values['guiMinBaseHeight']), reference['minBaseHeight'])
             self.assertEqual(float(values['guiMaxBaseHeight']), reference['maxBaseHeight'])
-            self.assertAlmostEqual(reference['minBaseHeight'], height - .4)
-            self.assertAlmostEqual(reference['maxBaseHeight'], height + .4)
+            self.assertAlmostEqual(reference['minBaseHeight'], limits[0])
+            self.assertAlmostEqual(reference['maxBaseHeight'], limits[1])
             for mode, argument in (('stair_climbing', 'stairClimbingFile'), ('terrain_walking', 'terrainWalkingFile')):
                 self.assertEqual(Path(values[argument]).parts[-4:], ('config', 'terrains', mode, f'{robot}.yaml'))
                 self.assertTrue(Path(values[argument]).is_file())
@@ -62,14 +64,14 @@ class RobotLaunchTest(unittest.TestCase):
             self.assertEqual(float(values['guiMaxVx']), reference['maxDisplacementVelocityX'])
 
     def test_height_override_does_not_modify_the_source_yaml(self):
-        for robot in ('g1', 'h2'):
+        for robot, override in (('g1', .75), ('h2', .9)):
             source = ROOT / 'config' / robot / 'ros2_controllers.yaml'
             before = source.read_bytes()
-            context, description = self.resolve(robot, refBaseHeight='0.9')
+            context, description = self.resolve(robot, refBaseHeight=str(override))
             values = context.launch_configurations
             resolved = yaml.safe_load(Path(values['controllersParamsFile']).read_text())
-            self.assertEqual(resolved[WB_ID]['ros__parameters']['ocs2']['reference']['defaultBaseHeight'], .9)
-            self.assertEqual(float(values['guiRefBaseHeight']), .9)
+            self.assertEqual(resolved[WB_ID]['ros__parameters']['ocs2']['reference']['defaultBaseHeight'], override)
+            self.assertEqual(float(values['guiRefBaseHeight']), override)
             self.assertNotEqual(Path(values['controllersParamsFile']), source)
             self.assertEqual(source.read_bytes(), before)
 

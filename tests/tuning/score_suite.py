@@ -24,6 +24,8 @@ Per segment (ground truth at 100 Hz, ~/tracking at 500 Hz):
   tau_hf       leg measured torque, 4-40 Hz band RMS [Nm]
   v_err        command tracking error RMS (|v_cmd - v_pelvis| planar, after the ramp) [m/s]; the command is
                rounded like the controller does when <case>/config.yaml enables ocs2.gait.continuous
+  z_m          mean pelvis height over the segment [m] (ground truth; against the commanded height: the
+               walking height is a cost compromise, not a tracked setpoint)
   step_t/l     mean time between step starts [s] and pelvis travel per step [m] (plan_mode; the leg proxy:
                human-scaled targets 0.36 m at 0.45 m/s, 0.44 m at 0.8, 0.56 m at 1.15), ds = double-support fraction
   gaits        templates seen (from plan_mode)
@@ -275,7 +277,7 @@ for s in segs:
              jerk=float(np.sqrt(sum(band(tt, jerk[:, k], 0, 15) ** 2 for k in range(3)))),
              ang_jerk=float(np.sqrt(sum(band(tt, ang_acc[:, k], 0, 15) ** 2 for k in range(2)))),
              roll_pp=math.degrees(float(np.ptp(g[:, 8]))), pitch_pp=math.degrees(float(np.ptp(g[:, 9]))),
-             z_pp_mm=1000 * float(np.ptp(g[:, 4])))
+             z_pp_mm=1000 * float(np.ptp(g[:, 4])), z_m=float(np.mean(g[:, 4])))
     # command tracking after the ramp (steady: whole segment; transition: last 2 s)
     tail = tt >= (s0 if s["kind"] == "steady" else s1 - 2.0)
     cmd = tracked_cmd(s["cmd"])
@@ -310,7 +312,7 @@ steady = [r for r in rows if r["kind"] == "steady"]
 trans = [r for r in rows if r["kind"] == "transition"]
 agg = {"survived": bool(np.isnan(fell)), "fell_at": None if np.isnan(fell) else round(fell - SETTLE, 1),
        "n_steady": len(steady), "n_transition": len(trans)}
-for key in ("jerk", "acc_hf", "lat_acc_hf", "tau_rate", "ang_jerk", "v_err", "step_t", "step_l", "leg_acc", "leg_jerk", "arm_acc", "arm_pp",
+for key in ("jerk", "acc_hf", "lat_acc_hf", "tau_rate", "ang_jerk", "v_err", "z_m", "step_t", "step_l", "leg_acc", "leg_jerk", "arm_acc", "arm_pp",
             "hl_leg", "knee_ms", "hip_rom", "knee_sw", "arm_amp", "arm_ph"):
     sv = [r[key] for r in steady if np.isfinite(r.get(key, np.nan))]
     tv = [r[key] for r in trans if np.isfinite(r.get(key, np.nan))]
@@ -328,10 +330,10 @@ print(f"SUITE {TITLE} | survived={agg['survived']} fell_at={agg['fell_at']} | st
       f"acc_hf {agg['steady_acc_hf_mean']} tau_rate {agg['steady_tau_rate_mean']} v_err {agg['steady_v_err_mean']} | "
       f"transitions ({len(trans)}): jerk max {agg['transition_jerk_max']} acc_hf max {agg['transition_acc_hf_max']} "
       f"tau_rate max {agg['transition_tau_rate_max']} | worst: {agg.get('worst_transition')}")
-print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err step_t step_l   ds leg_acc leg_jrk arm_acc arm_pp  hl_leg knee_ms hip_rom knee_sw arm_amp arm_ph  modes")
+print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err   z_m step_t step_l   ds leg_acc leg_jrk arm_acc arm_pp  hl_leg knee_ms hip_rom knee_sw arm_amp arm_ph  modes")
 for r in rows:
     print(f"SEG {r['label']:36s} {r['kind']:10s} {r['jerk']:6.2f} {r['acc_hf']:6.3f} {r['lat_acc_hf']:6.3f} {r['ang_jerk']:7.2f} "
-          f"{r['roll_pp']:6.2f} {r['pitch_pp']:7.2f} {r.get('tau_rate', float('nan')):9.1f} {r['v_err']:6.3f} "
+          f"{r['roll_pp']:6.2f} {r['pitch_pp']:7.2f} {r.get('tau_rate', float('nan')):9.1f} {r['v_err']:6.3f} {r['z_m']:5.3f} "
           f"{r.get('step_t', float('nan')):6.2f} {r.get('step_l', float('nan')):6.2f} {r.get('ds', float('nan')):5.2f} "
           f"{r.get('leg_acc', float('nan')):7.2f} {r.get('leg_jerk', float('nan')):7.1f} {r.get('arm_acc', float('nan')):7.2f} "
           f"{r.get('arm_pp', float('nan')):6.1f} {r.get('hl_leg', float('nan')):7.1f} {r.get('knee_ms', float('nan')):7.1f} "
