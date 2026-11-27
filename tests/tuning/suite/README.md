@@ -16,6 +16,7 @@ the test, not controlled.
 | stops | three start/stop cycles at 0.5 m/s | 31 s |
 | omni | a joystick-like mixture incl. backward | 42 s |
 | height | the GUI slider: 0.5 m/s walk with the commanded height stepped 0.785 -> 0.70 -> 0.785 while walking, then standing 0.785 -> 0.66 -> 0.785 (5th knot column = height; the controller's height slew shapes the step) | 32 s |
+| height_back | the `height` script at -0.5 m/s (slider moves while walking backward) | 32 s |
 | backward | the speeds ladder in reverse: -0.2 -> -0.5 -> -0.8 -> -0.5 -> -0.2 -> 0 m/s (the human-gait arm / waist templates run in reverse, see Run 19) | 40 s |
 
 Scripts without a 5th column command the pelvis height `HEIGHT` (default 0.785 m, the shipped `defaultBaseHeight`).
