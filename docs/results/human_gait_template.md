@@ -323,3 +323,21 @@ repeat, and `[MPC_TIMING] average advance` from both sim.logs.
 Decision: nodes 4 + hold stay shipped (robustness, neutral on the baseline). Continuous law:
 ship on. Template: suite says ship for 0.2-0.8 m/s + omni; owner's video verdict and the solve-rate
 split are the two gates left.
+
+## Run 10 — splitting the recipe: `humanC4W` (layout only) and `humanUB4r1` (speeds, vs humanC4)
+
+Speeds-only numbers (humanC4 speeds: steady 49.8 / 0.88 / 246, transition max 83.2):
+
+| | humanC4 | humanC4W (wrench state 1e-4 + vel, no template) | humanUB4r1 | humanUB4 |
+|---|---|---|---|---|
+| steady jerk / acc_hf / tau-rate | 49.8 / 0.88 / 246 | 39.5 / 0.68 / 209 (-21 %) | 37.4 / 0.62 / 203 (-25 %) | 36.4 / 0.63 / 207 |
+| transition max | 83.2 | 72.2 | 67.0 | 67.2 |
+| hold 0.2 / 0.5 / 0.8 | 49.3 / 55.5 / 88.6 | - | 34.8 / 42.8 / 66.3 | 35.4 / 44.2 / 69.7 |
+| stop ramp / hold | 32.3 / 3.6 | - | **62.8** / 2.3 | 25.5 / 0.15 |
+| solve Hz | 64.1 | (vs file pending) | 42.8 | 40.6 |
+
+Reading: most of the pelvis smoothing is step A's wrench-rate layout (-21 %, matching the sweep's
+humanW_1e-4); the template adds ~5 % on top and the human look (arm swing 6-8 deg, waist). The
+template's holds are consistent across the two repeats (0.8: 66-70). The one blemish repeats too:
+UB4r1's final stop ramp is 62.8 (UB3 r1 33.8, UB4 25.5) - the 1-in-3 noisy stop is still open.
+The solve-rate split needs humanC4W's rate (compare file / `[MPC_TIMING]`), not in the suite line.
