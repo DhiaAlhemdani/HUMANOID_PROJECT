@@ -103,7 +103,8 @@ def main():
             cmd = [float(np.interp(ts, K[:, 0], K[:, c])) for c in (1, 2, 3)]
             lines.append(f"cmd vx {cmd[0]:+.2f} vy {cmd[1]:+.2f} yaw {cmd[2]:+.2f}")
         if pm is not None:
-            mode = {0: "FLY", 1: "RF", 2: "LF", 3: "STANCE"}.get(int(np.interp(t, jt, pm)), "?")
+            m = float(np.interp(t, jt, pm))  # NaN after a fall (no policy): keep rendering
+            mode = {0: "FLY", 1: "RF", 2: "LF", 3: "STANCE"}.get(int(m), "?") if np.isfinite(m) else "-"
             lines.append(f"plan mode {mode}")
         _overlay(img, lines)
         writer.append_data(img)
