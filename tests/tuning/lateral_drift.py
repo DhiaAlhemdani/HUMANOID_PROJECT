@@ -53,13 +53,17 @@ for case in a.cases:
     gt = gt[np.argsort(gt[:, 0])]
     gt = gt[np.concatenate([[True], np.diff(gt[:, 0]) > 1e-6])]
     t = gt[:, 0]
-    x, y, vx, vy, yaw = gt[:, 2], gt[:, 3], gt[:, 5], gt[:, 6], gt[:, 10]
+    x, y, yaw = gt[:, 2], gt[:, 3], gt[:, 10]
     yaw_u = np.unwrap(yaw)
     fell = float(d["fell"]) if "fell" in d.files and np.isfinite(float(d["fell"])) else None
     if fell is not None:
         t_end = float(np.interp(fell, gt[:, 1], gt[:, 0]))
         keep = t <= t_end
-        t, x, y, vx, vy, yaw_u = t[keep], x[keep], y[keep], vx[keep], vy[keep], yaw_u[keep]
+        t, x, y, yaw_u = t[keep], x[keep], y[keep], yaw_u[keep]
+    # World velocities from the ground-truth positions (the odom twist is in the body frame), smoothed over ~50 ms.
+    win = max(1, int(round(0.05 / max(float(np.median(np.diff(t))), 1e-3))))
+    smooth = lambda v: np.convolve(v, np.ones(win) / win, mode="same") if win > 1 else v
+    vx, vy = smooth(np.gradient(x, t)), smooth(np.gradient(y, t))
     # Body-frame velocities from world velocities and ground-truth yaw.
     c, s = np.cos(yaw_u), np.sin(yaw_u)
     vx_b = c * vx + s * vy
@@ -87,11 +91,16 @@ for case in a.cases:
         feet = sorted({n.split("/")[1] for n in TN if n.startswith("obs_foot/")})
         by_side = {side(f): f for f in feet}
         ob = {ax: sig(f"obs_base/{ax}") for ax in ("x", "y", "yaw")}
-        if mode is not None and len(by_side) == 2 and all(v is not None for v in ob.values()):
+        g_yaw = np.interp(tt, t, yaw_u)
+        g_x = np.interp(tt, t, x)
+        # Estimated base pose if the stream has it (same odom frame as the estimated feet), else ground truth.
+        base_x = ob["x"] if ob["x"] is not None else g_x
+        base_y = ob["y"] if ob["y"] is not None else np.interp(tt, t, y)
+        base_yaw = ob["yaw"] if ob["yaw"] is not None else g_yaw
+        missing = [n for n, v in (("plan_mode", mode), ("obs_foot (two feet)", by_side if len(by_side) == 2 else None)) if v is None]
+        if not missing:
             mode = np.where(np.isfinite(mode), mode, -1.0)
             swinging = {1: "l", 2: "r"}
-            g_yaw = np.interp(tt, t, yaw_u)
-            g_x = np.interp(tt, t, x)
             last_yaw = None
             for k in np.flatnonzero(np.diff(mode) != 0) + 1:
                 m0, m1 = int(mode[k - 1]), int(mode[k])
@@ -100,9 +109,9 @@ for case in a.cases:
                 sd = swinging[m0]
                 off = {}
                 for ss, f in by_side.items():
-                    dx = sig(f"obs_foot/{f}/x")[k] - ob["x"][k]
-                    dy = sig(f"obs_foot/{f}/y")[k] - ob["y"][k]
-                    yb = ob["yaw"][k]  # estimated odom frame: consistent with the estimated feet
+                    dx = sig(f"obs_foot/{f}/x")[k] - base_x[k]
+                    dy = sig(f"obs_foot/{f}/y")[k] - base_y[k]
+                    yb = base_yaw[k]
                     off[ss] = -math.sin(yb) * dx + math.cos(yb) * dy
                 dyaw = 0.0 if last_yaw is None else math.degrees(g_yaw[k] - last_yaw)
                 last_yaw = g_yaw[k]
@@ -146,4 +155,6 @@ for case in a.cases:
                     fh.write(f"{r[0]:.3f},{r[1]:.3f},{r[2]},{r[3]:.4f},{r[4]:.4f},{r[5]:.4f},{r[6]:.3f}\n")
             print(f"  wrote {out}")
     else:
-        print("  (no plan_mode / obs_foot / obs_base streams: landing table skipped)")
+        why = f"missing streams {missing}" if TN and d["track"].size and missing else \
+            ("no tracking stream" if not (TN and d["track"].size) else "no swing -> stance transitions in plan_mode")
+        print(f"  (landing table skipped: {why})")

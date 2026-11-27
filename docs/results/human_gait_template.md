@@ -1034,3 +1034,43 @@ test active, an airborne sole cannot be "stopped" near the plane, so `heightThre
 ~1 cm -> landed = stopped and within 1 cm of the plane, or stopped and >= `blockedHeight` above a descending
 plan. Next: **humanT23d** = T23a + `heightThreshold 0.01`; the `contact_sync` counters (new in Run 23 A)
 and `fall_anatomy.py` on `humanT23a__speeds` to see whether the 0.8 ramp fall involved the rule at all.
+
+### Run 23 C — humanT23d, T23a fall anatomy, TEV lateral drift: the 0.8 m/s segment on tiles is the problem
+
+**humanT23d** (T23a + `heightThreshold 0.01`, vs humanTEV): forward 0.2 hold **32.5** (TEV 48.2), 0.5 hold 61.1
+(52.6), 0.8 hold 146 (109), then **fell in the ramp down to 0.5** (jerk 329, tau_rate 756). Backward every
+hold equal or better (33.1 / 51.6 / 73.7 / 47.3 / 37.9 vs 34.0 / 50.4 / 75.7 / 44.2 / 41.8), clean stop
+(1.5 vs 16.6), but the file counts 2 falls with no backward segment marked - to be checked in the
+backward summary. `contact_sync_counts.txt` came back empty: the solver stream of these runs has no
+`contact_sync/*` columns, so either the telemetry commit was not built or `plot_tracking` did not reach
+its DIAG line; check `solver_names` in `data.npz` before the next run.
+
+**humanT23a fall anatomy (29.87 s, ramp to 0.8).** 28.63: left lands on a +1.4 cm tile, sole stopped
+(vz 0.00 at -50 ms, z 1.4 cm at the switch) and is accepted at once - the blocked rule working as
+designed - with plan fz 71 N at +20 ms; within 100 ms pitch 3.5 -> 7.2 deg, roll -2 -> +4 deg. The next
+right swing goes wrong: both hip pitches at the 88 Nm limit at 28.92-28.97, right ankle pitch tracking
+error 0.32 rad, the right foot rises to 9 cm and is **loaded 8.4 cm in the air, still moving up** at its
+scheduled switch (29.20, plan fz 272 N) - the late case `lateWindow 0` cannot hold and the velocity rule
+cannot help (the foot is neither near the plane nor stopped). Roll 16 -> 44 deg over the next 300 ms. So
+the velocity rule accepted the right landing; what killed the run is the body's response to the +1.4 cm
+step-up at ~0.65 m/s (forward pitch, saturated hips, a swing that never comes down).
+
+**TEV lateral drift (`lateral_drift.py`, gt only - the first version mis-read the odom twist as world
+velocity, fixed: velocities now come from the positions; the landing table needs `plan_mode` + two
+`obs_foot` streams and now says which is missing).** Forward: y +3.88 m, yaw **+43.5 deg**, of which
+**22 deg in one metre (x 4.5-5.5 m, the 0.8 m/s hold)** with body-frame vy -0.5 m/s - a yaw slip, not a
+bias; before it yaw 1-8 deg, after it crab ~0 (the robot walks straight along its new heading, yaw
+30 -> 44 deg over 5 m). Backward: y +0.24 m, yaw -4.8 deg, no event (the 34 deg heading in the last bin
+is the stop). So TEV's drift is one near-fall at 0.8 m/s on the tiles, the same segment where T23a /
+T23c / T23d fell.
+
+**Reading.** The velocity-aware "landed" delivers what it was built for - the 0.2 / 0.5 m/s forward holds
+on tiles go from 48 / 53 (TEV) to 31-35 / 45-61 (T23a / T23d), stops are clean, backward is equal - but
+**no configuration is robust at 0.8 m/s on `suite_mild`**: TEV survives with a 22 deg yaw slip, the
+others fall within 1-2 strides of a step-up at that speed, with hip pitch torques at the limit. At 0.8 the
+stride is 0.40 m over 2-3 cells (step time 0.55 s, DS 0.12 s): the per-stride step reaches 3-4 cm and
+the body has 0.12 s of double support to absorb it. Options, in order of cost: (a) **acceptance per rung
+= 0.5 m/s on tiles**, 0.8 on flat (the blind walk's envelope); (b) a terrain speed cap: when the ground
+estimate has moved more than ~1 cm within the last few strides, clamp the commanded speed to 0.5 until it
+settles (blind, adaptive, cheap); (c) a 0.8-on-tiles study (fall anatomies of T23a / T23c / T23d at the
+step-up, hip-pitch saturation; the humanTEV yaw slip at 28-30 s) to find a lever at speed.
