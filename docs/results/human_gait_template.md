@@ -403,3 +403,37 @@ step the robot stands on a foot the plan still treats as airborne. `tests/tuning
 planned switches and the lift-offs, and the energy profile over the stride phase - the input for
 deciding between contact-triggered schedule adaptation (switch when the foot lands) and a
 touchdown-aware swing end.
+
+## Run 12 (analysis) — where the jerk is: the lift-off dump
+
+`jerk_attribution.py` on humanUB4 / humanC4 / humanW5 speeds (holds 0.2-0.8, +-40 ms windows):
+
+| hold 0.2 / 0.5 | planned lift-off: energy share, concentration | measured touchdown | phase bins 3-4 (end of DS) |
+|---|---|---|---|
+| humanC4 | 45-55 %, **4.0-4.5x** | 5-10 %, 0.5-0.9x | 50-60 % |
+| humanUB4 | 37-49 %, **3.5-3.9x** | 14-23 %, 1.3-1.9x | 40-55 % |
+| humanW5 | 19-26 %, 2.0x | 28-34 %, 2.5x | 25-30 % |
+
+The early touchdown is a constant 50 +- 2 ms at 0.2 / 0.5 (C4 58-62), not the jerk source. The
+jerk sits at the **lift-off**. `switch_profile.py` (event-aligned means, 0.2 m/s hold, planned fz of
+the lifting foot in the last 80 ms and the jerk peak):
+
+| | fz at -80 / -40 / -10 ms | step at the switch | jerk peak | az swing |
+|---|---|---|---|---|
+| humanC4 | 194 / 223 / **260** N (rising) | 260 N | 168 | +2.6 -> -2.3 m/s^2 |
+| humanUB4 | 189 / 174 / 113 | 113 N | 104 | +1.0 -> -1.6 |
+| humanW5 | 162 / 125 / 75 | 75 N | 80 | +0.5 -> -1.2 |
+
+The plan drops the lifting foot's force to zero in one node; the other foot ramps (priced), so the
+planned total force dips and the pelvis is *planned* to accelerate downward 1-2 m/s^2 right after
+lift-off. The wrench-rate layout only prices the dump indirectly (in swing the state copy decays
+with no physical consequence), which is why 5x the weight halves the step instead of removing it.
+At the touchdown switch the landing foot is loaded 129 N in one node the same way, 50 ms after it
+physically landed.
+
+The lever already exists: `costs.contactLoadShareWeight` (`WbIdContactLoadShareCost`, D2/D3,
+2026-11-24) pulls the vertical split in double support onto a smoothstep - landing foot 0 -> 1,
+lifting foot 1 -> 0 - so both switches are force-continuous; total-invariant, so it does not fight
+the dynamics. Its sweep then (1e-6..1e-3, old layout, trot, `cmd_tau_jump_at_switch` as primary)
+shipped nothing; with the rate-priced layout and pelvis jerk at lift-off as the target it is the
+first candidate, at weights 10-1000x the old sweep.
