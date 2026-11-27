@@ -494,3 +494,41 @@ Next: the touchdown. The plan reaches the ground 50 +- 2 ms after the foot at ev
 crosses z = 0 before the switch, then presses to -2 mm). Config candidates first (2.C-timing set A:
 offset 0 / +1 mm gave acc_hf -16 / -25 % in steady walk; `touchDownVelocity` 0 / -0.02), then a
 contact-triggered switch.
+
+## Run 15 — shipped repeat (speeds + omni) and the touchdown reference knobs
+
+**Repeat of the shipped config (`humanLO`, speeds + omni, vs humanUB4).** Steady jerk 31.6 vs 34.9
+(-9 %), 0 falls. Speeds holds 29.7 / 33.8 / 72.0 / 37.4 / 36.1 (UB4 35.4 / 44.2 / 69.7 / 42.0 / 37.8);
+omni holds 0.3 27.9 vs 32.8, turn 0.3+0.4 rad/s 36.1 vs 53.7 (-33 %), 0.3 35.5 vs 39.9, 0.6 66.3 vs
+51.5, 0.2/0.1 35.1 vs 39.4, -0.2 32.9 vs 38.7. Across the two LO runs the 0.2 / 0.5 holds repeat to
++-2 (27.8-29.7 / 33.8-39.6) while the 0.8 hold spans 62.8-72.0 and the 0.6 hold 51-66: **the
+lift-off window is a repeatable -16..-24 % at 0.2-0.5 m/s and a wash within noise at >= 0.6**,
+where the stride-level balance motion dominates. Decision stands.
+
+**Touchdown reference knobs (speeds, vs the humanLO repeat), all 0 falls:**
+
+| | humanLO | o0 (offset 0) | op1 (offset +1 mm) | v0 (vel 0, offset 0) |
+|---|---|---|---|---|
+| steady jerk / acc_hf | 34.8 / 0.59 | 31.9 / 0.57 | 33.3 / 0.59 | 35.8 / 0.68 |
+| hold 0.2 / 0.5 / 0.8 / 0.5 / 0.2 | 29.7 / 33.8 / 72.0 / 37.4 / 36.1 | 26.1 / 37.9 / 62.5 / 34.7 / 28.9 | 28.7 / 37.0 / 60.6 / 43.1 / 29.4 | 32.3 / 35.9 / 78.5 / 39.7 / 28.5 |
+| transition max / 0.8 ramp | 67.4 | 65.9 | **93.1** (fail) | 78.1 (fail) |
+| touchdown lead ms (0.2 / 0.5 / 0.8) | 50 / 51 / 39+-24 | 46 / 48 / 44 | 40 / 43 / 45 | 56 / 58 / -2+-29 |
+| sw_td concentration (0.2) | 2.8-3.4 | 3.1-3.3 | 2.6-3.1 | 3.5-5.3 |
+
+The reference knobs barely move the lead (50 -> 46 -> 40 ms; zero approach velocity makes it
+*longer*) and none moves the touchdown concentration: the earliness is not in the spline. The
+profiles say where it is: with the spline ending at **+1 mm** the plan's foot (`plan_foot`, FK of
+the optimized state) is at +0.7 mm 30 ms before the switch, **-1.0 mm at -10 ms**, +0.4 mm after
+it; with the spline ending at 0 at zero velocity it is -0.9 / -1.9 / -2.2 / -1.6 mm at -40..-10 ms.
+The plan runs **~2 mm below its own spline in the last 40 ms of every swing** and the real foot
+(0.3-0.5 mm, on the ground) lands when the plan crosses it, 25-35 ms before the switch. This is
+the sag of `docs/results/touchdown_timing_sweep.md` (acceleration-level swing equality, poles
+-4.4 / -45.6 rad/s at kp 200 / kd 50, zero-order-held node accelerations on a decelerating spline)
+measured again on the human gait, where it was last seen "gone" on the trot. 2 mm at the 37 mm/s
+approach is the 50 ms.
+
+Next: the swing gain, config only (`constraints.footMotionEquality.swingPositionErrorGain_z`
+is a CppAD parameter): 400 (poles -10 / -40) and 600 (-20 / -30) on the shipped config, plus
+600 with offset 0. Watch `lead_ms` and `plan_z` at -30..-10 ms; a result is only real if the plan
+stays on its spline *and* the 0.2 / 0.5 holds move (the 0.8 hold is noise-bound). Stops and the
+0.8 ramp are the guards (sweep 2 saw a 1.33x stops pitch regression at a shared 400).
