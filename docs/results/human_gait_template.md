@@ -761,3 +761,20 @@ the lever is `q.basePose[2]` (50) with the range capped at the natural walking h
 0.735, `maxBaseHeight` 0.745) so a stiffer height cost can never push the walk into the straight-leg
 regime: `humanHZ200` / `humanHZ400` (z weight 200 / 400, Q and Qf), `height` + `speeds` against
 `humanCSr1` - the cost is vertical stiffness at touchdown (acc_hf, jerk), the ladder decides.
+
+**`humanHZ200` / `humanHZ400` (z weight 200 / 400, defaultBaseHeight 0.735, maxBaseHeight 0.745; `height`
++ `speeds` vs `humanCSr1`, one session):**
+
+| | walked at 0.5 m/s, cmd 0.745 -> 0.700 | standing 0.66 | speeds steady jerk / acc_hf | 0.8 hold | trans max acc_hf | falls |
+|---|---|---|---|---|---|---|
+| shipped (50) | 0.734 -> 0.725 (9 mm of 45) | 0.661 | 24.8 / 0.49 | 66.4 | 1.03 | 0 |
+| z 200 | 0.734 -> 0.717 (17 mm) | 0.659 | 23.5 / 0.47 | 58.9 | 0.97 | 0 |
+| z 400 | 0.737 -> 0.713 (24 mm) | 0.660 | 25.1 / 0.49 | 73.4 | 1.18 (guard fail) | 0 |
+
+Eight times the height weight buys half of the commanded 4.5 cm. The walking height is set by the
+dynamics (the stance-leg vault, the torque cost of a crouch), not by the reference weight: the slider
+is a standing-height control with a small walking effect, and no reference weight makes it otherwise.
+z 200 is free within one session (every speeds number equal or better, no falls) and gives ~2 cm of
+visible dip; z 400 starts to cost at the 0.8 ramp down (acc_hf 1.18, tau rate 362). Decision pending
+(ship 200 with the honest range 0.60-0.745 / default 0.735, or keep 50 and document the slider as the
+standing height). The lever beyond this is the knee torque cost in R, at the price of knee heat.
