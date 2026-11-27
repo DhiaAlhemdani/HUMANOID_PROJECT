@@ -1315,3 +1315,26 @@ Expected on `slope_5` forward: 100 % cap at 0.3 from the third ramp stride, no r
 0.2 strides, no 0.42 m stride. Then `slope_10` (second incline tier, 0.2 m/s; the 10 deg ramp also lands
 the swing foot 3.5 cm early per 0.2 m stride, which is where Run 25 B - the slope in the swing touchdown
 height - would come in if it is needed).
+
+### Run 25 A — slope-aware cap on `slope_5`: **pass, both ways**
+
+humanT25aS5 (humanT24e config + the slope tiers, rebuilt) vs humanT24eS5: **0 falls**, steady jerk 29.4
+(T24e's surviving backward run: 41.4), tau_rate 153, every guard green. The slope telemetry reads
+**+0.086 forward / -0.086 backward** on the ramp (tan 5 deg = 0.0875) and 0.000 on the flat; the cap sits
+at `100 % @ 0.30` from the third ramp stride to the plateau, with `0.36` in the ramp-up segment (the two
+raw-step strides at 0.2 before the plane is agreed, then 0.3), and releases on the plateau (the last 0.2
+hold: 41-48 %, slope back to ~0). Forward holds 37.5 / 30.4 / 30.7 / 36.9 / 29.9 at 0.2-0.3 m/s actual,
+backward 36.3 / 30.3 / 41.6 / 41.1 / 37.4; 46 landings each way, **pitch excursion 0.45-0.6 deg at every
+ramp landing**, strides a steady 0.17-0.18 m, steps 1.4-1.6 cm, no 0.42 m stride anywhere. The roughness
+counter stays at 0 on the ramp (residual out of the plane ~0): the cap no longer flaps.
+
+One oddity to keep an eye on: the very first landing of the forward run (standing start, flat) shows a
+20.6 deg pitch excursion (segment `ramp -> 0.2`: jerk 59.7, pitch_pp 21). It recovered by the next
+stride and no other run of this series shows it; if it repeats, it is a start-up transient of the
+estimator / contactSync at the first step and gets its own anatomy.
+
+Rung status: `suite_mild` pass (T24e), `suite_rough` parked (foot), `slope_5` pass (T25a). Next:
+`slope_10` (second incline tier, 0.2 m/s; the swing foot lands 3.5 cm early per 0.2 m stride going up and
+3.5 cm late going down - this is where the touchdown height may need the slope, Run 25 B), the
+`suite_mild` re-check with the slope code in (the slope must never go consistent on tiles), then
+`curb_4`.
