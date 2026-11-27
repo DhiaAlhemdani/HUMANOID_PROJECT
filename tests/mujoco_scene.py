@@ -11,6 +11,9 @@ ROOT = Path(__file__).resolve().parents[1]
 MODULES = {"none": None, "stairs": "terrains/stairs.xml", "ramp": "terrains/ramp.xml",
            "rough": "terrains/uneven_terrain.xml", "slope": "terrains/slope.xml", "boxes": "objects/boxes.xml",
            "suite_mild": "terrains/uneven_suite_mild.xml", "suite_rough": "terrains/uneven_suite_rough.xml",
+           "slope_5": "terrains/g1_slope_5.xml", "slope_10": "terrains/g1_slope_10.xml",
+           "curb_4": "terrains/g1_curb_4.xml", "curb_8": "terrains/g1_curb_8.xml",
+           "stairs_3x10": "terrains/g1_stairs_3x10.xml", "course": "terrains/g1_course.xml",
            "upkie_ramp": "terrains/upkie_ramp.xml", "upkie_rough": "terrains/upkie_uneven_terrain.xml",
            "upkie_course": "terrains/upkie_course.xml",
            "split_height": None}

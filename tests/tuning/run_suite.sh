@@ -3,7 +3,7 @@
 # and (optionally) compare against a baseline tag.
 #
 # usage: run_suite.sh <tag> <controllers.yaml | default> [baseline_tag]
-#   env: OUT, WS, SKIP_BUILD=1, TERRAIN (none | suite_mild | suite_rough, the uneven fields of config/terrains/uneven_suite_*_params.yaml),
+#   env: OUT, WS, SKIP_BUILD=1, TERRAIN (none | suite_mild | suite_rough | slope_5 | slope_10 | curb_4 | curb_8 | stairs_3x10 | course, see suite/README.md),
 #        HEIGHT (commanded pelvis height, default 0.785 = the shipped defaultBaseHeight), SCRIPTS="speeds turns lateral stops omni backward" (default all), VIDEO=1 (render
 #        <case>/replay.mp4 with render_replay.py; VIDEO_PY=<python with mujoco imageio imageio-ffmpeg pillow>,
 #        e.g. a venv: python3 -m venv ~/.venvs/replay && ~/.venvs/replay/bin/pip install mujoco imageio imageio-ffmpeg pillow numpy),

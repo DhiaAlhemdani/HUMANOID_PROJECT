@@ -1,0 +1,14 @@
+# Stairs rung: three 10 cm x 0.30 m steps up at x = 2.0, a 1.5 m landing at 0.30 m, three down from x = 4.4; mirrored.
+# Walked blind (no terrain_walk planner); expected to be the hardest rung.
+course:
+  model: g1_stairs_3x10
+  half_width: 3.0
+  mirror_x: true
+  friction: [0.9, 0.005, 0.0001]
+  stairs:
+  - {name: up, x0: 2.0, riser: 0.1, tread: 0.3, count: 3}
+  - {name: down, x0: 4.4, riser: 0.1, tread: 0.3, count: 3, down: true}
+  plateaus:
+  - name: landing
+    x: [2.9, 4.4]
+    top: 0.3

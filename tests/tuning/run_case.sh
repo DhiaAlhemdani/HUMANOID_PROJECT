@@ -4,7 +4,7 @@
 #
 # usage: run_case.sh <tag> <controllers.yaml | default> [vx_mps]
 #   env: HEIGHT (commanded pelvis height, default 0.785), TERRAIN (tests/mujoco_scene.py module: none | suite_mild | suite_rough |
-#        rough | stairs | ..., default none), LAUNCH_ARGS (extra robot.launch.py args), OUT (results root, default
+#        slope_5 | slope_10 | curb_4 | curb_8 | stairs_3x10 | course | rough | ..., default none), LAUNCH_ARGS (extra robot.launch.py args), OUT (results root, default
 #        <repo>/tuning_results), RVIZ=true SHOTS=1 (RViz screenshots during the walk),
 #        HOLD_SECONDS (constant-command duration, default 20),
 #        MODEL (variant robot MJCF from make_model.py; default = shipped g1_29dof.xml)

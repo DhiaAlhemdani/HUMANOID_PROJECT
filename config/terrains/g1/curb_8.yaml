@@ -1,0 +1,16 @@
+# 8 cm curb rung: as curb_4 at 8 cm, above the 5 cm swing height (the toe must clear it on the way up).
+course:
+  model: g1_curb_8
+  half_width: 3.0
+  mirror_x: true
+  friction: [0.9, 0.005, 0.0001]
+  plateaus:
+  - name: curb_0
+    x: [2.0, 5.0]
+    top: 0.08
+  - name: curb_1
+    x: [7.0, 10.0]
+    top: 0.08
+  - name: curb_2
+    x: [12.0, 15.0]
+    top: 0.08
