@@ -124,20 +124,24 @@ def main():
         for f in fails:
             print(f"  [FAIL] {c}: {f}")
     # per-segment table
-    print("\nper segment (jerk | acc_hf | tau_rate):")
+    def longest(runs, tags, s):
+        return max((runs[t].get(s, {}).get("segments", []) for t in tags), key=len)
+
+    print("\nper segment (jerk | acc_hf | tau_rate; F = fell in this segment):")
     tags = [a.base] + cands
     runs = {t: load(a.root, t, a.scripts) for t in tags}
     for s in a.scripts:
         if s not in base_runs:
             continue
         print(f"-- {s}")
-        for i, seg in enumerate(base_runs[s]["segments"]):
+        # rows from the longest run: a baseline that fell early must not hide the candidates' later segments
+        for i, seg in enumerate(longest(runs, tags, s)):
             cells = []
             for t in tags:
                 segs = runs[t].get(s, {}).get("segments", [])
                 r = segs[i] if i < len(segs) else None
-                cells.append(f"{r['jerk']:6.2f} {r['acc_hf']:6.3f} {r.get('tau_rate', float('nan')):7.0f}" if r else " " * 21)
-            print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells) + ("  FELL" if seg.get("fell") else ""))
+                cells.append(f"{r['jerk']:6.2f} {r['acc_hf']:6.3f} {r.get('tau_rate', float('nan')):7.0f}" + ("F" if r.get("fell") else " ") if r else " " * 22)
+            print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells))
     # limbs table (only when the baseline has joint-state metrics)
     if any("leg_acc" in seg for j in base_runs.values() for seg in j["segments"]):
         print("\nper segment limbs (z_m m | step_l m | v_err | leg_acc | leg_jerk | arm_acc | arm_pp deg || hl_leg | knee_ms | hip_rom | knee_sw | arm_amp deg):")
@@ -145,7 +149,7 @@ def main():
             if s not in base_runs:
                 continue
             print(f"-- {s}")
-            for i, seg in enumerate(base_runs[s]["segments"]):
+            for i, seg in enumerate(longest(runs, tags, s)):
                 cells = []
                 for t in tags:
                     segs = runs[t].get(s, {}).get("segments", [])

@@ -681,7 +681,7 @@ old ones for forwardSpeed >= 0) and by the data at 0.2 / 0.5 (27.2 / 35.1 / 33.4
 candidate gate flags it, read it against the per-segment table). Shipped as is: the templates are
 part of the G1 config, backward now gets them.
 
-## Run 20 (planned) — commanded height: does the gait hold up away from 0.785 m?
+## Run 20 — commanded height: does the gait hold up away from 0.785 m?
 
 Question: the GUI slider commands the pelvis height; the whole tuning (runs 1-19) was done at
 `HEIGHT=0.785`. What depends on it, and can the performance be the same at any height?
@@ -719,3 +719,36 @@ posture-table candidate (`humanPT`, same ladder) is the structural fix to test -
 higher / straighter), so its 0.785 entry must be read against the shipped run before anything else.
 (3) Only after that: per-height scaling of the gait timing (Froude: step time ~ sqrt(h)) if a trend
 remains.
+
+**Result, shipped config (`humanH`, `speeds` at commanded 0.785 / 0.75 / 0.72 / 0.68):**
+
+| commanded | walked `z_m` 0.2 / 0.5 / 0.8 / standing | steady jerk | 0.8 hold | trans max | falls | knee_ms 0.2 / 0.8 |
+|---|---|---|---|---|---|---|
+| 0.785 | 0.740 / 0.735 / 0.722 / 0.743 | 31.6 | 72.0 | 67.4 | 0 | 35.8 / 40.8 |
+| 0.75  | 0.733 / 0.731 / 0.720 / 0.718 | 31.0 | 66.3 | 59.1 | 0 | 39.4 / 41.4 |
+| 0.72  | 0.726 / 0.727 / 0.719 / 0.695 | 31.3 | 68.3 | 72.1 | 0 | 43.1 / 43.6 |
+| 0.68  | 0.720 / 0.722 / 0.715 / 0.664 | 33.4 | 82.1 | 63.3 | 0 | 46.3 / 43.3 |
+
+The performance is flat over the slider (steady 31.0-33.4 = the repeat spread; the 0.8 hold 66-82 inside
+its known spread; 0 falls; step length, arm swing, hip range identical) - **because the walking height
+barely follows the command**: a 10.5 cm command range moves the walked height 2 cm (0.740 -> 0.720 at
+0.2 m/s, 0.722 -> 0.715 at 0.8). The slider sets the standing height (0.743 -> 0.664, tracked within
+the posture compromise) and the knee bend; walking, the optimizer settles at 0.72-0.74 m whatever is
+asked, and that is the operating point every run since Run 9 was tuned at. The only trend is at the low
+end: at 0.68 the 0.8 hold is the worst of the four (82, arm acc 4.4) - a deeper crouch at top speed
+costs a little.
+
+**Result, posture-table candidate (`humanPT`, same ladder):** at 0.785 the robot walks at 0.753 m with
+an 11.7 deg mid-stance knee and **falls in the 0.2 m/s hold** (steady jerk 197 before the fall); at 0.75
+it falls on the ramp to 0.5 (walked 0.745, knee 32). At 0.72 and 0.68 it survives with the same numbers
+as the shipped config (29.7 / 32.3 steady, walked 0.733 / 0.723, knee 39 / 44). The straight-leg regime
+(walked > ~0.745, knee < ~30 deg) is where this controller falls - the same finding as the human leg
+template (runs 3-5, 11): the gait needs the bent knee. **Rejected.** The crouch posture reference is not
+a defect to remove: it is what keeps the knee in the band the gait works in.
+
+**Conclusion.** The goal "the same performance at any height" is met by the shipped controller over the
+slider range by construction of its cost compromise: walking, the height is the gait's own. The slider
+range 0.60-0.79 stays (0.60-0.68 untested walking; standing it is fine). Do not raise the walked height
+above ~0.745 (posture table, higher `q.basePose[2]`, straight-leg `defaultJointState`) without
+re-tuning the whole stack. If a crouched walk at the low end matters (0.68 at 0.8 m/s), the lever is the
+height weight, not the posture.
