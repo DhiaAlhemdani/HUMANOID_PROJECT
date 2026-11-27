@@ -15,6 +15,9 @@ set -u
 HERE=$(cd "$(dirname "$0")" && pwd)
 REPO=$(cd "$HERE/../.." && pwd)
 WS=${WS:-/root/ocs2_ros2_ws}
+if [ ! -r "$WS/install/setup.bash" ]; then
+  echo "$(basename "$0"): no readable colcon workspace at WS=$WS (install/setup.bash missing or not readable); export WS=<your colcon ws, e.g. ~/Documents/GitHub/humanoid_ws>" >&2; exit 1
+fi
 OUT=${OUT:-$REPO/tuning_results}
 TAG=$1; CFG=$2; BASE=${3:-}
 SCRIPTS=${SCRIPTS:-"speeds turns lateral stops omni"}
