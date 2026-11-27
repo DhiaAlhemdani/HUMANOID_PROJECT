@@ -734,6 +734,16 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           useEstimate: false
           maxStepPerSolve: 0.002
 
+        # Blind terrain speed cap (TerrainSpeedCap.h, run 24): a sole-height difference of stepThreshold
+        # between the two stance feet marks the ground as uneven for holdSeconds and caps the commanded
+        # planar speed at maxSpeed meanwhile. Off pending the terrain ladder (run 23: the tiles are walked
+        # at 0.2-0.5 m/s and lost at 0.8).
+        terrainSpeedCap:
+          enabled: false
+          stepThreshold: 0.01
+          maxSpeed: 0.5
+          holdSeconds: 3.0
+
         # Gait-phase-locked arm swing superimposed on the nominal arm posture (left arm forward while
         # the right leg swings). Off: the arms only hold the nominal posture, and whatever arm motion
         # the optimizer finds useful for angular momentum is unreferenced. Amplitudes are per m/s of

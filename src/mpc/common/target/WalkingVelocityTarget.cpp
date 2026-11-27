@@ -84,6 +84,15 @@ WalkingVelocityCommand WalkingVelocityTarget::scaleCommand(WalkingVelocityComman
       command.linear_velocity_y *= minWalkSpeed / speed;
     }
   }
+  // Terrain speed cap: scale the planar command down to the cap, keeping its direction and the yaw rate.
+  const scalar_t cap = speedCap_.load();
+  if (std::isfinite(cap) && cap > 0.0) {
+    const scalar_t speed = std::hypot(command.linear_velocity_x, command.linear_velocity_y);
+    if (speed > cap) {
+      command.linear_velocity_x *= cap / speed;
+      command.linear_velocity_y *= cap / speed;
+    }
+  }
   return command;
 }
 

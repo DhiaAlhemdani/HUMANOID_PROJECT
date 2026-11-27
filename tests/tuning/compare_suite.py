@@ -127,9 +127,11 @@ def main():
     def longest(runs, tags, s):
         return max((runs[t].get(s, {}).get("segments", []) for t in tags), key=len)
 
-    print("\nper segment (jerk | acc_hf | tau_rate; F = fell in this segment):")
     tags = [a.base] + cands
     runs = {t: load(a.root, t, a.scripts) for t in tags}
+    has_cap = any("cap_frac" in seg for t in tags for j in runs[t].values() for seg in j.get("segments", []))
+    print("\nper segment (jerk | acc_hf | tau_rate" + (" | cap = share of solves under the terrain speed cap" if has_cap else "")
+          + "; F = fell in this segment):")
     for s in a.scripts:
         if s not in base_runs:
             continue
@@ -140,7 +142,9 @@ def main():
             for t in tags:
                 segs = runs[t].get(s, {}).get("segments", [])
                 r = segs[i] if i < len(segs) else None
-                cells.append(f"{r['jerk']:6.2f} {r['acc_hf']:6.3f} {r.get('tau_rate', float('nan')):7.0f}" + ("F" if r.get("fell") else " ") if r else " " * 22)
+                cap = (f" {r['cap_frac']:4.0%}" if r and "cap_frac" in r else "     ") if has_cap else ""
+                cells.append(f"{r['jerk']:6.2f} {r['acc_hf']:6.3f} {r.get('tau_rate', float('nan')):7.0f}" + cap + ("F" if r.get("fell") else " ")
+                             if r else " " * (22 + len(cap)))
             print(f"  {seg['label']:34s} {seg['kind'][:5]:5s} | " + " | ".join(cells))
     # limbs table (only when the baseline has joint-state metrics)
     if any("leg_acc" in seg for j in base_runs.values() for seg in j["segments"]):

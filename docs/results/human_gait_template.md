@@ -1074,3 +1074,35 @@ the body has 0.12 s of double support to absorb it. Options, in order of cost: (
 estimate has moved more than ~1 cm within the last few strides, clamp the commanded speed to 0.5 until it
 settles (blind, adaptive, cheap); (c) a 0.8-on-tiles study (fall anatomies of T23a / T23c / T23d at the
 step-up, hip-pitch saturation; the humanTEV yaw slip at 28-30 s) to find a lever at speed.
+
+## Run 24 — blind terrain speed cap (`reference.terrainSpeedCap`): walk the tiles at the speed they allow
+
+Decision after Run 23 C: option (b). The walk is blind; the one terrain signal it has is what the feet
+report. `TerrainSpeedCap` (`mpc/common/gait/TerrainSpeedCap.h`): when both feet are in contact, the
+difference of their sole heights is the step the last stride took - frame-independent (same instant,
+same estimator frame), so it works with `height.source kinematic` and with `useEstimate` on or off. A step
+of at least `stepThreshold` (0.01 m) marks the ground as uneven for `holdSeconds` (3.0 s, 4-5 strides);
+while that holds the commanded planar speed is capped at `maxSpeed` (0.5 m/s), direction and yaw rate
+untouched. The cap is applied to the scaled command *before* the filter and slew limiter
+(`WalkingVelocityTarget::scaleCommand`), so `velocityCommandRateLimits` (0.5 m/s^2) turns it into a 0.6 s
+ramp; it releases the same way. Flat ground never trips it (both soles on one plane within mm); a foot
+loaded in the air (the T23a right foot at 8 cm) does, which is the right response. Updated on the
+solver thread in `modifyReferences` after contactSync (an advanced touchdown counts as double support at
+once), flat-ground modes only; the motion manager reads it before conditioning the command. Off by
+default; unit-tested (`tests/terrain_speed_cap_test.cpp`) and wired (`terrain_speed_cap_contract_test.py`).
+
+Telemetry: solver row `terrain/cap` (cap in force, 0 = none), `terrain/steps` (double supports that
+tripped it), `terrain/last_step`; `score_suite.py` adds `cap_frac` / `terrain_steps` per segment and the
+cumulative `contact_sync` / terrain counters to the SUITE line and `suite.json` (the DIAG line of
+`plot_tracking.py` is not produced for suite cases - that is why `contact_sync_counts.txt` was empty);
+`compare_suite.py` shows the per-segment cap share.
+
+**Reading the comparison:** with the cap active the 0.8 m/s segments run at 0.5, so `v_err_max` (script
+command vs actual) reads ~0.3 by construction and the `v_err_max` guard fails - expected; judge those
+segments by falls / jerk / tau_rate and by `cap` = 100 %. On flat the cap must never engage (cap 0 %
+everywhere, metrics identical to the baseline).
+
+Plan (`suite_mild`, `speeds backward`): humanT24a = humanT23d + `terrainSpeedCap.enabled true`
+(defaults), vs humanTEV; humanT24b = humanTEV + cap (is the velocity rule still needed once the speed is
+right?); then the flat check of the winner vs humanCSr1 (`speeds backward`, cap must read 0 %), then
+`suite_rough` and the next rungs with the same config.

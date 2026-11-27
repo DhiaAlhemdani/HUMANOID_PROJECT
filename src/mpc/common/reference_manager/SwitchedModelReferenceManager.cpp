@@ -639,6 +639,11 @@ void SwitchedModelReferenceManager::modifyReferences(scalar_t initTime,
   if (contactSync_.enabled && !stairPlan && !isTerrainWalkActive()) {
     applyContactSync(initTime, initState, modeSchedule);
   }
+  if (!stairPlan && !isTerrainWalkActive()) {
+    updateTerrainSpeedCap(initTime, initState, modeSchedule);
+  } else {
+    terrainSpeedCapValue_.store(std::numeric_limits<scalar_t>::infinity());  // those modes pace themselves
+  }
   const auto& swingHeights = gaitSchedulePtr_->getSwingHeightSequence();
 
   if (stairPlan) {
@@ -928,6 +933,25 @@ void SwitchedModelReferenceManager::applyContactSync(scalar_t initTime, const ve
   if (result.heldFoot >= 0) {
     contactSyncHeld_.fetch_add(1);
   }
+}
+
+void SwitchedModelReferenceManager::updateTerrainSpeedCap(scalar_t initTime, const vector_t& initState,
+                                                          const ModeSchedule& modeSchedule) {
+  if (!terrainSpeedCap_.getSettings().enabled) {
+    terrainSpeedCapValue_.store(std::numeric_limits<scalar_t>::infinity());
+    return;
+  }
+  // The schedule after contactSync: an advanced touchdown counts as double support at once.
+  const contact_flag_t contacts = modeNumber2StanceLeg(modeSchedule.modeAtTime(initTime));
+  const feet_array_t<vector3_t> feet = computeFeetPositions(initState);
+  feet_array_t<scalar_t> soleHeights;
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    soleHeights[foot] = feet[foot](2);
+  }
+  const scalar_t cap = terrainSpeedCap_.update(initTime, contacts, soleHeights);
+  terrainSpeedCapValue_.store(cap);
+  terrainStepCount_.store(terrainSpeedCap_.stepCount());
+  terrainLastStep_.store(terrainSpeedCap_.lastStep());
 }
 
 feet_array_t<vector3_t> SwitchedModelReferenceManager::computeFeetPositions(const vector_t& initState) {

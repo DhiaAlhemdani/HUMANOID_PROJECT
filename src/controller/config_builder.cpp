@@ -151,6 +151,13 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   config.contactSync.blockedHeight = p.gait.contactSync.blockedHeight;
   ocs2::humanoid::validateContactSyncSettings(config.contactSync);
 
+  // --- blind terrain speed cap ---
+  config.terrainSpeedCap.enabled = p.reference.terrainSpeedCap.enabled;
+  config.terrainSpeedCap.stepThreshold = p.reference.terrainSpeedCap.stepThreshold;
+  config.terrainSpeedCap.maxSpeed = p.reference.terrainSpeedCap.maxSpeed;
+  config.terrainSpeedCap.holdSeconds = p.reference.terrainSpeedCap.holdSeconds;
+  ocs2::humanoid::validateTerrainSpeedCapSettings(config.terrainSpeedCap);
+
   // --- swing trajectory ---
   auto& swing = config.swingTrajectoryConfig;
   swing.liftOffVelocity = p.gait.swingTrajectory.liftOffVelocity;

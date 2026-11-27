@@ -233,6 +233,8 @@ void ProceduralMpcMotionManager::preSolverRun(scalar_t initTime,
     switchedModelReferenceManagerPtr_->setTargetTrajectories(std::move(target.targetTrajectories));
     filteredVelCommand = target.motionCommand;
   } else {
+    // Blind terrain speed cap decided by the reference manager on the previous solve (+inf = none).
+    walkingVelocityTarget_.setSpeedCap(switchedModelReferenceManagerPtr_->terrainSpeedCapValue());
     WalkingVelocityTarget::Output target = walkingVelocityTarget_.evaluate(initTime, finalTime, initState);
     switchedModelReferenceManagerPtr_->setTargetTrajectories(std::move(target.targetTrajectories));
     filteredVelCommand = target.conditionedCommand;

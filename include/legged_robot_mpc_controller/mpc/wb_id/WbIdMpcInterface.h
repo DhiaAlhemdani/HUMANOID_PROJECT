@@ -134,6 +134,8 @@ class WbIdMpcInterface final : public RobotInterface {
     SwitchedModelReferenceManager::HumanGaitSettings humanGait;
     //! Contact-synchronised touchdown (ContactSync.h); off by default.
     ContactSyncSettings contactSync;
+    //! Blind terrain speed cap (TerrainSpeedCap.h); off by default.
+    TerrainSpeedCapSettings terrainSpeedCap;
     bool useTerrainHeightEstimate = false;
     scalar_t maxTerrainHeightStep = 0.01;
 

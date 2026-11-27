@@ -61,6 +61,10 @@ w2s = lambda w: float(np.interp(w, gt[:, 1], gt[:, 0]))   # probe wall clock -> 
 TN = list(d["track_names"]) if "track_names" in d.files else []
 TR = d["track"] if TN and d["track"].size else None
 tc = lambda n: TR[:, TN.index(n)] if TR is not None and n in TN else None
+# Solver-row telemetry (per solve): contactSync counters and the terrain speed cap, when the build has them.
+SN = [str(n) for n in d["solver_names"]] if "solver_names" in d.files else []
+SV = d["solver"] if SN and "solver" in d.files and d["solver"].size else None
+sc = lambda n: SV[:, SN.index(n)] if SV is not None and n in SN else None
 
 
 def band(tt, x, lo, hi, fs=500.0):
@@ -304,6 +308,14 @@ for s in segs:
         r.update(human_likeness(s0, s1, r.get("step_l", float("nan"))))
     yaw_rate = deriv(tt, np.unwrap(yaw))
     r["w_err"] = float(np.sqrt(np.mean((yaw_rate[tail] - cmd[2]) ** 2))) if tail.sum() > 5 else float("nan")
+    cap = sc("terrain/cap")
+    if cap is not None:
+        st = sc("t")
+        ms = (st >= s0) & (st <= s1) & np.isfinite(cap)
+        if ms.sum() > 5:
+            r["cap_frac"] = float(np.mean(cap[ms] > 0))  # share of solves with the terrain speed cap in force
+            steps = sc("terrain/steps")[ms]
+            r["terrain_steps"] = int(steps[-1] - steps[0]) if np.isfinite(steps).all() else 0
     if TR is not None and legs:
         m = (jt >= s0) & (jt <= s1)
         if m.sum() > 50:
@@ -331,13 +343,27 @@ for key in ("jerk", "acc_hf", "lat_acc_hf", "tau_rate", "ang_jerk", "v_err", "z_
 if trans:
     worst = max(trans, key=lambda r: r.get("jerk", -1))
     agg["worst_transition"] = worst["label"]
+# Cumulative solver-row counters over the whole run (0 when the build has no telemetry).
+def _counter(name):
+    v = sc(name)
+    if v is None:
+        return None
+    v = v[np.isfinite(v)]
+    return int(v[-1] - v[0]) if v.size else 0
+agg["contact_sync"] = {k: _counter(f"contact_sync/{k}") for k in ("advanced", "held", "blocked", "descending")}
+agg["terrain_steps"] = _counter("terrain/steps")
+cap_all = sc("terrain/cap")
+agg["cap_frac"] = round(float(np.mean(cap_all[np.isfinite(cap_all)] > 0)), 4) if cap_all is not None and np.isfinite(cap_all).any() else None
 
 json.dump({"title": TITLE, "agg": agg, "segments": rows, "script": d["script"].tolist()}, open(OUT("suite.json"), "w"), indent=1)
 
 print(f"SUITE {TITLE} | survived={agg['survived']} fell_at={agg['fell_at']} | steady ({len(steady)}): jerk {agg['steady_jerk_mean']} "
       f"acc_hf {agg['steady_acc_hf_mean']} tau_rate {agg['steady_tau_rate_mean']} v_err {agg['steady_v_err_mean']} | "
       f"transitions ({len(trans)}): jerk max {agg['transition_jerk_max']} acc_hf max {agg['transition_acc_hf_max']} "
-      f"tau_rate max {agg['transition_tau_rate_max']} | worst: {agg.get('worst_transition')}")
+      f"tau_rate max {agg['transition_tau_rate_max']} | worst: {agg.get('worst_transition')}"
+      + (" | contact_sync " + " ".join(f"{k} {v}" for k, v in agg["contact_sync"].items())
+         if agg["contact_sync"]["advanced"] is not None else "")
+      + (f" | terrain steps {agg['terrain_steps']} cap {agg['cap_frac']:.0%} of solves" if agg["cap_frac"] is not None else ""))
 print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err   z_m step_t step_l   ds leg_acc leg_jrk arm_acc arm_pp  hl_leg knee_ms hip_rom knee_sw arm_amp arm_ph  modes")
 for r in rows:
     print(f"SEG {r['label']:36s} {r['kind']:10s} {r['jerk']:6.2f} {r['acc_hf']:6.3f} {r['lat_acc_hf']:6.3f} {r['ang_jerk']:7.2f} "
@@ -347,6 +373,7 @@ for r in rows:
           f"{r.get('arm_pp', float('nan')):6.1f} {r.get('hl_leg', float('nan')):7.1f} {r.get('knee_ms', float('nan')):7.1f} "
           f"{r.get('hip_rom', float('nan')):7.1f} {r.get('knee_sw', float('nan')):7.1f} {r.get('arm_amp', float('nan')):7.1f} "
           f"{r.get('arm_ph', float('nan')):6.0f}  {r.get('modes', '')}"
+          + (f"  cap {r['cap_frac']:.0%}/{r['terrain_steps']}" if "cap_frac" in r else "")
           + ("  FELL" if r["fell"] else ""))
 
 # ---- figure ------------------------------------------------------------------------------------

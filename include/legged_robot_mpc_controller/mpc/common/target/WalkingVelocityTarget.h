@@ -83,6 +83,10 @@ class WalkingVelocityTarget {
 
   /// Controller-only kneeling target, outside the operator's height range; NaN removes the override.
   void setPostureHeightOverride(scalar_t height) { postureHeightOverride_.store(height); }
+  /// Planar speed cap [m/s] applied to the scaled command before filtering and slew limiting (the
+  /// limiter turns it into a ramp); +inf / NaN / <= 0 = none. Thread-safe.
+  void setSpeedCap(scalar_t cap) { speedCap_.store(cap); }
+  scalar_t getSpeedCap() const { return speedCap_.load(); }
 
   /// Round the scaled planar command [m/s]: magnitudes below standBelow become zero, those between standBelow
   /// and minWalkSpeed are raised to minWalkSpeed with the direction kept (ocs2.gait.continuous: a person does
@@ -113,6 +117,7 @@ class WalkingVelocityTarget {
   std::atomic_bool filterResetRequested_{true};
   std::atomic<scalar_t> resetHeight_{std::numeric_limits<scalar_t>::quiet_NaN()};
   std::atomic<scalar_t> postureHeightOverride_{std::numeric_limits<scalar_t>::quiet_NaN()};
+  std::atomic<scalar_t> speedCap_{std::numeric_limits<scalar_t>::infinity()};
   std::atomic<scalar_t> standBelow_{0.0};
   std::atomic<scalar_t> minWalkSpeed_{0.0};
 };

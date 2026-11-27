@@ -31,6 +31,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <limits>
 
 #include <ocs2_core/thread_support/BufferedValue.h>
@@ -44,6 +45,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "legged_robot_mpc_controller/mpc/common/gait/ContactSync.h"
 #include "legged_robot_mpc_controller/mpc/common/gait/GaitSchedule.h"
 #include "legged_robot_mpc_controller/mpc/common/gait/MotionPhaseDefinition.h"
+#include "legged_robot_mpc_controller/mpc/common/gait/TerrainSpeedCap.h"
 #include "legged_robot_mpc_controller/mpc/common/reference_manager/StairClimbingPlan.h"
 #include "legged_robot_mpc_controller/mpc/common/reference_manager/TerrainFootholdPlanner.h"
 #include "legged_robot_mpc_controller/mpc/common/swing_foot_planner/SwingTrajectoryPlanner.h"
@@ -252,6 +254,21 @@ scalar_t maxOffset = 0.6;
   scalar_t contactSyncAdvancedSeconds() const { return contactSyncAdvancedSeconds_.load(); }
   size_t contactSyncBlockedCount() const { return contactSyncBlocked_.load(); }
   size_t contactSyncDescendingCount() const { return contactSyncDescending_.load(); }
+
+  /**
+   * Blind terrain speed cap (TerrainSpeedCap.h): the sole-height difference in double support marks
+   * uneven ground and caps the commanded planar speed for a while. Updated on the solver thread in
+   * modifyReferences() for the flat-ground modes; the motion manager reads terrainSpeedCapValue()
+   * before it conditions the velocity command. Settings are read on the solver thread only.
+   */
+  void setTerrainSpeedCapSettings(const TerrainSpeedCapSettings& settings) { terrainSpeedCap_.setSettings(settings); }
+  const TerrainSpeedCapSettings& getTerrainSpeedCapSettings() const { return terrainSpeedCap_.getSettings(); }
+  //! [m/s] cap in force for the planar velocity command, +inf when none (any thread).
+  scalar_t terrainSpeedCapValue() const { return terrainSpeedCapValue_.load(); }
+  //! Diagnostics (any thread): cap active, double supports that tripped it, the last step [m].
+  bool terrainSpeedCapActive() const { return std::isfinite(terrainSpeedCapValue_.load()); }
+  size_t terrainStepCount() const { return terrainStepCount_.load(); }
+  scalar_t terrainLastStep() const { return terrainLastStep_.load(); }
 
   void setArmSwingSettings(const ArmSwingSettings& settings) { armSwing_ = settings; }
   const ArmSwingSettings& getArmSwingSettings() const { return armSwing_; }
@@ -487,6 +504,13 @@ scalar_t maxOffset = 0.6;
   std::atomic<scalar_t> contactSyncAdvancedSeconds_{0.0};
   std::atomic<size_t> contactSyncBlocked_{0};     //!< landings accepted by the blockedHeight rule
   std::atomic<size_t> contactSyncDescending_{0};  //!< near-plane soles rejected by the descentVelocity rule
+
+  /// Terrain speed cap: solver thread only (modifyReferences); the atomics are its published state.
+  void updateTerrainSpeedCap(scalar_t initTime, const vector_t& initState, const ModeSchedule& modeSchedule);
+  TerrainSpeedCap terrainSpeedCap_;
+  std::atomic<scalar_t> terrainSpeedCapValue_{std::numeric_limits<scalar_t>::infinity()};
+  std::atomic<size_t> terrainStepCount_{0};
+  std::atomic<scalar_t> terrainLastStep_{0.0};
 
   std::shared_ptr<GaitSchedule> gaitSchedulePtr_;
   std::shared_ptr<SwingTrajectoryPlanner> swingTrajectoryPtr_;

@@ -88,6 +88,7 @@ WbIdMpcInterface::WbIdMpcInterface(Config config, bool setupOCP)
   referenceManagerPtr_->setArmSwingSettings(config_.armSwing);
   referenceManagerPtr_->setHumanGaitSettings(config_.humanGait);
   referenceManagerPtr_->setContactSyncSettings(config_.contactSync);
+  referenceManagerPtr_->setTerrainSpeedCapSettings(config_.terrainSpeedCap);
   referenceManagerPtr_->setCaptureFootPlacementSettings(config_.captureFootPlacement);
   referenceManagerPtr_->setUseTerrainHeightEstimate(config_.useTerrainHeightEstimate, config_.maxTerrainHeightStep);
 
