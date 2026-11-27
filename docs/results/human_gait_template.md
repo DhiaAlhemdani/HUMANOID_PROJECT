@@ -1197,3 +1197,33 @@ three tiers `[0.01, 0.02, 0.035] -> [0.5, 0.2, 0.1]` (a 3.5 cm step says "the bi
 Pass: 0 falls both ways on `suite_rough`; then `suite_mild` and flat must be unchanged (tier 2 at 0.02 may
 now trip on mild's -2.8 cm step; watch the cap column). Lateral drift forward on rough (y +0.98 m at x 5 m)
 is noted for the drift work.
+
+### Run 24 D — humanT24d / humanT24e on `suite_rough`: the speed cap has done what it can
+
+| | humanT24c `[.01,.025]->[.5,.25]` | humanT24d `[.01,.02]->[.5,.2]` | humanT24e `[.01,.02,.035]->[.5,.2,.1]` |
+| --- | --- | --- | --- |
+| forward | fell x 4.95 m (33.9 s), 5.6 cm edge at 0.25 m/s | fell x 2.35 m (23.9 s): +6.5 cm step onto a 3.5 cm edge in the 0.5 ramp, cap only 36 % in the 0.2 hold (different cells, different timing) | **whole speed ladder walked** (0.5 hold 32, "0.8" at 0.1-0.2: 231 with one +3.3 cm step at 8.8 deg, 0.2 hold 40) - **fell in the stop**, x 4.72 m, standing on a 2.7 cm edge at zero speed |
+| backward | fell x -1.48 m | fell x -1.48 m | fell x -1.61 m |
+| backward anatomy | right foot on a 2.4 cm edge, left lands on a 2.5 cm edge, 0.25-0.3 m/s actual, pitch 22-56 deg | same | same |
+
+Three for three backward at the same two cells, forward every run ends on an edge - T24e's while standing
+still. **Speed is no longer the variable**: the fatal landings have no height step between the feet
+(the cap cannot see them) and the last one happened at 0 m/s. The rough field's 0.5 m cells with 2-4 cm
+differences put 45-67 % of landings on an edge; a sole half on a cell 2.5 cm higher is a line contact,
+and the MPC plans every stance as a full 18 x 6 cm support polygon (`contactGeometry.rectangle`
+[0.09, -0.09, 0.03, -0.03], the contactMomentXY CoP constraint) while the whole-body controller clips the
+CoP to 10 x 4 cm half-extents. On an edge that ankle authority does not exist; the foot rocks, the
+torque rates go to 1200-1400 and the body follows.
+
+**Decisions.** (1) The tiered cap stays as implemented, defaults `[0.01, 0.025] -> [0.5, 0.25]` pending
+the `suite_mild` / flat re-check of T24e's tiers (those are the terrain rung's values if the rough
+problem is solved by something else). (2) `suite_rough` is the first rung the blind flat-foot walk does
+not pass; one cheap mechanism left to try before parking it: plan with the support the foot can count on
+on an edge. **humanT24f** = humanT24e + `contactGeometry.rectangle [0.05, -0.05, 0.02, -0.02]` (CoP within
++-5 x +-2 cm of the sole centre, about the human 60 % of the foot) and the WB-ID clip 0.06 / 0.025 to
+match. Less planned ankle torque means the MPC leans on step placement and the hips instead - the
+strategy an edge allows. Risk: flat 0.8 m/s, where the CoP travels heel to toe; the flat re-check decides.
+(3) Slopes next regardless: on a slope the two stance feet differ in height by stride x sin(angle)
+(5 deg, 0.4 m: 3.5 cm), so the cap will read a slope as rough and settle around tier 2 - acceptable for
+the rung, and the signal to make the cap slope-aware (consistent sign of the step along the direction of
+travel) if the slope rung needs the speed.
