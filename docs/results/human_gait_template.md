@@ -918,3 +918,27 @@ humanTEV = `useEstimate true` + `touchDownVelocity -0.15` (TE took the big steps
 backward; TVC failed because of the windows, not the descent); and the rung ladder re-based on the
 per-stride step (`suite_fine`: adjacent 0.5-1.0 cm so the per-stride step stays under ~2 cm).
 
+### Run 22 D — fall anatomy (humanTM, humanTE) and humanTEV: first config to walk `suite_mild` both ways
+
+**humanTM's fall (38.8 s, 0.2 m/s, left landing on a +1.5 cm tile).** The left sole stops at z = 1.5-2.0 cm
+in the estimated frame (vz ~ 0 from -50 ms before the switch) - it is standing on the higher tile - but
+contactSync only knows "landed" as *sole within 2 mm of the support plane*, so the foot is never accepted as
+down; the swing equality keeps driving it to z = 0 against the tile, left_hip_roll goes 27 -> 74 Nm in
+50 ms, roll 0.7 -> 13 -> 30 deg, pitch 12 -> 45 deg, over in 250 ms. The mirror case is the lower tile: the
+sole passes z = 0 in the air, counts as landed, and the plan loads it (the `touchDownVelocity -0.05`
+extension finds the tile 300-400 ms later). The height-only rule is exactly wrong in both directions on
+terrain, which is also why the window changes of humanTC could not help. **humanTE's fall (40.6 s, the
+stop)**: right single support at ~0 m/s on a foot whose heel pair sits on the x-edge at 10.0 m (1.5 cm
+step under the heel); as the weight moves back the foot rocks about the toe line, right_hip_roll 30 -> 139
+Nm (limit) in 150 ms, pitch -1 -> -34 deg (backward), pitch rate -627 deg/s. The 4-sphere G1 sole on an
+edge is a line support; walking passes over it, standing on it is a balance task the stack does not do.
+
+**humanTEV** (`useEstimate true` + `touchDownVelocity -0.15`, vs humanTE on `suite_mild`): **0 falls both
+ways**. Forward steady 48 / 53 / 109 / 35 / 73 (flat humanCSr1 27 / 34 / 66 / 33 / 27), clean stop 22 / 0.2;
+backward 34 / 50 / 76 / 44 / 42 (flat 30 / 33 / 55 / 33 / 28), noisy stop (59 / 17). 1.3-1.8x the flat jerk,
+v_err_max 0.25. Next: the flat regression of humanTEV (`speeds backward` vs humanCSr1) before it is
+adopted; `terrain_strides.py` on it (largest steps, lateral drift); and Run 23 = a terrain-correct touchdown
+in ContactSync: landed = within heightThreshold of the plane **or blocked** (sole at least `blockedHeight`
+above the planned swing height while the plan descends and the measured vertical speed has stalled), and the
+late half holds the switch while the foot is still descending instead of "while above the plane".
+
