@@ -845,3 +845,32 @@ flat ground for jerk, so it is a terrain-only candidate unless the flat rerun is
 -0.05 -> -0.10. Whatever passes a rung's easy level goes to its hard level; the accepted set must leave the
 flat `speeds` / `backward` numbers within the Run 19 / 20 spread. The combined course is composed from the
 levels that pass (a rung that does not pass blind is left out of the scene or kept at its passing level).
+
+### Run 22 A — rung 1 measured (shipped config, `suite_mild` / `suite_rough`, vs humanCSr1 flat)
+
+(An earlier pair of humanTM / humanTR runs was flat: the user's checkout predated the `TERRAIN` passthrough.
+`run_case.sh` now stamps `TERRAIN <module> <file>` into the console and `summary.txt`; `z_m` is the tell:
+on the mild strip the pelvis sits 0.746-0.771 m absolute, flat is 0.724-0.741.)
+
+| case | forward | backward |
+|---|---|---|
+| humanTM `suite_mild` | 0.8 reached; steady jerk 32 / 45 / 109 / 50 vs 27 / 34 / 66 / 33 flat; tau_rate 523 at 0.8; v_err 0.17-0.20 in the holds (0.09-0.12 flat: the robot is slower than commanded); **fell in the second 0.2 hold** (x ~ 14 m, after a 127-jerk ramp with arm_acc 7.4) | survived; steady jerk 42 / 98 / 71 / 61 / 60 vs 30 / 33 / 55 / 33 / 28; v_err 0.17-0.18 at 0.2 / 0.5 |
+| humanTR `suite_rough` | **fell in the first 0.5 hold** (x ~ 3 m, as the field reaches full height; z_m 0.787 just before) | **fell in the ramp to -0.5** |
+
+Reading. The estimator in the loop is the linear KF with `footHeightSensorNoise 0.01`: every stance foot is
+pulled toward z = 0, so the estimated frame follows the terrain with a lag of a few hundred ms. In that frame
+the z = 0 foothold reference is "the tile I am standing on"; each new tile is an error of one neighbour step
+(1-2 cm mild, 2-4 cm rough) in the swing's end point, plus whatever the KF has not yet absorbed (the knee at
+mid-stance opened from 35 to 25 deg in the 0.5 return hold on mild: the estimate was below the true height and
+the body was raised to compensate). A tile that is lower by 2 cm is found by the `touchDownVelocity -0.05`
+extension in 400 ms; the schedule has switched to stance long before (`lateWindow 0`) and the load is shared
+onto a foot in the air. A tile that is higher meets the foot in the fast part of the descent, more than the
+`earlyWindow 0.06` before schedule, and the swing tracking presses the foot into the ground until the switch
+(tau_rate 523 at 0.8). Both are touchdown-timing failures, not clearance failures (5 cm swing over 1-2 cm
+steps), which puts the touchdown levers first and `swingHeight` last.
+
+Phase B on `suite_mild` (one lever per run, baseline humanTM): humanTV `touchDownVelocity -0.15`; humanTC
+contactSync `earlyWindow 0.12`, `lateWindow 0.10`; humanTVC both; humanTE `groundHeight.useEstimate true`
+(the stance-foot FK height, i.e. the part of the tile the KF has not absorbed yet, becomes the swing's ground
+reference; `maxStepPerSolve 0.002`). Then the flat regression of whatever passes.
+
