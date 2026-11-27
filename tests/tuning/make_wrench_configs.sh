@@ -27,9 +27,11 @@
 #            HUMAN_SWING="z1 z2 z3 z4" sets the gait law's swing-height knots at 0 / 0.45 / 0.8 /
 #            1.15 m/s (default = the shipped "0.05 0.05 0.05 0.06"; 7-11 cm, what the swing-leg
 #            curves imply, made every variant fall at 0.8 m/s, with or without the leg curves).
-#            NOTE the suite COMMANDS the pelvis height (tune_probe.py, default 0.795 = a straight
-#            leg): run the human configs with HEIGHT=0.785 so the height and the 0.3 rad knee agree,
+#            NOTE the suite COMMANDS the pelvis height (tune_probe.py, default 0.785 = the shipped
+#            defaultBaseHeight, a 0.3 rad knee); a straight-leg (0.795) baseline needs HEIGHT=0.795,
 #            otherwise the height weight (50) and the knee weight pull against each other.
+# 2026-11-27: the shipped G1 config IS `0.0001 1.0 human,arms,waist,vel` (humanUB4, run 9/10); the
+# script still writes every value explicitly, so recipes stay reproducible against any base yaml.
 # Joint order (robot.jointNames): 6 left leg, 6 right leg, 3 waist, 4 left arm, 4 right arm.
 set -eu
 HERE=$(cd "$(dirname "$0")" && pwd)

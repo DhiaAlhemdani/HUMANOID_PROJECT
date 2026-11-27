@@ -34,7 +34,7 @@ from std_msgs.msg import String
 OUT = sys.argv[1]
 VX = float(sys.argv[2]) if len(sys.argv) > 2 else 0.5
 VMAX = float(sys.argv[3]) if len(sys.argv) > 3 else 0.75
-HEIGHT = float(sys.argv[4]) if len(sys.argv) > 4 else 0.795
+HEIGHT = float(sys.argv[4]) if len(sys.argv) > 4 else 0.785
 SETTLE, RAMP, HOLD, STOP = 4.0, 3.0, float(os.environ.get("HOLD_SECONDS", "20")), 5.0
 PROFILE = os.environ.get("PROFILE", "vx")
 SCRIPT = None

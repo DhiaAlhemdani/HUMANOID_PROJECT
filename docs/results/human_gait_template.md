@@ -358,3 +358,21 @@ at 41 Hz are ~2 % of ticks (nodes 3 at the same rate: 5574, 12 %) and the hold k
 0 falls in 7 layout runs on the fixed controller. If 41 Hz is not acceptable the one cheap lever is
 a force-only wrench state (6 instead of 12 rate states, ~(64/58)^3 -> ~20 ms, ~48 Hz), at the price
 of unpriced moment rates - untested.
+
+## Shipped (2026-11-27) — owner's video verdict: `humanUB4_speeds_side` is the best run so far
+
+`config/g1/ros2_controllers.yaml` is now parameter-for-parameter the `humanUB4` recipe
+(`make_wrench_configs.sh … 0.0001 1.0 human,arms,waist,vel`, verified by a key-by-key diff against
+the generated yaml; the only difference is the suite's `diagnostics.trackingRate`):
+`gait.continuous.enabled` on, `model.wrenchState` on with `contactWrenchRates` 1e-4, base velocity
+weights 100 / 50, waist 20 / 1.0, arm positions x10 (q only) with arm velocities 0.6 / 0.2 and
+arm accelerations 0.05, `humanGait.enabled` on with `legs: false` and `elbowMean -0.4`,
+`defaultBaseHeight 0.785`. The suite's default HEIGHT follows (0.785). `run_suite.sh <tag> default`
+is therefore the humanUB4 configuration from here on; a straight-leg / ladder baseline needs the
+old values set explicitly.
+
+Next: push it (owner: "can it be pushed to the maximum performance"). Config-only candidates on
+the new default, in order of expected payoff: the leg curves (`HUMAN_LEGS=true`, run 3-5 falls were
+the torque-window fallback, now held), wrench-rate 2e-4 / 5e-4 (1e-3 made the arms shake before
+the arm template existed), template amplitude (`HUMAN_MAXSCALE`), then the C++ items: force-only
+wrench state for the solve rate, yaw rate into the waist template for the turn, the 1-in-3 noisy stop.

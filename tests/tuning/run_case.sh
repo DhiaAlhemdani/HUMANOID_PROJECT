@@ -3,7 +3,7 @@
 # controllers yaml, run the stand -> walk -> stop probe, score it and plot it.
 #
 # usage: run_case.sh <tag> <controllers.yaml | default> [vx_mps]
-#   env: HEIGHT (commanded pelvis height, default 0.795), LAUNCH_ARGS (extra robot.launch.py args), OUT (results root, default
+#   env: HEIGHT (commanded pelvis height, default 0.785), LAUNCH_ARGS (extra robot.launch.py args), OUT (results root, default
 #        <repo>/tuning_results), RVIZ=true SHOTS=1 (RViz screenshots during the walk),
 #        HOLD_SECONDS (constant-command duration, default 20),
 #        MODEL (variant robot MJCF from make_model.py; default = shipped g1_29dof.xml)
@@ -47,7 +47,7 @@ C=/humanoid_whole_body_inverse_dynamics_mpc_controller
 setsid bash -c "$SRC && exec ros2 bag record -s mcap -o $D/bag --topics /joint_states /mujoco/ground_truth/odom $C/tracking $C/solver $C/tracking_names $C/solver_names" > "$D/bag.log" 2>&1 < /dev/null &
 sleep 2
 {
-  bash -c "$SRC && PROFILE=${PROFILE:-vx} python3 $HERE/tune_probe.py $D/run $VX $VMAX ${HEIGHT:-0.795}" 2>&1 | grep -E "PROBE|Traceback|Error"
+  bash -c "$SRC && PROFILE=${PROFILE:-vx} python3 $HERE/tune_probe.py $D/run $VX $VMAX ${HEIGHT:-0.785}" 2>&1 | grep -E "PROBE|Traceback|Error"
   # SIGTERM, not SIGINT: a background job of a non-interactive shell starts with SIGINT ignored.
   BP=$(pgrep -f "[r]os2 bag record -s mcap -o $D/bag"); kill -TERM $BP 2>/dev/null
   for i in $(seq 1 30); do kill -0 $BP 2>/dev/null || break; sleep 1; done

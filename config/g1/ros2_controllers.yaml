@@ -335,7 +335,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
 
         # Roadmap v2 step A (force-rate formulation): wrenches as states, their rates as priced
         # inputs (costs.r.contactWrenchRates). Off = the original [q, v] / [W, a, tau] layout.
-        wrenchState: false
+        # Shipped on (2026-11-27, docs/results/human_gait_template.md run 9/10): -21 % pelvis jerk at
+        # every speed, 0 falls; costs the solve rate (15.6 -> 24 ms per solve on the owner's machine).
+        wrenchState: true
 
       solver:
         sqp:
@@ -375,35 +377,39 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # Base velocity: [vx, vy, vz, yaw rate, pitch rate, roll rate] (Euler rates).
         q:
           basePose: [0.0, 0.0, 50.0, 0.0, 100.0, 100.0]
-          baseVelocity: [30.0, 15.0, 5.0, 30.0, 30.0, 30.0]
+          baseVelocity: [100.0, 50.0, 5.0, 30.0, 30.0, 30.0]
+          # Waist 20 and arms x10 (the human template's trunk / arm curves are tracked, not the
+          # frozen posture; without the weight the optimizer uses both as a flywheel).
           jointPositions:
             [0.05, 0.2, 15.0, 0.1, 0.1, 0.1,
              0.05, 0.2, 15.0, 0.1, 0.1, 0.1,
-             2.0, 2.0, 2.0,
-             5.0, 5.0, 2.0, 4.0,
-             5.0, 5.0, 2.0, 4.0]
+             20.0, 20.0, 20.0,
+             50.0, 50.0, 20.0, 40.0,
+             50.0, 50.0, 20.0, 40.0]
           jointVelocities:
             [0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
              0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
-             0.2, 0.2, 0.2,
-             0.06, 0.06, 0.06, 0.06,
-             0.06, 0.06, 0.06, 0.06]
+             1.0, 1.0, 1.0,
+             0.6, 0.6, 0.6, 0.6,
+             0.6, 0.6, 0.6, 0.6]
 
         qFinal:
           basePose: [0.0, 0.0, 50.0, 0.0, 100.0, 100.0]
-          baseVelocity: [30.0, 15.0, 5.0, 30.0, 30.0, 30.0]
+          baseVelocity: [100.0, 50.0, 5.0, 30.0, 30.0, 30.0]
+          # Terminal arm weights stay at the raw-posture values: the terminal cost tracks
+          # defaultJointState, not the template.
           jointPositions:
             [0.05, 0.1, 30.0, 0.1, 0.1, 0.1,
              0.05, 0.1, 30.0, 0.1, 0.1, 0.1,
-             2.0, 2.0, 2.0,
+             20.0, 20.0, 20.0,
              5.0, 5.0, 2.0, 4.0,
              5.0, 5.0, 2.0, 4.0]
           jointVelocities:
             [0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
              0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
-             0.2, 0.2, 0.2,
-             0.02, 0.02, 0.02, 0.02,
-             0.02, 0.02, 0.02, 0.02]
+             1.0, 1.0, 1.0,
+             0.2, 0.2, 0.2, 0.2,
+             0.2, 0.2, 0.2, 0.2]
 
         # R on u = [wrench_left, wrench_right, base acceleration, joint acceleration, joint torque].
         # Contact wrench order per foot: [fx, fy, fz, mx, my, mz].
@@ -412,16 +418,16 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             [0.003, 0.003, 0.001, 0.01, 0.01, 5.0,
              0.003, 0.003, 0.001, 0.01, 0.01, 5.0]
           # Wrench-rate weights, used only with model.wrenchState (see parameters.yaml for the scale).
-          contactWrenchRates:
-            [0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001,
-             0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001]
+          contactWrenchRates:  # 1e-4 = the sweep winner (docs/results/wrench_rate_sweep.md)
+            [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001,
+             0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]
           baseAccelerations: [0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
           jointAccelerations:
             [0.005, 0.005, 0.005, 0.005, 0.005, 0.005,
              0.005, 0.005, 0.005, 0.005, 0.005, 0.005,
              0.005, 0.005, 0.005,
-             0.005, 0.005, 0.005, 0.005,
-             0.005, 0.005, 0.005, 0.005]
+             0.05, 0.05, 0.05, 0.05,
+             0.05, 0.05, 0.05, 0.05]
           jointTorques:
             [0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005,
              0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005,
@@ -699,7 +705,7 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         maxDisplacementVelocityX: 1.0
         maxDisplacementVelocityY: 0.5
         maxRotationVelocity: 1.5708
-        defaultBaseHeight: 0.795
+        defaultBaseHeight: 0.785  # kneeOffset 0.3 standing (humanGait); 0.795 = straight leg
         minBaseHeight: 0.395
         maxBaseHeight: 1.195
         basePosePositionTolerance: 0.02
@@ -741,8 +747,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # defaultJointState are replaced (standing: hip -kneeOffset/2, knee kneeOffset, ankle
         # -kneeOffset/2) and defaultBaseHeight should match (kneeOffset 0.3 -> 0.785 m on the G1).
         humanGait:
-          enabled: false
-          legs: true
+          enabled: true
+          # Upper body only: the leg curves fell at >= 0.6 m/s in runs 3-5 (before the torque-window
+          # fix, d2dc4f8) and are not re-qualified yet; HUMAN_LEGS=true in the recipe retests them.
+          legs: false
           arms: true
           waist: true
           base: true
@@ -767,7 +775,7 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           shankLength: 0.3
           shoulderAmplitude: 0.35
           elbowAmplitude: 0.15
-          elbowMean: 0.0
+          elbowMean: -0.4
           armMaxOffset: 0.6
           waistYawAmplitude: 0.08
           pelvisRollAmplitude: 0.05
@@ -842,7 +850,7 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # double support) to 0.55 m steps at 1.15 m/s (0.48 s, 0.09 s). Planar commands below
         # standBelow stand, those below minWalkSpeed are raised to it: nobody walks slower.
         continuous:
-          enabled: false
+          enabled: true  # 0.8 m/s hold: jerk 88.7 vs 270.8 for the ladder (run 9)
           speedKnots:    [0.0, 0.45, 0.8, 1.15]
           stepTime:      [0.72, 0.72, 0.55, 0.48]
           doubleSupport: [0.25, 0.25, 0.12, 0.09]
