@@ -2227,6 +2227,7 @@ void HumanoidWholeBodyInverseDynamicsMpcController::configure_tracking()
   for (const auto& name : solver_state_cost_terms_) solver_names.push_back("state_cost/" + name);
   for (const auto& name : solver_soft_terms_) solver_names.push_back("soft/" + name);
   for (const auto& name : solver_state_soft_terms_) solver_names.push_back("state_soft/" + name);
+  solver_tail_start_ = solver_names.size();
   for (const auto* name : {"grid_nodes", "grid_min_dt", "grid_max_dt", "grid_fine_max_dt"}) solver_names.push_back(name);
   // Contact-synchronised touchdown counters (cumulative; ContactSync.h): advanced / held events and
   // the velocity-rule decisions (blocked landings accepted, near-plane descents rejected).
@@ -2320,7 +2321,7 @@ void HumanoidWholeBodyInverseDynamicsMpcController::publish_solver_metrics(doubl
   } catch (const std::exception&) {
   }
   // Append mesh diagnostics independently of optional cost-evaluation failures.
-  k = row.size() - 12;
+  k = solver_tail_start_;
   put(static_cast<double>(solver_primal_.timeTrajectory_.size()));
   double min_dt = std::numeric_limits<double>::infinity(), max_dt = 0.0, fine_max_dt = 0.0;
   const auto& times = solver_primal_.timeTrajectory_;

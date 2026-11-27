@@ -55,8 +55,8 @@ namespace ocs2::humanoid {
  *  - the plan is anchored at the leading stance foot (the one furthest along the travel direction):
  *    footfalls of a periodic gait at speed v are v x (time since the anchor's touchdown) further
  *    along, so the n-th touchdown in the horizon is planned at anchor height + slope x that
- *    distance; the foot in the air gets its lift-off height from the same rule (its lift-off time
- *    is in the schedule's past);
+ *    distance; the foot in the air gets its lift-off height from the same rule at its own last
+ *    touchdown (one footfall before the anchor's);
  *  - below `standingSpeed` the anchor is the midpoint of the stance feet and every touchdown is
  *    planned at its height (a first step from standing lands next to the feet).
  * The ground normal for the orientation terms is the plane's: slopePlaneNormal().

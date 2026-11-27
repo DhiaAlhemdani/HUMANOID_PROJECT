@@ -1467,3 +1467,46 @@ SKIP_BUILD=1 TERRAIN=slope_5 SCRIPTS="speeds backward" tests/tuning/run_suite.sh
 SKIP_BUILD=1 TERRAIN=uneven_suite_mild SCRIPTS="speeds backward" tests/tuning/run_suite.sh humanT25cM config/tuning/humanT25c.yaml humanT25aM
 ~/.venvs/replay/bin/python tests/tuning/terrain_strides.py tuning_results/humanT25cS10__speeds tuning_results/humanT25cS10__backward
 ```
+
+### Run 25 C′ — first humanT25c results: `slope_10` forward walks *and stops*, backward stalls; two bugs fixed
+
+**Numbers (solver telemetry in these runs is misaligned, see bug 1: the `cap` / `slope` columns, the
+`v_err` guard and the SUITE contactSync / terrain counters are garbage; jerk, tau_rate, falls, z_m,
+step_l are from the tracking and ground-truth topics and valid).**
+
+- **`slope_10` forward (humanT25cS10): 0 falls - the ladder and the stop.** The stop that ended T25aS10
+  (jerk 310 / tau 484, fall) is a 25.6 / 131 transition and a 0.33-jerk hold: both soles flat on the
+  10 deg ramp, standing. Holds 32 / 35 / 37 / 31 / 32 jerk vs T25a's 41 / 40 / 47 / 27 / 41, tau_rate
+  201 / 182 / 200 / 176 / 187 vs 226 / 189 / 223 / 140 / 180. The base reached z 1.47 (5.6 m up the
+  ramp) vs 1.30.
+- **`slope_10` backward: fell** in the stop again, and the walk degraded from the -0.5 ramp on:
+  z_m 0.87 -> 0.93 at the -0.8 ramp, then 0.88 / 0.89 / 0.87 / 0.85 / 0.84 - the robot stopped climbing
+  about 0.85 m up the ramp (T25a climbed to 1.14) and stood fighting for 30 s (jerk 45-74, tau_rate
+  214-462, leg jerk 1282-1492 in the transitions, step_l 0.06-0.08) before the stop toppled it.
+  Forward and backward are the same geometry (mirrored ramp, both uphill), so the asymmetry is in the
+  walk, not the terrain. Anatomy and strides requested before any conclusion.
+- **`slope_5` (humanT25cS5): 0 falls both ways**, holds within noise or better (backward 28-37 jerk vs
+  30-42, forward 27-38 vs 30-37; tau_rate 150-220 vs 162-217). The only guard that failed is `v_err`,
+  which is bug 1.
+
+**Bug 1 - solver telemetry tail (fixed).** `publish_solver_metrics` wrote the row's tail (mesh,
+contactSync, terrain) from `k = row.size() - 12`, a hard-coded count; run 25 C added a 13th tail
+column (`terrain/next_touchdown`), so every tail value landed one column late - `terrain/cap` read the
+contactSync `descending` counter (hence `100 % @ 3..65`), `v_err` saw no cap and compared the robot's
+0.2 m/s with the 0.5 / 0.8 commands - and the last `put` wrote one double past the vector's end. Now
+the tail starts at the recorded column of `grid_nodes` (`solver_tail_start_`), whatever its length.
+Only runs built from `5fd1ed5` are affected (the three humanT25c suites).
+
+**Bug 2 - the air foot's lift-off height (fixed).** `planSlopeFootReference` put the swinging foot's
+lift-off at the plane height of its *lift-off time* under the footfall rule; the rule maps *touchdown*
+times to positions (the foot stood still from touchdown to lift-off). Lift-off 0.25 s after the
+anchor landed was planned 0.9 cm *above* the anchor instead of one stride x slope *below* it (-2.5 cm
+on 10 deg at 0.2 m/s): the swing spline's start node sat 3.4 cm above the real foot, so the swing
+height constraint (gain 200) yanked the foot up at every lift-off. Now the air foot's height is the
+plane at its own last touchdown (from the schedule, else one period before the anchor's); the unit
+test asserts it is below the anchor going up and covers the in-schedule case. Symmetric in direction,
+so it does not by itself explain the backward stall, but it is 3.4 cm of error at every lift-off and
+had to go before the re-run.
+
+Re-run both `slope_10` legs from the fixed build (`humanT25c2S10`); the `suite_mild` re-check
+(`humanT25cM`) is still outstanding (its SUITE file came back empty).

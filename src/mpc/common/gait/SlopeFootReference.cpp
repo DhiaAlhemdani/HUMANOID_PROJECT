@@ -42,9 +42,6 @@ namespace {
 bool isTouchDown(const std::vector<bool>& contacts, size_t e) {
   return e + 1 < contacts.size() && !contacts[e] && contacts[e + 1];
 }
-bool isLiftOff(const std::vector<bool>& contacts, size_t e) {
-  return e + 1 < contacts.size() && contacts[e] && !contacts[e + 1];
-}
 
 }  // namespace
 
@@ -109,6 +106,19 @@ SlopeFootReferencePlan planSlopeFootReference(const SlopeFootReferenceInput& inp
   const size_t current =
       static_cast<size_t>(std::upper_bound(eventTimes.begin(), eventTimes.end(), input.initTime) - eventTimes.begin());
 
+  // Touchdown spacing, from the scheduled touchdowns of both feet (the fallback when fewer than two).
+  scalar_array_t futureTouchDowns;
+  for (size_t e = current; e < eventTimes.size(); ++e) {
+    for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+      if (isTouchDown(contactSequence[foot], e)) {
+        futureTouchDowns.push_back(eventTimes[e]);
+      }
+    }
+  }
+  std::sort(futureTouchDowns.begin(), futureTouchDowns.end());
+  const scalar_t period =
+      futureTouchDowns.size() >= 2 ? std::max(futureTouchDowns[1] - futureTouchDowns[0], 1e-3) : input.fallbackStepPeriod;
+
   // The anchor's touchdown time: from the schedule when it is there, else one touchdown spacing
   // before the first future touchdown (mid-stance when none is scheduled).
   scalar_t anchorTime = input.initTime;
@@ -124,17 +134,6 @@ SlopeFootReferencePlan planSlopeFootReference(const SlopeFootReferenceInput& inp
       }
     }
     if (!found) {
-      scalar_array_t futureTouchDowns;
-      for (size_t e = current; e < eventTimes.size(); ++e) {
-        for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
-          if (isTouchDown(contactSequence[foot], e)) {
-            futureTouchDowns.push_back(eventTimes[e]);
-          }
-        }
-      }
-      std::sort(futureTouchDowns.begin(), futureTouchDowns.end());
-      const scalar_t period =
-          futureTouchDowns.size() >= 2 ? std::max(futureTouchDowns[1] - futureTouchDowns[0], 1e-3) : input.fallbackStepPeriod;
       anchorTime = futureTouchDowns.empty() ? input.initTime - 0.5 * period : futureTouchDowns.front() - period;
     }
   }
@@ -151,17 +150,20 @@ SlopeFootReferencePlan planSlopeFootReference(const SlopeFootReferenceInput& inp
     if (input.contacts[foot]) {
       footHeight = input.soleHeights[foot];  // its own height: no pull towards a shared level
     } else {
-      // In the air: the lift-off height is where the previous footfall was.
+      // In the air: its lift-off height is where it last touched down - the footfall before the anchor's,
+      // i.e. the plane at that touchdown time (NOT at the lift-off time: the rule maps touchdown times to
+      // positions, and this foot stood still from its touchdown to its lift-off). One period before the
+      // anchor when its touchdown is not in the schedule.
       bool found = false;
       for (size_t e = current; e-- > 0;) {
-        if (isLiftOff(contacts, e)) {
+        if (isTouchDown(contacts, e)) {
           footHeight = footfallHeight(eventTimes[e]);
           found = true;
           break;
         }
       }
       if (!found) {
-        footHeight = anchorHeight + input.slope * (input.soleAlong[foot] - anchorAlong);  // the plane under it
+        footHeight = footfallHeight(anchorTime - period);
       }
     }
     plan.liftOffHeights[foot].assign(numPhases, footHeight);

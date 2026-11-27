@@ -234,6 +234,9 @@ private:
   std::vector<std::string> solver_state_soft_terms_;
   ocs2::PrimalSolution solver_primal_;
   std_msgs::msg::Float64MultiArray solver_row_;
+  //! Column of "grid_nodes": the row's tail (mesh, contactSync, terrain) is written from here, after the
+  //! optional cost evaluation, so its layout must not be hard-coded as an offset from the end.
+  std::size_t solver_tail_start_{0};
   //! The policy compute_mpc_joint_action evaluated this tick, if any.
   bool tracking_policy_valid_{false};
   vector_t tracking_policy_state_;

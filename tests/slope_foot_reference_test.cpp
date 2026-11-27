@@ -51,9 +51,11 @@ int main() {
       assert(near(plan.liftOffHeights[0][p], leftTd));  // its stance after landing, and the next lift-off
     }
     assert(near(plan.liftOffHeights[0][7], 0.0176 + 0.176 * 0.2 * 2.16));  // the stance after its second landing
-    // Left lift-off (in the air now): the previous footfall, at its lift-off time 0.0.
-    const double leftLo = 0.0176 + 0.176 * 0.2 * 0.25;
+    // Left lift-off (in the air now): where it last touched down, one footfall before the anchor's
+    // (-0.25 - 0.72, before the schedule): one stride x slope BELOW the anchor, not at its lift-off time.
+    const double leftLo = 0.0176 - 0.176 * 0.2 * 0.72;
     assert(near(plan.liftOffHeights[0][2], leftLo));
+    assert(leftLo < plan.anchorHeight);
     // Right touchdown at 1.19 (event 4), then its stance; left again at 1.91 (event 6).
     const double rightTd = 0.0176 + 0.176 * 0.2 * 1.44;
     assert(near(plan.touchDownHeights[1][4], rightTd - 0.001));
@@ -63,6 +65,20 @@ int main() {
     assert(near(rightTd - leftTd, 0.176 * 0.2 * 0.72));
     // Past touchdowns are not re-planned (phase 0 is the right foot's past swing).
     assert(near(plan.touchDownHeights[1][0], 0.0176 - 0.001));
+  }
+  // The air foot's own last touchdown in the schedule wins over the one-period guess: solve at 1.0 (right
+  // in the air since 0.72, its touchdown at -0.25 is in the schedule, the anchor is the left foot that landed at 0.47).
+  {
+    SlopeFootReferenceInput later = in;
+    later.initTime = 1.0;
+    later.contacts = {true, false};
+    later.soleAlong = {0.244, 0.10};
+    later.soleHeights = {0.176 * 0.244, 0.0176};
+    const auto plan = planSlopeFootReference(later, events, contacts);
+    assert(near(plan.anchorTime, 0.47) && near(plan.anchorHeight, 0.176 * 0.244));
+    // Right lift-off height: the plane at its touchdown time -0.25 = anchor - slope x v x 0.72.
+    assert(near(plan.liftOffHeights[1][4], plan.anchorHeight - 0.176 * 0.2 * 0.72));
+    assert(near(plan.touchDownHeights[1][4], plan.anchorHeight + 0.176 * 0.2 * 0.72 - 0.001));
   }
   // Walking down the same ramp (heading unchanged, velocity negative): the leading foot is the rear one.
   {
