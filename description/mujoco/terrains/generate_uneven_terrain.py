@@ -73,6 +73,12 @@ def validate(config):
         raise ValueError("clear_patch.size must be [0, 0] or two positive lengths")
     if any(abs(c) + p / 2 > s / 2 + 1e-12 for c, p, s in zip(patch["center"], patch["size"], config["size"])):
         raise ValueError("clear_patch must fit inside the field")
+    radius = patch.get("blend_radius", 0.0)
+    if not finite(radius) or radius < 0:
+        raise ValueError("clear_patch.blend_radius must be a nonnegative length")
+    if radius > 0 and height["max"] * max(s / n for s, n in zip(config["size"], config["grid"])) / radius > step["max"] + 1e-12:
+        raise ValueError("clear_patch.blend_radius is too short: height.max * cell pitch / radius must not exceed "
+                         "adjacent_difference.max, or the fade itself makes larger steps than the field")
 
 
 def axis_profile(config, axis, rng):
@@ -115,7 +121,35 @@ def generate_heights(config):
     bounds = config["height"]["adjacent_difference"]
     if any(not bounds["min"] - 1e-10 <= d <= bounds["max"] + 1e-10 for d in differences):
         raise ValueError("generated terrain violates adjacent height bounds")
-    return heights
+    return blend_toward_patch(config, heights)
+
+
+def blend_toward_patch(config, heights):
+    """Fade the field to the floor around the clear patch (clear_patch.blend_radius [m], default 0): a robot
+    starting in the patch meets the field gradually instead of a full-height edge on its first step. Each
+    height is capped by a ceiling rising linearly from the floor at the patch edge to height.max at the
+    radius, h' = min(h, max * d / radius). min() is 1-Lipschitz, so an adjacent difference after the cap is
+    at most max(the original difference, max * pitch / radius); validate() keeps the second term within the
+    adjacent bound."""
+    patch = config["clear_patch"]
+    radius = float(patch.get("blend_radius", 0.0))
+    if radius <= 0 or patch["size"] == [0, 0]:
+        return heights
+    nx, ny = config["grid"]
+    lx, ly = config["size"]
+    cx, cy = patch["center"]
+    hx, hy = patch["size"][0] / 2, patch["size"][1] / 2
+    top = config["height"]["max"]
+    out = []
+    for i in range(nx):
+        x = -lx / 2 + (i + 0.5) * lx / nx
+        row = []
+        for j in range(ny):
+            y = -ly / 2 + (j + 0.5) * ly / ny
+            d = math.hypot(max(abs(x - cx) - hx, 0.0), max(abs(y - cy) - hy, 0.0))
+            row.append(min(heights[i][j], top * d / radius))
+        out.append(row)
+    return out
 
 
 def adjacent_differences(heights):

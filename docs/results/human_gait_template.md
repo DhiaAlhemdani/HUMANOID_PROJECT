@@ -807,3 +807,37 @@ for the regression. Step 2, if the ankle limit is the wall: a trunk-pitch refere
 commanded height (e.g. 0 at 0.74, 12 deg at 0.62) and the step length / cadence scaled with the height
 (Froude). Step 3: touchdown re-tune at the crouch. Each step is a run cycle; the use case decides how far
 to go (ducking under an obstacle at 0.3 m/s is a much smaller target than a crouch gait at 0.8).
+
+## Run 22 (planned) — the same walk on uneven ground
+
+Goal: keep the flat-ground forward / backward performance (humanCSr1 forward holds 26.8 / 33.8 / 66.4 /
+32.6 / 26.8, humanBW backward 27.5 / 33.2 / 57.4 / 31.8 / 27.4, 0 falls) on an uneven field, without
+changing the flat-ground walk the user accepted.
+
+What the controller knows about the ground: nothing. The MPC references every foothold at z = 0
+(`ocs2.reference.groundHeight.useEstimate false`; `true` uses the stance-foot FK height, limited to
+`maxStepPerSolve` 0.01 m per solve), the swing template clears `swingHeight` 0.05 m above that plane, and
+touchdown is detected by contactSync (`heightThreshold` 0.002 m, `earlyWindow` 0.06 s): a step that lands
+early on a higher tile is accepted up to 60 ms before the schedule; a lower tile means the foot reaches
+the planned height in the air and the schedule switches to stance with no contact under it until the
+swing extension (`touchDownVelocity` -0.05 m/s) finds the ground. The estimator pins the stance foot to
+its last height, so on a tile the estimated pelvis height is the true height minus the tile. Those are the
+three mechanisms the terrain stresses; everything else (load share, blend, templates) is the flat walk.
+
+Fields (new, `tests/mujoco_scene.py --terrain suite_mild | suite_rough`, `TERRAIN=` in `run_case.sh` /
+`run_suite.sh`): 40 x 6 m strips of 0.5 m tiles so the ladders (16 m each way) stay on them, with a 1 m
+clear patch at the start and the heights fading in over 2 m (`clear_patch.blend_radius`). `suite_mild`:
+neighbor steps 1.0-1.8 cm, tops 0-5 cm. `suite_rough`: steps 2.0-3.8 cm, tops 0-9 cm (the shipped
+`rough` field, 2.3-4.7 cm steps over 10 x 10 m, is too short for the ladders).
+
+Phase A (measure, shipped config): `speeds` and `backward` on `suite_mild` and `suite_rough`. Reads: falls
+(and where on the ladder), steady jerk, holds, `z_m` against the flat values, touchdown lead histogram
+(early landings on high tiles, late on low ones). Phase B (candidates, one lever per run, flat `speeds` +
+`backward` rerun with each): `groundHeight.useEstimate true` (footholds referenced at the stance tile);
+`swingHeight` 0.05 -> 0.07 / 0.08 (toe clearance over a 4 cm step at mid-swing); contactSync `earlyWindow`
+0.06 -> 0.10 and `lateWindow` 0 -> 0.04 (a late landing on a low tile is as common as an early one on a
+high tile; Run 15 rejected lateWindow 0.04 on flat ground for jerk, so it is a terrain-only candidate
+unless the flat rerun is clean); `touchDownVelocity` -0.05 -> -0.10 (reach the low tile sooner). Phase C:
+whatever passes on `suite_mild` goes to `suite_rough`; the accepted set must leave the flat `speeds` /
+`backward` numbers within the Run 19 / 20 spread.
+

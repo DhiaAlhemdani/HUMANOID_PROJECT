@@ -3,7 +3,8 @@
 # controllers yaml, run the stand -> walk -> stop probe, score it and plot it.
 #
 # usage: run_case.sh <tag> <controllers.yaml | default> [vx_mps]
-#   env: HEIGHT (commanded pelvis height, default 0.785), LAUNCH_ARGS (extra robot.launch.py args), OUT (results root, default
+#   env: HEIGHT (commanded pelvis height, default 0.785), TERRAIN (tests/mujoco_scene.py module: none | suite_mild | suite_rough |
+#        rough | stairs | ..., default none), LAUNCH_ARGS (extra robot.launch.py args), OUT (results root, default
 #        <repo>/tuning_results), RVIZ=true SHOTS=1 (RViz screenshots during the walk),
 #        HOLD_SECONDS (constant-command duration, default 20),
 #        MODEL (variant robot MJCF from make_model.py; default = shipped g1_29dof.xml)
@@ -24,7 +25,7 @@ OUT=${OUT:-$REPO/tuning_results}; D=$OUT/$TAG; mkdir -p "$D"; rm -rf "${D:?}"/*
 [ "$CFG" = default ] && CFG=$REPO/config/g1/ros2_controllers.yaml
 cp "$CFG" "$D/config.yaml"
 [ -n "${MODEL:-}" ] && cp "$MODEL" "$D/robot_model.xml"
-python3 "$REPO/tests/mujoco_scene.py" --robot-name g1 --output "$D/scene.xml" ${MODEL:+--robot-model "$D/robot_model.xml"}
+python3 "$REPO/tests/mujoco_scene.py" --robot-name g1 --terrain "${TERRAIN:-none}" --output "$D/scene.xml" ${MODEL:+--robot-model "$D/robot_model.xml"}
 pkill -9 -x mujoco_ros2_con 2>/dev/null; pkill -9 -x rviz2 2>/dev/null; sleep 2
 # LAUNCH_TIMEOUT / LOCO_WAIT (env): raise both (e.g. 900 / 600) the first time a config needs new CppAD code (model.wrenchState).
 setsid nohup timeout ${LAUNCH_TIMEOUT:-240} bash -c "cd $WS && $SRC && ros2 launch legged_robot_mpc_controller robot.launch.py robotName:=g1 \
