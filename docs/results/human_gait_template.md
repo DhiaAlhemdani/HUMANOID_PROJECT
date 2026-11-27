@@ -1372,3 +1372,46 @@ vs 31 / 36 / 59 / 50 / 31 forward; backward 28 / 56 / 41 / 44 / 36 vs 38 / 42 / 
 rate drop is the first thing to rule out (the slope code is a handful of flops per solve; three suites
 running concurrently on one machine is the likely cause) - a 36 Hz solver changes the walk. Anatomy
 requested before any conclusion.
+
+### Run 25 B′ — `suite_mild` re-check anatomy: a standing fall on two tile edges, 5 s after the last step
+
+**Forward (humanT25aM): 0 falls; the anatomy window (45-47.5 s) shows nothing** (height error 2.9 cm is
+the only flag). Backward: **1 fall at 44.43 s, standing, in the final 0 m/s hold, 5.2 s after the last
+landing (39.18 s).** `plan_mode` is STANCE for the whole window - no swing, no step, no recovery step
+possible (the stance rung cannot step; the command is 0). The estimator is not involved (estimated vs
+TRUE pitch agree to 0.1 deg until the collapse, the height error appears only after it). There is no
+reference discontinuity before 44.3 (largest cmd_q jump is the waist pitch *during* the collapse), the
+cap read `@0.50` only and the slope never went consistent - so the slope code is not in the loop.
+
+The timeline is a slow lean and a sudden collapse. 41.9-43.7 s: pitch drifts 1.3 -> 2.7 deg and roll
+-0.1 -> -2.0 deg with `right_ankle_pitch` torque rising 15 -> 24 Nm (far from its 50 Nm limit) and
+nothing else moving; 43.73-43.98: `right_hip_roll` jumps 12 -> 27 Nm, roll -2.0 -> -3.7 (weight shifting
+to the left foot); 44.03-44.18: pitch 3.7 -> 12 deg in 150 ms (TRUE pitch rate ~ 585 deg/s) while both
+feet still read z ~ 0; 44.28: both hip pitches at the 88 Nm limit, knees 0.27 rad off their reference;
+44.43: `policy_valid` 0, plan nan, 39 deg pitch. The feet: the strides table's last three landings are
+`r 37.74 step +1.7 edge 1.7`, `l 38.46 step 0 edge 1.7`, `r 39.18 step -1.7 edge 1.7` - the robot
+stopped with the right foot 1.7 cm lower than the left and **both soles across a 1.7 cm tile edge**. A
+sole on an edge has a line of support in one axis, so the ankle torque the WBC asks for is not fully
+realizable; the foot rocks, the base leans, the lean grows until the weight shift pushes the other foot
+over its own edge. That is the `suite_rough` failure class (T24eR: fell in the stop on a 2.7 cm edge)
+one tier down, and the same thing that ends `slope_10` (3.0 cm `edge` every landing, falls in the stop).
+Walking survives edges because the next step replaces the foot; standing on them has to hold.
+
+Why this run and not T24eM: the edge column is 45 % of landings in both runs; which cells the *final
+two feet* land on is a function of the whole stride history, and T24eM stopped on flat cells. The
+`solve_hz` drop (45.5 -> 35.7) is the only systematic difference and it moves the history (a 36 Hz
+solver re-plans later, the strides shift by millimetres, the stop lands elsewhere). It is almost
+certainly the three concurrent suites, not the slope code (a handful of flops per solve). A clean solo
+mild re-run (`humanT25aM2`) settles the solve rate; the standing-on-edges mechanism it cannot fix, and
+no speed cap can either - the cap is a walking tool and this happened at 0 m/s. Fix lives in the foot:
+either the foot orientation follows the local support (Run 25 C's foot pitch to the plane handles ramps
+but not a tile edge under the mid-sole), or standing on a rocking foot is detected (ankle torque
+drifting against a flat-foot reference while in stance) and answered with a weight shift / a corrective
+step. Logged as a watch item; `suite_mild` keeps its pass with the caveat "stops on an edge 1 in 4".
+
+SUITE lines for the record: backward steady jerk 36.8 / tau_rate 179 / v_err 0.117, transition jerk
+max 60.2; forward steady 38.7 / 223, transitions 46.4 / 282 (T24eM: 36.7 forward steady).
+
+Rung status unchanged: `suite_mild` pass (1 standing-edge fall in 4 T25a/T24e legs), `suite_rough`
+parked (foot), `slope_5` pass, `slope_10` walks / falls in the stop (25 C), `curb_4` pass, `curb_8` not
+worth running until the swing height follows the cap tier.
