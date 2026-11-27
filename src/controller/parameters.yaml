@@ -577,7 +577,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         enabled: {type: bool, default_value: false, description: "Human gait template: normative human walking
             kinematics (hip/knee/ankle curves, pelvis obliquity and vertical excursion, trunk counter-rotation, arm
             swing) as the joint and base-pose reference, evaluated at each leg's gait-cycle phase time-warped onto
-            the planned mode schedule and scaled with the commanded step. Off: the fixed defaultJointState."}
+            the planned mode schedule and scaled with the commanded step. Backward walking is the forward cycle
+            in reverse: arms and trunk counter-rotation keep their leg coupling with the sign flipped, obliquity and
+            height oscillation are unchanged, the leg curves stay at the stance posture. Lateral and turning
+            commands give the stance posture. Off: the fixed defaultJointState."}
         legs: {type: bool, default_value: true, description: "Apply the hip pitch / knee / ankle pitch curves. They
             replace the leg entries of defaultJointState (standing: hip -kneeOffset/2, knee kneeOffset, ankle
             -kneeOffset/2), so the joint-position weights of those joints decide how closely they are followed."}

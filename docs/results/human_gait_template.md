@@ -640,3 +640,31 @@ jerk 30.2 -> 24.0 (-20 %), acc_hf 0.505 -> 0.462, tau-rate 180 -> 159, transitio
 final stop (17.8) does not recur (1.55). **Shipped: `gait.contactSync.enabled: true`** (early
 window 60 ms, threshold 2 mm, late half off). Shipped G1 = humanUB4 + lift-off end window +
 contact-synchronised touchdown.
+
+## Run 19 — backward (shipped config, `backward` suite = the speeds ladder in reverse)
+
+| | forward (`humanCSr1__speeds`) | backward (`humanCSr1__backward`) |
+|---|---|---|
+| steady jerk / acc_hf / tau-rate | 31.4 / 0.61 / 204 | 30.0 / 0.48 / 180 |
+| hold 0.2 / 0.5 / 0.8 / 0.5 / 0.2 (|vx|) | 26.8 / 33.8 / 66.4 / 32.6 / 26.8 | 29.6 / 32.9 / 54.7 / 32.8 / 28.0 |
+| transition max | 62.9 | 61.5 |
+| falls / final stop | 0 / 1.9 | 0 / 2.1 |
+| arm swing pp (deg) | 9.6 / 12.4 / 18.4 | 1.9 / 2.9 / 3.4 |
+| touchdown lead ms | 28-35 | 33-36 |
+| sw_td concentration (0.2 / 0.5 / 0.8) | 2.7-2.9 / 2.0-2.2 / 2.0 | 4.0-4.6 / 3.8 / 2.7 |
+
+Backward is as smooth as forward by the pelvis numbers (0.8 even better, 54.7 vs 66.4, with less
+roll: 1.85 vs 3.5 deg pp) and survives the whole ladder. Two differences, both visible in the
+video: **the arms do not swing** (1.9-3.4 deg pp vs 10-18: the human-gait arm and trunk templates
+were clamped to forward speed >= 0 in the reference manager), and the touchdown is a larger share
+of the stride's jerk (concentration 4.0-4.6 vs 2.7-2.9 at 0.2) at the same lead - the plain gait
+without the templates puts more of its jerk at the switch.
+
+**Change (this commit):** the templates carry the direction of travel. Backward walking is the
+forward cycle in reverse, so the arm swing and the waist counter-rotation keep their coupling to
+the legs with the sign flipped (at a foot's contact the own arm is back going forward, forward
+going backward); the obliquity and the height oscillation depend only on which leg swings and use
+the magnitude; the leg curves (off in the shipped config) stay forward-only - they are angles, not
+time-reversible. Lateral and turning commands are unchanged (stance posture). Needs a rebuild and
+the backward run again (`humanBW`): expect arm pp back to ~10-18 deg at 0.2-0.8 and no change in
+falls; the pelvis numbers decide whether the templates help backward as they did forward.

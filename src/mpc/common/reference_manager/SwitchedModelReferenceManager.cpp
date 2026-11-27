@@ -461,10 +461,17 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
   const scalar_t yaw = nominalPose[3];
   const scalar_t forwardSpeed = std::cos(yaw) * linVelCommand[0] + std::sin(yaw) * linVelCommand[1];
   const scalar_t stepTime = right.valid ? right.stepTime : (left.valid ? left.stepTime : 0.0);
-  // Leg curves scale with the commanded step length relative to the leg; arms with speed. Backward,
-  // lateral and turning commands give 0: the stance posture, the MPC's own stepping.
-  const scalar_t legScale = std::clamp(forwardSpeed * stepTime / (g.legLength * g.humanStepRatio), 0.0, g.maxScale);
-  const scalar_t armScale = std::clamp(std::max(forwardSpeed, 0.0) / g.referenceSpeed, 0.0, g.maxScale);
+  // Leg curves scale with the commanded step length relative to the leg; arms with speed. The signed
+  // scales carry the direction of travel: backward walking is forward walking run in reverse, so the
+  // arm swing and the trunk counter-rotation keep their coupling to the legs with the sign flipped
+  // (at a foot's contact the own arm is back going forward, forward going backward), while the
+  // obliquity and the height oscillation only depend on which leg swings. The leg curves themselves
+  // are forward-only (not time-reversible as angles): backward they stay at the stance posture.
+  // Lateral and turning commands give 0 everywhere: the stance posture, the MPC's own stepping.
+  const scalar_t legScaleSigned = std::clamp(forwardSpeed * stepTime / (g.legLength * g.humanStepRatio), -g.maxScale, g.maxScale);
+  const scalar_t legScale = std::max(legScaleSigned, 0.0);
+  const scalar_t legScaleAbs = std::abs(legScaleSigned);
+  const scalar_t armScale = std::clamp(forwardSpeed / g.referenceSpeed, -g.maxScale, g.maxScale);
   constexpr scalar_t kTwoPi = 2.0 * M_PI;
 
   vector_t q = mpcRobotModelPtr_->getJointAngles(xNominal);
@@ -521,7 +528,8 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
   if (g.arms && mpcRobotModelPtr_->modelSettings.hasArmSwingJoints) {
     const ModelSettings& ms = mpcRobotModelPtr_->modelSettings;
     const auto clampArm = [&](scalar_t v) { return std::clamp(v, -g.armMaxOffset, g.armMaxOffset); };
-    // The arm is back at its own leg's heel strike and forward at the other leg's: cos of the own-leg phase.
+    // The arm is back at its own leg's heel strike and forward at the other leg's: cos of the own-leg phase
+    // (walking backward armScale is negative and the arm is forward at its own leg's contact).
     // Shoulder pitch positive = arm back; elbow positive = flexion, largest with the arm forward.
     const auto armReference = [&](size_t shoulder, size_t elbow, const StridePhase& w) {
       const scalar_t c = w.valid ? w.fade * std::cos(kTwoPi * w.phase) : 0.0;
@@ -535,7 +543,7 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
   if (g.waist && cycleValid) {
     // Trunk counter-rotation: at right heel strike the pelvis has the right side forward and the
     // shoulders the left side forward, i.e. positive yaw of the trunk relative to the pelvis.
-    q[humanGaitJointIndices_[6]] += g.waistYawAmplitude * legScale * cycleFade * std::cos(kTwoPi * cyclePhase);
+    q[humanGaitJointIndices_[6]] += g.waistYawAmplitude * legScaleSigned * cycleFade * std::cos(kTwoPi * cyclePhase);
   }
   mpcRobotModelPtr_->setJointAngles(xNominal, q);
 
@@ -549,12 +557,12 @@ void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, sca
       }
     } else {
       // Vertical excursion: high at mid single stance (30 %, 80 %), low in double support (5 %, 55 %).
-      pose[2] += g.heightOscillation * legScale * legScale * cycleFade * (-std::cos(2.0 * kTwoPi * (cyclePhase - 0.05)));
+      pose[2] += g.heightOscillation * legScaleAbs * legScaleAbs * cycleFade * (-std::cos(2.0 * kTwoPi * (cyclePhase - 0.05)));
     }
     // Pelvis pitch, twice per cycle (sign left to the amplitude).
-    pose[4] += g.pelvisPitchAmplitude * legScale * cycleFade * (-std::cos(2.0 * kTwoPi * cyclePhase));
+    pose[4] += g.pelvisPitchAmplitude * legScaleAbs * cycleFade * (-std::cos(2.0 * kTwoPi * cyclePhase));
     // Obliquity: the swing-side hip drops; right swing is centred at 80 % (roll positive = right side down).
-    pose[5] += g.pelvisRollAmplitude * legScale * cycleFade * std::sin(kTwoPi * (cyclePhase - 0.55));
+    pose[5] += g.pelvisRollAmplitude * legScaleAbs * cycleFade * std::sin(kTwoPi * (cyclePhase - 0.55));
     mpcRobotModelPtr_->setBasePose(xNominal, pose);
   }
 }
