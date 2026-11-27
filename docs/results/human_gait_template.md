@@ -341,3 +341,20 @@ humanW_1e-4); the template adds ~5 % on top and the human look (arm swing 6-8 de
 template's holds are consistent across the two repeats (0.8: 66-70). The one blemish repeats too:
 UB4r1's final stop ramp is 62.8 (UB3 r1 33.8, UB4 25.5) - the 1-in-3 noisy stop is still open.
 The solve-rate split needs humanC4W's rate (compare file / `[MPC_TIMING]`), not in the suite line.
+
+**Solve-rate split (same session, speeds):**
+
+| | average advance | solve Hz | torque-window overruns / run |
+|---|---|---|---|
+| humanC4 (law only) | 15.6 ms | 64.1 | 0 |
+| humanC4W (+ wrench state 1e-4) | 24.3 ms | 41.1 | 738 |
+| humanUB4 (+ template) | 24.1 ms | 40.6 | 1156 |
+| humanUB4r1 | 23.3 ms | 42.8 | 1279 |
+
+The whole cost is the wrench-state layout (+56 % per solve: x 58 -> 70, u 64 -> 76; the Riccati
+pass scales ~nx^3, (70/58)^3 = 1.76); **the template is free**. The MPC target is 100 Hz and no
+configuration has met it (31-64 Hz across sessions). With `torqueConstraintNodes 4` the overruns
+at 41 Hz are ~2 % of ticks (nodes 3 at the same rate: 5574, 12 %) and the hold keeps them harmless:
+0 falls in 7 layout runs on the fixed controller. If 41 Hz is not acceptable the one cheap lever is
+a force-only wrench state (6 instead of 12 rate states, ~(64/58)^3 -> ~20 ms, ~48 Hz), at the price
+of unpriced moment rates - untested.
