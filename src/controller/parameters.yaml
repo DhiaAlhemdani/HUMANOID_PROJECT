@@ -646,6 +646,25 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           applied after the initial schedule"}
       defaultSwitchingTimes: {type: double_array, default_value: [0.0, 0.5], description: "Switching times of the
           default mode sequence template [s]"}
+      contactSync:
+        enabled: {type: bool, default_value: false, description: "Contact-synchronised touchdown: the planned touchdown
+            event of a swinging foot is moved to the solve time when its measured sole reaches the support plane inside
+            earlyWindow before it, and held (up to lateWindow) while the sole is still in the air after it. The plan
+            then loads the foot when it lands instead of 20-50 ms later (docs/results/human_gait_template.md runs
+            12-17). Flat-ground modes only; the stair and terrain modes ignore it."}
+        earlyWindow: {type: double, default_value: 0.06, description: "Landings this long [s] before the planned
+            touchdown advance it to the solve time; the double support absorbs the lead. 0 disables the early half",
+            validation: {gt_eq: [0.0]}}
+        lateWindow: {type: double, default_value: 0.0, description: "The planned touchdown is pushed back, holdStep at
+            a time, while the foot is still in the air, up to this long [s] after the originally planned time; 0
+            disables the late half", validation: {gt_eq: [0.0]}}
+        heightThreshold: {type: double, default_value: 0.002, description: "Sole height above the support plane [m] at
+            or below which the foot counts as landed (the G1 sole rests at ~0.3 mm; the swing passes 2 mm about
+            40 ms before the planned touchdown at 0.2 m/s)", validation: {gt_eq: [0.0]}}
+        holdStep: {type: double, default_value: 0.02, description: "A held touchdown is pushed this far [s] past the
+            solve time, i.e. about one MPC node", validation: {gt: [0.0]}}
+        minPhaseDuration: {type: double, default_value: 0.02, description: "No phase is shortened below this [s] by
+            either half", validation: {gt_eq: [0.0]}}
       swingTrajectory:
         liftOffVelocity: {type: double, default_value: 0.05, description: "Swing foot lift-off vertical velocity [m/s]"}
         touchDownVelocity: {type: double, default_value: -0.0, description: "Swing foot touch-down vertical velocity

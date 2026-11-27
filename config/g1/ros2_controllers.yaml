@@ -806,6 +806,20 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         defaultModeSequence: [STANCE]
         defaultSwitchingTimes: [0.0, 0.5]
 
+        # Contact-synchronised touchdown (ContactSync.h): the plan loads the landing foot when its
+        # sole reaches the ground instead of at the scheduled event 20-50 ms later (runs 12-17 of
+        # docs/results/human_gait_template.md: the swing spline spends its last 27 ms inside the
+        # final millimetre, the plan sags 1-2 mm under it, and the scheduled switch then steps the
+        # foot's force 0 -> 120 N with the foot already down). earlyWindow moves the event to the
+        # solve time; lateWindow (0 = off) holds it while the foot is still in the air.
+        contactSync:
+          enabled: false
+          earlyWindow: 0.06
+          lateWindow: 0.0
+          heightThreshold: 0.002
+          holdStep: 0.02
+          minPhaseDuration: 0.02
+
         # Swing-foot trajectory, shared by every template.
         swingTrajectory:
           liftOffVelocity: 0.05

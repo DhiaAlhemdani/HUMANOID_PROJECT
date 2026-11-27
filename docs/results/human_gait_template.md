@@ -589,3 +589,11 @@ ground inside a window before its planned touchdown, move that event to now; whe
 touchdown passes with the foot still in the air, hold the event until it lands, capped) - the same
 mechanism also removes the late-touchdown half of the run-6 fall anatomy at 0.8. Config-only
 levers on the touchdown are exhausted (runs 15-17).
+
+## Run 18 (planned) — contact-synchronised touchdown (`gait.contactSync`, build)
+
+Design in `docs/design/touchdown_impact.md` §8. Cases on the shipped config: `humanCS` (early
+window 60 ms, threshold 2 mm), `humanCS_t1` (threshold 1 mm), `humanCS_late` (early 60 ms + late
+40 ms). Read: `lead_ms` (50 → one solve period or less), touchdown concentration (3.0–3.5 → ?),
+the 0.2 / 0.5 holds (repeatable to ±2) and 0 falls; the 0.8 hold is noise-bound (62–72 across
+repeats) and only counts if it moves by more than that.

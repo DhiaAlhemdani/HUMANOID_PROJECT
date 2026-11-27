@@ -39,6 +39,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ocs2_pinocchio_interface/PinocchioInterface.h>
 
 #include "legged_robot_mpc_controller/mpc/common/model/MpcRobotModelBase.h"
+#include <atomic>
+
+#include "legged_robot_mpc_controller/mpc/common/gait/ContactSync.h"
 #include "legged_robot_mpc_controller/mpc/common/gait/GaitSchedule.h"
 #include "legged_robot_mpc_controller/mpc/common/gait/MotionPhaseDefinition.h"
 #include "legged_robot_mpc_controller/mpc/common/reference_manager/StairClimbingPlan.h"
@@ -231,6 +234,22 @@ class SwitchedModelReferenceManager : public ReferenceManager {
     //! +-0.6 rad clears the torso, pelvis and hips with no interpenetration and
 scalar_t maxOffset = 0.6;
   };
+
+  /**
+   * Contact-synchronised touchdown (ContactSync.h): applied in modifyReferences to the schedule
+   * each solve is built on, from the measured sole heights of the solve's initial state and the
+   * current support-plane estimate. Off for the stair and terrain modes, whose footholds are not
+   * on the flat support plane. Settings are read on the solver thread only.
+   */
+  void setContactSyncSettings(const ContactSyncSettings& settings) {
+    validateContactSyncSettings(settings);
+    contactSync_ = settings;
+  }
+  const ContactSyncSettings& getContactSyncSettings() const { return contactSync_; }
+  //! Diagnostics: touchdowns advanced / held so far and the summed shifts [s] (any thread).
+  size_t contactSyncAdvancedCount() const { return contactSyncAdvanced_.load(); }
+  size_t contactSyncHeldCount() const { return contactSyncHeld_.load(); }
+  scalar_t contactSyncAdvancedSeconds() const { return contactSyncAdvancedSeconds_.load(); }
 
   void setArmSwingSettings(const ArmSwingSettings& settings) { armSwing_ = settings; }
   const ArmSwingSettings& getArmSwingSettings() const { return armSwing_; }
@@ -453,6 +472,15 @@ scalar_t maxOffset = 0.6;
   feet_array_t<vector3_t> captureFoothold_{vector3_t::Zero(), vector3_t::Zero()};
   feet_array_t<bool> captureFootholdValid_{false, false};
   feet_array_t<scalar_t> captureFootholdTouchdownTime_{0.0, 0.0};
+
+  /// Contact-synchronised touchdown: solver thread only (modifyReferences).
+  void applyContactSync(scalar_t initTime, const vector_t& initState, ModeSchedule& modeSchedule);
+  ContactSyncSettings contactSync_;
+  feet_array_t<scalar_t> contactSyncHoldOrigin_{std::numeric_limits<scalar_t>::quiet_NaN(),
+                                                std::numeric_limits<scalar_t>::quiet_NaN()};
+  std::atomic<size_t> contactSyncAdvanced_{0};
+  std::atomic<size_t> contactSyncHeld_{0};
+  std::atomic<scalar_t> contactSyncAdvancedSeconds_{0.0};
 
   std::shared_ptr<GaitSchedule> gaitSchedulePtr_;
   std::shared_ptr<SwingTrajectoryPlanner> swingTrajectoryPtr_;

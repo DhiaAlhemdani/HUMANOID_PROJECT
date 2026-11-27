@@ -87,6 +87,7 @@ WbIdMpcInterface::WbIdMpcInterface(Config config, bool setupOCP)
       std::move(swingTrajectoryPlanner), *pinocchioInterfacePtr_, *mpcRobotModelPtr_);
   referenceManagerPtr_->setArmSwingSettings(config_.armSwing);
   referenceManagerPtr_->setHumanGaitSettings(config_.humanGait);
+  referenceManagerPtr_->setContactSyncSettings(config_.contactSync);
   referenceManagerPtr_->setCaptureFootPlacementSettings(config_.captureFootPlacement);
   referenceManagerPtr_->setUseTerrainHeightEstimate(config_.useTerrainHeightEstimate, config_.maxTerrainHeightStep);
 

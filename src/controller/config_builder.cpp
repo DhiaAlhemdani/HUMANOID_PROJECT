@@ -140,6 +140,15 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   config.defaultModeSequenceTemplate =
     ocs2::humanoid::modeSequenceTemplateFromStrings(p.gait.defaultSwitchingTimes, p.gait.defaultModeSequence);
 
+  // --- contact-synchronised touchdown ---
+  config.contactSync.enabled = p.gait.contactSync.enabled;
+  config.contactSync.earlyWindow = p.gait.contactSync.earlyWindow;
+  config.contactSync.lateWindow = p.gait.contactSync.lateWindow;
+  config.contactSync.heightThreshold = p.gait.contactSync.heightThreshold;
+  config.contactSync.holdStep = p.gait.contactSync.holdStep;
+  config.contactSync.minPhaseDuration = p.gait.contactSync.minPhaseDuration;
+  ocs2::humanoid::validateContactSyncSettings(config.contactSync);
+
   // --- swing trajectory ---
   auto& swing = config.swingTrajectoryConfig;
   swing.liftOffVelocity = p.gait.swingTrajectory.liftOffVelocity;

@@ -206,3 +206,33 @@ split). What remains at touchdown is the reference spline's own terminal speed (
 model: §1–§5 stay deferred until a run shows a sizeable post-touchdown mismatch with the landing on
 time — and `base_vz_mismatch` itself needs a less noisy replacement first (23–46 % between
 same-config runs).
+
+## 8. Contact-synchronised touchdown (2026-11-24, built; `gait.contactSync`)
+
+What the human-gait runs 12–17 (`docs/results/human_gait_template.md`) established: the swing
+foot is on the ground 20–50 ms before its scheduled touchdown at every step (the spline spends its
+last 27 ms inside the final millimetre, the plan sags 1–2 mm under it, the sole rests at 0.3 mm);
+the spline-end knobs, the swing height gain and the touchdown force shaping all leave the
+touchdown jerk where it is, because the step is the *scheduled* event loading an already-landed
+foot 0 → 120 N in one node (and, with shaping, loading it late). The lever left is the event time.
+
+`ContactSync.h` / `ContactSync.cpp` (pure function on the `ModeSchedule`, `tests/contact_sync_test.cpp`),
+applied by `SwitchedModelReferenceManager::modifyReferences` to the schedule each solve is built
+on and written back to the `GaitSchedule` (`updateEventTimes`, modes and per-phase swing
+clearances kept):
+
+- **early half** (`earlyWindow`, default 60 ms): a foot the schedule has swinging, whose
+  touchdown is the next event and less than the window ahead, and whose measured sole (FK of the
+  solve's initial state, relative to the flat support-plane estimate) is within `heightThreshold`
+  (2 mm) of the ground, has its touchdown moved to 1 ms before the solve time (ocs2 resolves the
+  mode *at* an event time as the mode before it). The following events stay, so the double support
+  absorbs the lead; no phase is shortened below `minPhaseDuration`.
+- **late half** (`lateWindow`, default 0 = off): a foot the schedule has just put down but whose
+  sole is still above the threshold has its touchdown pushed `holdStep` past the solve time, every
+  solve, until it lands or the window after the originally planned time is used up. This is the
+  other half of the run-6 fall anatomy (the plan loading a foot that is not down yet).
+
+Flat-ground modes only: the stair and terrain modes keep their schedules. Latency: the landing is
+seen at a solve's start and the policy with the moved event arrives ~20 ms later, so the effective
+advance is the lead minus one solve; the controller's contact fade follows the policy's events
+and therefore shortens accordingly — watch `alpha` in `switch_profile.py` around the touchdown.

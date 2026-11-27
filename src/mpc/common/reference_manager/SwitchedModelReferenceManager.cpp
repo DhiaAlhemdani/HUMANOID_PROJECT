@@ -627,9 +627,12 @@ void SwitchedModelReferenceManager::modifyReferences(scalar_t initTime,
 
   const auto timeHorizon = finalTime - initTime;
   modeSchedule = gaitSchedulePtr_->getModeSchedule(initTime - timeHorizon, finalTime + timeHorizon);
+  const auto& stairPlan = stairClimbingPlan_.get();
+  if (contactSync_.enabled && !stairPlan && !isTerrainWalkActive()) {
+    applyContactSync(initTime, initState, modeSchedule);
+  }
   const auto& swingHeights = gaitSchedulePtr_->getSwingHeightSequence();
 
-  const auto& stairPlan = stairClimbingPlan_.get();
   if (stairPlan) {
     // Fixed-sequence stair climbing: feed the planned per-phase support heights
     // to the swing planner instead of the flat-ground estimate.
@@ -869,6 +872,32 @@ void SwitchedModelReferenceManager::updateCaptureFootholds(scalar_t initTime, co
     captureFoothold_[foot](2) = 0.0;  // flat ground
     captureFootholdValid_[foot] = true;
     captureFootholdTouchdownTime_[foot] = footTouchdown;
+  }
+}
+
+void SwitchedModelReferenceManager::applyContactSync(scalar_t initTime, const vector_t& initState, ModeSchedule& modeSchedule) {
+  // Sole heights above the support plane the swing planner lands on (the flat-ground estimate of
+  // the previous solve; 0 until the estimate is enabled). Flat ground is the only case here: the
+  // stair and terrain modes are excluded by the caller.
+  const feet_array_t<vector3_t> feet = computeFeetPositions(initState);
+  feet_array_t<scalar_t> soleHeights;
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    soleHeights[foot] = feet[foot](2) - previousGroundHeightEstimate_;
+  }
+  const ContactSyncResult result = synchroniseTouchdowns(contactSync_, initTime, soleHeights, modeSchedule, contactSyncHoldOrigin_);
+  if (result.advancedFoot < 0 && result.heldFoot < 0) {
+    return;
+  }
+  // Persist the moved event: the next solve's getModeSchedule() starts from the stored schedule.
+  gaitSchedulePtr_->updateEventTimes(modeSchedule.eventTimes);
+  if (result.advancedFoot >= 0) {
+    contactSyncAdvanced_.fetch_add(1);
+    scalar_t sum = contactSyncAdvancedSeconds_.load();
+    while (!contactSyncAdvancedSeconds_.compare_exchange_weak(sum, sum + result.advancedBy)) {
+    }
+  }
+  if (result.heldFoot >= 0) {
+    contactSyncHeld_.fetch_add(1);
   }
 }
 
