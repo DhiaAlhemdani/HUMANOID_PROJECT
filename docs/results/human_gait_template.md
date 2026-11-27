@@ -563,3 +563,29 @@ window; the whole-DS smoothstep fell at 0.8 so the window must leave the middle 
 double support free - 0.06 + 0.04 is the most that fits); (2) if the window helps at 0.2 / 0.5
 but costs 0.8, the contact-triggered switch, which loads the foot when it lands instead of
 20-40 ms later.
+
+## Run 17 — touchdown end window 0.03 / 0.04 (speeds, vs the humanLO repeat): rejected
+
+| | humanLO | TW 0.03 | TW 0.04 |
+|---|---|---|---|
+| steady jerk / acc_hf | 34.8 / 0.59 | 51.6 / 0.77 | 83.1 / 1.16 |
+| hold 0.2 / 0.5 / 0.8 | 29.7 / 33.8 / 72.0 | 46.5 / 42.7 / 126.4 | 42.4 / 50.9 / 156.1 |
+| falls | 0 | 0 | **1** (0.8 -> 0.5 ramp, jerk 304) |
+| sw_td concentration (0.2) | 2.8-3.4 | 3.4-3.5 | 4.3 |
+
+Worse at every speed from the first hold, and worse the longer the window. The profile at 0.2 shows
+the mechanism: the landing foot's planned force stays 1.7 / 4.8 / 15 N for the first 20 ms after
+the switch and only reaches 66 / 104 / 129 N at +30..+50 ms, while the pelvis jerk runs 85-111
+from -20 ms on (the plan keeps the other foot at 288 N and the body falls onto a leg it is not
+allowed to load); at 0.8 the plan keeps the "landing" foot 1-8 mm above the ground (measured 5 mm)
+through the whole switch, i.e. it never lands. A touchdown ramp is not the mirror of the lift-off
+ramp: at lift-off the foot is still on the ground and the body has already moved off it, so
+unloading late costs nothing; at touchdown the body arrives with the foot and needs the force the
+moment it lands. **Touchdown shaping of any kind (whole-DS run 13, end window run 17) stays off.**
+
+The remaining touchdown lever is timing, not shaping: load the foot *when it lands*. That is the
+contact-synchronised switch (planner side: when the swing foot's measured sole height reaches the
+ground inside a window before its planned touchdown, move that event to now; when the planned
+touchdown passes with the foot still in the air, hold the event until it lands, capped) - the same
+mechanism also removes the late-touchdown half of the run-6 fall anatomy at 0.8. Config-only
+levers on the touchdown are exhausted (runs 15-17).
