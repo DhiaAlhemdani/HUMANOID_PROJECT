@@ -2335,3 +2335,25 @@ says the search runs arrive at them rougher) or T27M's single clean tiles run wa
 search-off rerun on the tiles (humanT25c.yaml, the T27 recipe) calibrates that before anything else is
 changed. Standing result: the search (29 E) passes every slope_5 guard and removes the crest residual;
 it stays off in the shipped G1 config until the tiles question is settled.
+
+**Calibration: humanT27Mb (the T27 recipe, search off, tiles).** `speeds` survived; `backward` FELL at
+39.2 s - in the final `hold +0.0`, standing still after the stop (pitch_pp 65, roll_pp 129, cap 100 %
+at 0.48): the stand-on-a-tile residual that took humanT26M at 40.8 s and that humanT27M "survived twice".
+Pre-fall segments vs humanT27M: hold +0.5 46.3 / 0.893 / 278 (T27M 59.5 / 0.931 / 300), hold +0.8
+59.4 / 1.031 / 339 (75.9 / 1.393 / 347), hold +0.8 → +0.5 62.1 / 1.224 / 294 (35.1 / 0.568 / 241) - the
+same field, different footfalls, ±30 % between two runs of one recipe.
+
+So the tiles are not a search problem: the search-off recipe falls there too (1 of 2 runs, at the stand),
+in a third place. The tiles have two residuals of their own - the stand after stopping (plane from the
+last stride; T26M, T27Mb) and the high-tile landing under a cap-driven deceleration (29 D/E) - and both
+are plan-side. The search's tiles cost is real but modest and inside the run-to-run spread: hold +0.5
+tau_rate 323 / 342 / 347 / 428 (29 B–E) vs 300 / 278 (T27M / T27Mb).
+
+**Verdict on run 29 (A–E).** The touchdown search at 29 E - window 0.3 s, descent never slower than the
+sole arrived and growing 1.5 m/s², the searching leg free of the posture task with its sole held at the
+plan orientation, a sole that does not follow the push landed where it is - passes every slope_5 guard
+and removes the crest-down residual (first down-ramp stride pitch 22° → 2°), and is no worse in kind on
+the tiles than the recipe without it. To ship it in the G1 config the ladder has to close: flat
+(humanT27F) and slope_10 (humanT27S10, `speeds backward slope_about_face slope_back_slow`) with
+humanT29.yaml, 0 falls and inside the guards. Then `searchWindow 0.3` / `searchDescentAcceleration 1.5`
+go into `config/g1/ros2_controllers.yaml` and humanT25c.yaml, and the tiles residuals are the next item.
