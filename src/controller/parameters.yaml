@@ -42,6 +42,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
     feedforward: {type: string, default_value: "policy_torque", description: "policy_torque: interpolated MPC joint
         torque inside the constrained window, planned-state RNEA outside it; inverse_dynamics: RNEA at the measured
         state", validation: {one_of<>: [["policy_torque", "inverse_dynamics"]]}}
+    solveBlendSeconds: {type: double, default_value: 0.005, description: "Seconds to ramp the command written at a
+        new MPC solve from the previously written command, smoothing the per-solve command step when the policy is
+        swapped in; applies to position, velocity and feedforward targets. 0 disables the ramp.",
+        validation: {gt_eq: [0.0]}}
     jointEffortPd:
       kp: {type: double_array, default_value: [], description: "Position gains of the effort_pd joint servo,
           index-aligned with robot.jointNames. Written to the <joint>/kp command interfaces every tick, in every
@@ -49,6 +53,87 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           the hardware's gains (effort_pd_kp in the xacro).", validation: {lower_element_bounds<>: [0.0]}}
       kd: {type: double_array, default_value: [], description: "Velocity gains of the effort_pd joint servo,
           index-aligned with robot.jointNames; see kp.", validation: {lower_element_bounds<>: [0.0]}}
+    wholeBody:
+      enabled: {type: bool, default_value: false, description: "Phase 2.B whole-body feedback layer: every servo tick
+          the measured state and the policy at the current time give desired generalized accelerations (plan + task
+          PD on base, joints and swing feet); a contact-consistent least squares under the floating-base dynamics and
+          the stance constraints returns the feedforward torque. The hardware PD then runs with residualKp/residualKd
+          instead of jointEffortPd (needs jointEffortPd and commandInterface effort_pd). false: the servo path is
+          unchanged."}
+      residualKp: {type: double, default_value: 20.0, description: "effort_pd position gain written while the layer is
+          active, for every joint whose jointEffortPd.kp is > 0 (wheel joints stay 0) [N m/rad]", validation: {gt_eq: [0.0]}}
+      residualKd: {type: double, default_value: 3.0, description: "effort_pd velocity gain while the layer is active
+          [N m s/rad]", validation: {gt_eq: [0.0]}}
+      gainRampSeconds: {type: double, default_value: 0.5, description: "Ramp of the written servo gains from
+          jointEffortPd to residualKp/Kd when the layer first engages (the Blend -> Locomotion handover) [s]",
+          validation: {gt_eq: [0.0]}}
+      contactBlendSeconds: {type: double, default_value: 0.03, description: "Half-width of a window around every
+          planned contact switch in which the layer's torque is faded into the plan's torque (smoothstep on the time to
+          the nearest switch). The layer swaps its contact set with the plan mode while the robot is still in the old
+          contact state for a few ms; without the fade that routes the support transient through the landing hip as a
+          one-tick torque impulse (2.B sweep 3: 30 ms removes it). 0 = off", validation: {gt_eq: [0.0]}}
+      holdOnTorqueWindowOverrun: {type: bool, default_value: true, description: "Skip the contact-switch fade on
+          ticks whose plan torque is the torque-window fallback (policy older than the window, plan inverse dynamics
+          at the planned state). Beyond the window the plan's joint accelerations are unbounded by any joint row, and
+          their inverse dynamics across a contact switch reaches the actuator limits; fading into that at a late
+          touchdown pitched the pelvis 10 deg in 20 ms (humanUB2 / humanUBnb at 0.8 m/s). false = the fade always
+          applies, as before."}
+      baseKp: {type: double_array, default_value: [0.0, 0.0, 50.0, 25.0, 100.0, 100.0], description: "Base task
+          stiffness on the generalized-coordinate error [x y z yaw pitch roll] (world position, Euler ZYX angles)
+          [1/s^2]; 0 tracks the planned acceleration only", validation: {fixed_size<>: [6], lower_element_bounds<>: [0.0]}}
+      baseKd: {type: double_array, default_value: [0.0, 0.0, 14.0, 10.0, 20.0, 20.0], description: "Base task damping
+          on the generalized-velocity error [1/s]", validation: {fixed_size<>: [6], lower_element_bounds<>: [0.0]}}
+      baseWeight: {type: double_array, default_value: [1.0, 1.0, 10.0, 10.0, 10.0, 10.0], description: "Least-squares
+          weight of the base acceleration rows", validation: {fixed_size<>: [6], lower_element_bounds<>: [1.0e-6]}}
+      jointKp: {type: double, default_value: 100.0, description: "Joint posture task stiffness on (q_plan - q), in
+          acceleration space so each joint sees it scaled by its own inertia [1/s^2]", validation: {gt_eq: [0.0]}}
+      jointKd: {type: double, default_value: 20.0, description: "Joint posture task damping [1/s]", validation: {gt_eq: [0.0]}}
+      jointWeight: {type: double, default_value: 1.0, description: "Least-squares weight of the joint acceleration
+          rows", validation: {gt: [0.0]}}
+      jointWeights: {type: double_array, default_value: [], description: "Per-joint least-squares weights,
+          index-aligned with robot.jointNames; empty = jointWeight for every joint. Lets the waist posture outweigh
+          the base task so pelvis corrections do not fold the torso.", validation: {lower_element_bounds<>: [0.0]}}
+      orientationLink: {type: string, default_value: "", description: "URDF link whose world orientation gets its own
+          task (the torso: the mass the base task is really about, while the base pose is the pelvis). Empty = off."}
+      orientationKp: {type: double_array, default_value: [100.0, 100.0, 25.0], description: "Orientation task
+          stiffness on log(R_plan R^T), world axes [roll pitch yaw] [1/s^2]", validation: {fixed_size<>: [3],
+          lower_element_bounds<>: [0.0]}}
+      orientationKd: {type: double_array, default_value: [20.0, 20.0, 10.0], description: "Orientation task damping
+          on the world angular-velocity error [1/s]", validation: {fixed_size<>: [3], lower_element_bounds<>: [0.0]}}
+      orientationWeight: {type: double, default_value: 10.0, description: "Least-squares weight of the orientation task
+          (3 rows); 0 disables it even with a link set", validation: {gt_eq: [0.0]}}
+      swingKp: {type: double_array, default_value: [100.0, 100.0, 100.0], description: "Swing-foot position task
+          stiffness, world axes [1/s^2]", validation: {fixed_size<>: [3], lower_element_bounds<>: [0.0]}}
+      swingKd: {type: double_array, default_value: [20.0, 20.0, 20.0], description: "Swing-foot task damping [1/s]",
+          validation: {fixed_size<>: [3], lower_element_bounds<>: [0.0]}}
+      swingWeight: {type: double, default_value: 5.0, description: "Least-squares weight of the swing-foot task
+          (3 rows per swing foot); 0 disables it", validation: {gt_eq: [0.0]}}
+      wrenchWeight: {type: double, default_value: 0.01, description: "Weight pulling the solved contact wrenches
+          toward the policy's (keeps the MPC's double-support load split); the dynamics rows always win",
+          validation: {gt: [0.0]}}
+      frictionCoefficient: {type: double, default_value: 0.6, description: "Post-solve clip of the solved wrenches:
+          |f_xy| <= mu f_z, f_z >= 0 (S1 clips; S2 constrains)", validation: {gt: [0.0]}}
+      soleHalfLength: {type: double, default_value: 0.10, description: "Post-solve centre-of-pressure clip,
+          contact-frame x half-extent [m]", validation: {gt: [0.0]}}
+      soleHalfWidth: {type: double, default_value: 0.04, description: "Post-solve centre-of-pressure clip,
+          contact-frame y half-extent [m]", validation: {gt: [0.0]}}
+      searchWindow: {type: double, default_value: 0.0, description: "Touchdown search (run 29): a foot the plan has
+          just switched to contact whose measured sole still descends faster than searchLandedVelocity is not on the
+          ground; the layer keeps it a swing foot (no wrench, no stance rows, the body on the other foot) and drives it
+          down at searchDescentVelocity at the plan's foothold until it stops or stops following the push (run 29 E:
+          a sole achieving under half the descent target 60 ms into the search stands on something), or this long after
+          the switch (then it is loaded where it is). Decided every servo tick on the measured foot; the plan and schedule are untouched,
+          the estimator is told the foot is in the air, the contact-switch fade restarts at the real touchdown and the
+          layer's torque carries the search. 0 = off [s]", validation: {gt_eq: [0.0]}}
+      searchLandedVelocity: {type: double, default_value: 0.05, description: "Touchdown search: a sole descending
+          slower than this has landed [m/s]", validation: {gt: [0.0]}}
+      searchDescentVelocity: {type: double, default_value: 0.15, description: "Touchdown search: the vertical
+          velocity the searching foot is driven at, at least - a search never brakes the descent the sole arrived
+          with [m/s]", validation: {gt: [0.0]}}
+      searchDescentAcceleration: {type: double, default_value: 0.0, description: "Touchdown search: the descent
+          velocity target grows this fast the longer the search runs, so a deep search (the gait re-tiled on a
+          deceleration, the foot switched to contact centimetres up) ends inside the double support. 0 = constant
+          [m/s^2]", validation: {gt_eq: [0.0]}}
   diagnostics:
     statusLogPeriod: {type: double, default_value: 5.0, description: "Period of the MPC timing/utilization status
         log [s]", validation: {gt: [0.0]}}
@@ -152,6 +237,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           fallback) add f_c tanh(v / jointFrictionVelocity), so the planned motor torque overcomes it. Empty = none"}
       jointFrictionVelocity: {type: double, default_value: 0.05, description: "Joint speed [rad/s] over which the
           smoothed Coulomb friction reaches 76% of f_c (tanh(1))", validation: {gt: [0.0]}}
+      wrenchState: {type: bool, default_value: false, description: "Wrench-as-state layout (roadmap v2 step A):
+          the contact wrenches are appended to the MPC state and their rates to the input (x = [q, v, Ws],
+          u = [W, a, tau, dW], dWs/dt = dW, W == Ws), so costs.r.contactWrenchRates prices every force step
+          between nodes. Changes the state/input dimensions: the generated CppAD libraries are rebuilt"}
     solver:
       sqp:
         nThreads: {type: int, default_value: 4, description: "Number of solver threads", validation: {gt: [0]}}
@@ -221,6 +310,13 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         contactWrenches: {type: double_array, default_value: [0.05, 0.05, 0.01, 0.05, 0.05, 0.2, 0.05, 0.05,
               0.01, 0.05, 0.05, 0.2], description: "Input cost diagonal, contact wrenches [left fx,fy,fz,mx,my,mz,
             right fx,fy,fz,mx,my,mz]", validation: {fixed_size<>: [12]}}
+        contactWrenchRates: {type: double_array, default_value: [0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001,
+              0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001], description: "Input cost diagonal on the contact
+            wrench rates dW [N/s, N m/s], same ordering as contactWrenches; times ocs2.costs.rScaling. Only with
+            ocs2.model.wrenchState; must stay positive (the SQP needs a positive-definite input Hessian). A full
+            step of 400 N over one 20 ms node is 2e4 N/s, so 1e-5 * rScaling 1e-3 * (2e4)^2 = 4 per node is the
+            near-free default; ~1e-3 makes it comparable to the base tracking terms",
+          validation: {fixed_size<>: [12]}}
         baseAccelerations: {type: double_array, default_value: [0.001, 0.001, 0.001, 0.001, 0.001, 0.001],
             description: "Input cost diagonal on the base acceleration [linear xyz, Euler ZYX]; times ocs2.costs.rScaling",
           validation: {fixed_size<>: [6]}}
@@ -288,11 +384,36 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             torque quadratic cost"}
         rightWeights: {type: double_array, default_value: [], description: "Weights of the right-leg external torque
             quadratic cost (pre-scaling)"}
+      contactLoadShareWeight: {type: double, default_value: 0.0, description: "Linear weight of the
+          double-support load-share cost (0 disables it): pulls the free vertical-force split between
+          the feet toward a C1 smoothstep transfer across each DS window, shaping the contact-handover
+          force rate (D2/D3); registered only when > 0", validation: {gt_eq: [0.0]}}
+      contactLoadShareLiftOffWindow: {type: double, default_value: 0.0, description: "Load-share cost end
+          window [s] before each planned lift-off: > 0 shapes the split only there (weight ramps up as
+          (1 - tau/window)^2 towards the switch, so the lifting foot's force reaches zero continuously
+          instead of dropping in one node) and leaves the rest of the double support free. 0 with the
+          touchdown window also 0 = the whole-DS smoothstep", validation: {gt_eq: [0.0]}}
+      contactLoadShareTouchDownWindow: {type: double, default_value: 0.0, description: "Load-share cost end
+          window [s] after each planned touchdown (landing foot loaded from zero continuously). 0 = off
+          at that end. Note the foot is physically down ~50 ms before the planned switch (G1), so holding
+          its planned force at zero there moved the jerk onto the touchdown in run 13",
+        validation: {gt_eq: [0.0]}}
+      wrenchRateFirstNodeScale: {type: double, default_value: 1.0, description: "Wrench-as-state layout
+          (ocs2.model.wrenchState): share of costs.r.contactWrenchRates charged at the first node of each
+          solve, whose wrench is anchored to the previous plan; the remaining share is charged on every
+          later node (WbIdWrenchRateCost). 1 = the whole rate weight everywhere (each plan inherits the last
+          plan's force: lower balance bandwidth); small values (0.01-0.1) keep the in-horizon ramps and let
+          the force re-plan freely each solve. Must stay > 0: the SQP needs a positive-definite R",
+        validation: {gt: [0.0], lt_eq: [1.0]}}
     constraints:
       footMotionEquality:
         activate: {type: bool, default_value: true, description: "Enable stance and swing foot acceleration equalities; disable only for diagnostic ablation"}
         positionErrorGain_z: {type: double, default_value: 0.5, description: "Stance foot vertical position error
-            feedback gain"}
+            feedback gain (also the swing foot's when swingPositionErrorGain_z < 0)"}
+        swingPositionErrorGain_z: {type: double, default_value: -1.0, description: "Swing foot height error feedback
+            gain in the swing vertical acceleration equality a_z = a_ref - kd (v - v_ref) - kp (z - z_ref); with
+            kd 50 a kp of 50 leaves a height-error pole at -1 rad/s (the plan's descent sags below its spline and
+            lands early and hard), 200 moves it to -4.4 rad/s; < 0 = use positionErrorGain_z"}
         orientationErrorGain: {type: double, default_value: 20.0, description: "Stance foot orientation error feedback
             gain"}
         linearVelocityErrorGain_z: {type: double, default_value: 1.0, description: "Stance foot vertical linear
@@ -409,6 +530,44 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             not itself pin contact heights to zero; does not supply a terrain map or surface normals."}
         maxStepPerSolve: {type: double, default_value: 0.01, description: "Bound [m] on the support-height reference
             change per solver iteration, limiting reference jumps at contact transitions", validation: {gt: [0.0]}}
+        followSlope: {type: bool, default_value: false, description: "Foot references follow the incline the terrain
+            speed cap reads (SlopeFootReference.h, run 25 C): while the cap's slope samples agree the ground is a
+            plane, each stance foot's height reference is its own sole height, the swing touchdowns are planned on
+            the plane one stride further along, and the foot orientation terms (task-space foot cost, stance
+            orientation feedback, friction cone) use the plane's normal instead of the vertical. Flat ground and
+            tile fields are unchanged (no consistent slope). Needs useEstimate and terrainSpeedCap.enabled."}
+      terrainSpeedCap:
+        enabled: {type: bool, default_value: false, description: "Blind terrain speed cap (TerrainSpeedCap.h): when
+            both feet are in contact, a sole-height difference of at least stepKnots[i] marks the ground as uneven
+            at tier i for holdSeconds, and the commanded planar speed is capped at the smallest speedKnots of the
+            tiers that hold (the command slew limiter ramps it). Run 24 of docs/results/human_gait_template.md:
+            the blind walk takes 1-2 cm steps at 0.5 m/s and falls at 0.8, 2-4 cm steps at 0.2 and falls at 0.5.
+            Flat-ground modes only; the stair and terrain modes pace themselves."}
+        stepKnots: {type: double_array, default_value: [0.01, 0.02, 0.035], description: "Sole-height differences in double
+            support [m] that count as a terrain step of each tier, increasing (flat ground: both soles within a few
+            mm)", validation: {lower_element_bounds<>: [0.0]}}
+        speedKnots: {type: double_array, default_value: [0.5, 0.2, 0.1], description: "Planar speed cap [m/s] of each
+            tier, non-increasing; same length as stepKnots", validation: {lower_element_bounds<>: [0.0]}}
+        holdSeconds: {type: double, default_value: 3.0, description: "A tier stays this long [s] after its last
+            terrain step (about 4-5 strides)", validation: {gt: [0.0]}}
+        slopeKnots: {type: double_array, default_value: [0.05, 0.12], description: "Incline tiers [rise / run along
+            the heading], increasing (0.05 ~ 3 deg, 0.12 ~ 7 deg). The signed step between the stance feet divided
+            by their separation along the heading is a slope sample; when the last four agree within
+            slopeConsistency the ground is a plane, the roughness step becomes the residual from it and the incline
+            is capped at slopeSpeedKnots. Empty = no incline cap (a ramp then reads as roughness).",
+            validation: {lower_element_bounds<>: [0.0]}}
+        slopeSpeedKnots: {type: double_array, default_value: [0.3, 0.2], description: "Planar speed cap [m/s] on
+            each incline tier, non-increasing; same length as slopeKnots", validation: {lower_element_bounds<>: [0.0]}}
+        slopeMinSeparation: {type: double, default_value: 0.08, description: "Feet closer than this along the heading
+            [m] give no slope sample (standing, side steps)", validation: {gt: [0.0]}}
+        slopeConsistency: {type: double, default_value: 0.03, description: "Spread of the last four slope samples
+            [rise / run] below which the ground counts as a plane (ramps agree, tile fields rarely: and two
+            contradictions in a row are rough ground, which keeps no plane until two samples agree within half
+            this); also the per-run tolerance of a later sample against the standing plane", validation: {gt: [0.0]}}
+        slopeHeightTolerance: {type: double, default_value: 0.01, description: "Height tolerance floor [m] of a
+            sample against the standing plane: a sample whose rise is off by more than max(slopeConsistency x run,
+            this) contradicts the plane and drops it (the first full stride onto a plateau); the sole noise of a
+            stop's short closing steps stays within it and keeps the plane", validation: {gt: [0.0]}}
       targetDisplacementVelocity: {type: double, default_value: 0.5, description: "Nominal displacement velocity
           used for target arrival time [m/s]"}
       targetRotationVelocity: {type: double, default_value: 0.5, description: "Nominal rotation velocity used for
@@ -427,6 +586,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           slew limits [ax, ay (m/s^2), height rate (m/s), yaw acceleration (rad/s^2)] applied to the scaled walking
           command (base_twist/terrain_walk), next to the maxDisplacementVelocity/maxRotationVelocity scaling;
           zero disables an axis", validation: {fixed_size<>: [4], element_bounds<>: [0.0, 100.0]}}
+      velocityCommandJerkLimits: {type: double_array, default_value: [0.0, 0.0, 0.0, 0.0], description: "Jerk limits
+          on the same axes as velocityCommandRateLimits [m/s^3, m/s^3, m/s^2, rad/s^3]: the slew rate itself ramps
+          (S-curve reference, no acceleration step at ramp start/stop); zero keeps the pure rate clamp on that
+          axis", validation: {fixed_size<>: [4], element_bounds<>: [0.0, 1000.0]}}
       takeoverHeightRate: {type: double, default_value: 0.0, description: "Height rate [m/s] of the reference's rise
           from the measured height at MPC takeover (after a planned stand-up) to the commanded height;
           velocityCommandRateLimits applies once it arrives. 0: velocityCommandRateLimits throughout",
@@ -465,6 +628,66 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             and hips with no interpenetration and no near-miss inside a 20 mm margin. The optional armSelfCollision
             penalty does not replace this reference-excursion bound.",
             validation: {gt: [0.0]}}
+      humanGait:
+        enabled: {type: bool, default_value: false, description: "Human gait template: normative human walking
+            kinematics (hip/knee/ankle curves, pelvis obliquity and vertical excursion, trunk counter-rotation, arm
+            swing) as the joint and base-pose reference, evaluated at each leg's gait-cycle phase time-warped onto
+            the planned mode schedule and scaled with the commanded step. Backward walking is the forward cycle
+            in reverse: arms and trunk counter-rotation keep their leg coupling with the sign flipped, obliquity and
+            height oscillation are unchanged, the leg curves stay at the stance posture. Lateral and turning
+            commands give the stance posture. Off: the fixed defaultJointState."}
+        legs: {type: bool, default_value: true, description: "Apply the hip pitch / knee / ankle pitch curves. They
+            replace the leg entries of defaultJointState (standing: hip -kneeOffset/2, knee kneeOffset, ankle
+            -kneeOffset/2), so the joint-position weights of those joints decide how closely they are followed."}
+        arms: {type: bool, default_value: true, description: "Shoulder pitch / elbow swing about the nominal arm
+            posture (needs armSwing.jointNames). Do not combine with armSwing.enabled: the two would add."}
+        waist: {type: bool, default_value: true, description: "Waist yaw counter-rotation about the nominal."}
+        base: {type: bool, default_value: true, description: "Pelvis height oscillation, obliquity (roll) and pitch
+            about the base reference."}
+        jointNames: {type: string_array, default_value: [], description: "[left hip pitch, left knee, left ankle
+            pitch, right hip pitch, right knee, right ankle pitch, waist yaw]; required when enabled."}
+        legLength: {type: double, default_value: 0.65, description: "Hip-to-ankle length [m]; with the commanded
+            step length (speed x step time) it scales the leg curves: scale = step / legLength / humanStepRatio.",
+            validation: {gt: [0.0]}}
+        humanStepRatio: {type: double, default_value: 0.78, description: "Human step length over leg length at
+            referenceSpeed (0.7 m steps on a 0.9 m leg at 1.3 m/s).", validation: {gt: [0.0]}}
+        referenceSpeed: {type: double, default_value: 1.3, description: "Speed at which the curves and the arm
+            amplitudes are defined [m/s]; the arm swing scales with commanded speed / referenceSpeed.",
+            validation: {gt: [0.0]}}
+        maxScale: {type: double, default_value: 1.2, description: "Cap on the amplitude scales.", validation: {gt: [0.0]}}
+        kneeOffset: {type: double, default_value: 0.3, description: "Knee flexion added to the human curves everywhere
+            [rad] (hip and ankle take half, trunk upright, foot flat): the margin from the straight-knee singularity.
+            The standing pelvis height that goes with it on the G1: 0.3 -> 0.785 m, 0.2 -> 0.789 m, 0.5 -> 0.772 m.",
+            validation: {gt_eq: [0.0]}}
+        stanceAnkleClosure: {type: bool, default_value: true, description: "In stance the ankle reference is
+            -hip - knee (sole flat under a level pelvis) instead of the human ankle curve, blended over the last /
+            first 10 % of swing. The human heel is up for the last quarter of stance; a flat-foot robot cannot be."}
+        maxStanceDorsiflexion: {type: double, default_value: 0.44, description: "With stanceAnkleClosure, the stance
+            knee is capped so the closed ankle stays within this dorsiflexion [rad] (the heel cannot come up)."}
+        swingClearance: {type: double, default_value: 0.05, description: "Swing-knee flexion is reduced so the
+            template's own foot clearance peaks at this value [m] (the planner's swing path is a hard constraint);
+            <= 0 keeps the human swing knee."}
+        heightFromLegs: {type: bool, default_value: true, description: "With `base`, the pelvis height reference is
+            the stance legs' template put through planar FK (foot flat), as an offset from the standing posture,
+            averaged over both legs in double support; replaces heightOscillation."}
+        thighLength: {type: double, default_value: 0.3366, description: "Hip pitch axis to knee axis [m] for heightFromLegs."}
+        shankLength: {type: double, default_value: 0.3, description: "Knee axis to ankle pitch axis [m] for heightFromLegs."}
+        shoulderAmplitude: {type: double, default_value: 0.35, description: "Shoulder pitch swing at referenceSpeed
+            [rad].", validation: {gt_eq: [0.0]}}
+        elbowAmplitude: {type: double, default_value: 0.15, description: "Elbow swing at referenceSpeed [rad].",
+            validation: {gt_eq: [0.0]}}
+        elbowMean: {type: double, default_value: 0.0, description: "Constant elbow offset from the nominal while the
+            template is on [rad] (negative straightens the shipped 1.2 rad elbow towards a human arm)."}
+        armMaxOffset: {type: double, default_value: 0.6, description: "Clamp on the arm offsets [rad] (collision
+            envelope, see armSwing.maxOffset).", validation: {gt: [0.0]}}
+        waistYawAmplitude: {type: double, default_value: 0.08, description: "Trunk counter-rotation at full scale
+            [rad].", validation: {gt_eq: [0.0]}}
+        pelvisRollAmplitude: {type: double, default_value: 0.05, description: "Pelvis obliquity at full scale [rad],
+            swing side down.", validation: {gt_eq: [0.0]}}
+        pelvisPitchAmplitude: {type: double, default_value: 0.0, description: "Pelvis pitch oscillation at full scale
+            [rad], twice per cycle."}
+        heightOscillation: {type: double, default_value: 0.015, description: "Pelvis vertical excursion at full scale
+            [m], high at mid single stance, low in double support.", validation: {gt_eq: [0.0]}}
     gait:
       phaseTransitionStanceTime: {type: double, default_value: 0.0, description: "Minimum stance time inserted at
           phase transitions [s]"}
@@ -481,6 +704,44 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           applied after the initial schedule"}
       defaultSwitchingTimes: {type: double_array, default_value: [0.0, 0.5], description: "Switching times of the
           default mode sequence template [s]"}
+      contactSync:
+        enabled: {type: bool, default_value: false, description: "Contact-synchronised touchdown: the planned touchdown
+            event of a swinging foot is moved to the solve time when its measured sole reaches the support plane inside
+            earlyWindow before it, and held (up to lateWindow) while the sole is still in the air after it. The plan
+            then loads the foot when it lands instead of 20-50 ms later (docs/results/human_gait_template.md runs
+            12-17). Flat-ground modes only; the stair and terrain modes ignore it."}
+        earlyWindow: {type: double, default_value: 0.06, description: "Landings this long [s] before the planned
+            touchdown advance it to the solve time; the double support absorbs the lead. 0 disables the early half",
+            validation: {gt_eq: [0.0]}}
+        lateWindow: {type: double, default_value: 0.0, description: "The planned touchdown is pushed back, holdStep at
+            a time, while the foot is still in the air, up to this long [s] after the originally planned time; 0
+            disables the late half", validation: {gt_eq: [0.0]}}
+        heightThreshold: {type: double, default_value: 0.002, description: "Sole height above the support plane [m] at
+            or below which the foot counts as landed (the G1 sole rests at ~0.3 mm; the swing passes 2 mm about
+            40 ms before the planned touchdown at 0.2 m/s). Only with descentVelocity > 0 can it be opened to
+            ~1 cm (a stopped sole on a slightly higher tile): the descent test then keeps airborne soles out",
+            validation: {gt_eq: [0.0]}}
+        holdStep: {type: double, default_value: 0.02, description: "A held touchdown is pushed this far [s] past the
+            solve time, i.e. about one MPC node", validation: {gt: [0.0]}}
+        minPhaseDuration: {type: double, default_value: 0.02, description: "No phase is shortened below this [s] by
+            either half", validation: {gt_eq: [0.0]}}
+        descentVelocity: {type: double, default_value: 0.0, description: "Uneven ground (run 22 D): a sole within
+            heightThreshold of the support plane that is still descending faster than this [m/s] is NOT landed (it is
+            passing the plane towards lower ground). Also the 'stopped' threshold of blockedHeight. 0 keeps the
+            height-only rule", validation: {gt_eq: [0.0]}}
+        blockedHeight: {type: double, default_value: 0.0, description: "Uneven ground (run 22 D): a sole that has
+            stopped descending at least this far [m] above its planned swing height, while the plan descends or has
+            finished, IS landed (it stands on ground higher than the plane). Needs descentVelocity > 0. 0 = off",
+            validation: {gt_eq: [0.0]}}
+        probeWindow: {type: double, default_value: 0.0, description: "Probe (run 28): the planned touchdown of a foot
+            that is still descending faster than descentVelocity is held up to this long [s] past the planned time
+            (the first stride down off a crest reaches the plane the plateau laid with the ground 1.5-2.6 cm lower; the
+            plan otherwise loads the foot in the air and the body pivots onto it). Only while the sole descends: a
+            stopped sole is landed or loaded where it is, the late half's tile failure. Needs descentVelocity > 0. 0 =
+            off", validation: {gt_eq: [0.0]}}
+        probeDescent: {type: double, default_value: 0.0, description: "Probe (run 28): the held foot's touchdown target is
+            lowered at this rate [m/s] over the hold, so the swing keeps descending to find the ground instead of
+            hovering at the plane. Needs probeWindow > 0. 0 = hold only", validation: {gt_eq: [0.0]}}
       swingTrajectory:
         liftOffVelocity: {type: double, default_value: 0.05, description: "Swing foot lift-off vertical velocity [m/s]"}
         touchDownVelocity: {type: double, default_value: -0.0, description: "Swing foot touch-down vertical velocity
@@ -507,6 +768,32 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
               validation: {subset_of<>: [["STANCE", "LF", "RF", "FLY"]]}}
           switchingTimes: {type: double_array, default_value: [], description: "N+1 increasing switching times of the
               template's N modes [s]; the template repeats with period last - first"}
+      continuous:
+        enabled: {type: bool, default_value: false, description: "Speed-continuous walking gait: while the ladder is
+            on its first walking rung, the step time, double support and swing clearance below (interpolated at the
+            conditioned command's speed, re-tiled from the next step boundary at every solve) replace the rung's
+            template. The ladder then only decides standing vs walking; higher rungs are ignored. Needs
+            gait.phaseTransitionStanceTime 0."}
+        speedKnots: {type: double_array, default_value: [0.0, 0.45, 0.8, 1.15], description: "Increasing gait speeds
+            [m/s] (planar speed + yawLever x |yaw rate|) the tables are given at; clamped outside the range"}
+        stepTime: {type: double_array, default_value: [0.72, 0.72, 0.55, 0.48], description: "Lift-off to the other
+            foot's lift-off [s] per knot. Step length = speed x stepTime; the defaults are human regressions scaled to
+            the G1's leg length (docs/results/lowspeed_gait.md)"}
+        doubleSupport: {type: double_array, default_value: [0.25, 0.25, 0.12, 0.09], description: "Double-support time
+            inside each step [s] per knot; the swing is stepTime - doubleSupport"}
+        swingHeight: {type: double_array, default_value: [0.05, 0.05, 0.05, 0.06], description: "Swing clearance [m]
+            per knot"}
+        yawLever: {type: double, default_value: 0.15, description: "Lever arm [m] converting the yaw-rate command into
+            gait speed, so turning in place steps at a sensible cadence", validation: {gt_eq: [0.0]}}
+        minDoubleSupport: {type: double, default_value: 0.03, description: "Double supports shorter than this [s] are
+            not planned (alternating single supports instead)", validation: {gt_eq: [0.0]}}
+        spliceDelay: {type: double, default_value: 0.1, description: "The schedule is re-tiled from the first step
+            boundary later than initTime + this [s]; the step in progress is never changed", validation: {gt_eq: [0.0]}}
+        standBelow: {type: double, default_value: 0.15, description: "Planar commands slower than this [m/s] are
+            rounded to standing", validation: {gt_eq: [0.0]}}
+        minWalkSpeed: {type: double, default_value: 0.4, description: "Planar commands between standBelow and this
+            [m/s] are raised to it (direction kept): the slowest speed at which the gait looks like walking. 0 disables
+            the rounding", validation: {gt_eq: [0.0]}}
       transitions:
         minDwellTime: {type: double, default_value: 0.2, description: "Minimum time between two gait changes [s]",
             validation: {gt_eq: [0.0]}}

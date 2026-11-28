@@ -1,0 +1,246 @@
+{
+ "calibration": {
+  "off_target": 0.31,
+  "off_measured": 0.31,
+  "on_target": 0.79,
+  "on_measured": 0.7867,
+  "ok": true
+ },
+ "cases": [
+  {
+   "label": "58.8 Hz baseline",
+   "status": "baseline",
+   "solve_hz": 58.8,
+   "blend_ms": 0.0,
+   "jump_on": 0.7832,
+   "step_off": 0.31,
+   "max_step": 2.8946,
+   "p99_step": 1.3543,
+   "lag_rms": 0.0,
+   "lag_after_ramp_max": 0.0,
+   "switches": 3529
+  },
+  {
+   "label": "58.8 Hz + 5 ms",
+   "status": "blend",
+   "solve_hz": 58.8,
+   "blend_ms": 5.0,
+   "jump_on": 0.0,
+   "step_off": 0.3384,
+   "max_step": 2.1314,
+   "p99_step": 1.2161,
+   "lag_rms": 0.439,
+   "lag_after_ramp_max": 0.0,
+   "switches": 3529
+  },
+  {
+   "label": "90.9 Hz baseline",
+   "status": "baseline",
+   "solve_hz": 90.9,
+   "blend_ms": 0.0,
+   "jump_on": 0.7843,
+   "step_off": 0.31,
+   "max_step": 2.9799,
+   "p99_step": 1.5564,
+   "lag_rms": 0.0,
+   "lag_after_ramp_max": 0.0,
+   "switches": 5454
+  },
+  {
+   "label": "90.9 Hz + 5 ms (G1 shipped)",
+   "status": "blend",
+   "solve_hz": 90.9,
+   "blend_ms": 5.0,
+   "jump_on": 0.0,
+   "step_off": 0.3555,
+   "max_step": 2.1256,
+   "p99_step": 1.317,
+   "lag_rms": 0.5459,
+   "lag_after_ramp_max": 0.0,
+   "switches": 5454
+  },
+  {
+   "label": "100 Hz baseline",
+   "status": "baseline",
+   "solve_hz": 100.0,
+   "blend_ms": 0.0,
+   "jump_on": 0.7801,
+   "step_off": 0.31,
+   "max_step": 2.9063,
+   "p99_step": 1.5987,
+   "lag_rms": 0.0,
+   "lag_after_ramp_max": 0.0,
+   "switches": 5999
+  },
+  {
+   "label": "100 Hz + 5 ms",
+   "status": "blend",
+   "solve_hz": 100.0,
+   "blend_ms": 5.0,
+   "jump_on": 0.0,
+   "step_off": 0.3604,
+   "max_step": 2.1324,
+   "p99_step": 1.3397,
+   "lag_rms": 0.5718,
+   "lag_after_ramp_max": 0.0,
+   "switches": 5999
+  },
+  {
+   "label": "200 Hz baseline",
+   "status": "baseline",
+   "solve_hz": 200.0,
+   "blend_ms": 0.0,
+   "jump_on": 0.7871,
+   "step_off": 0.31,
+   "max_step": 2.9135,
+   "p99_step": 1.8551,
+   "lag_rms": 0.0,
+   "lag_after_ramp_max": 0.0,
+   "switches": 11999
+  },
+  {
+   "label": "200 Hz + 2 ms (Upkie shipped)",
+   "status": "blend",
+   "solve_hz": 200.0,
+   "blend_ms": 2.0,
+   "jump_on": 0.0,
+   "step_off": 0.4489,
+   "max_step": 2.7142,
+   "p99_step": 1.6738,
+   "lag_rms": 0.505,
+   "lag_after_ramp_max": 0.0,
+   "switches": 11999
+  },
+  {
+   "label": "200 Hz + 5 ms (overlap stress)",
+   "status": "blend",
+   "solve_hz": 200.0,
+   "blend_ms": 5.0,
+   "jump_on": 0.0,
+   "step_off": 0.4151,
+   "max_step": 2.2419,
+   "p99_step": 1.5789,
+   "lag_rms": 0.8878,
+   "lag_after_ramp_max": 0.0,
+   "switches": 11999
+  },
+  {
+   "label": "90.9 Hz jittered baseline",
+   "status": "baseline",
+   "solve_hz": 90.9,
+   "blend_ms": 0.0,
+   "jump_on": 0.7847,
+   "step_off": 0.31,
+   "max_step": 2.9064,
+   "p99_step": 1.5619,
+   "lag_rms": 0.0,
+   "lag_after_ramp_max": 0.0,
+   "switches": 5463
+  },
+  {
+   "label": "90.9 Hz jittered +-2 ms + 5 ms",
+   "status": "blend",
+   "solve_hz": 90.9,
+   "blend_ms": 5.0,
+   "jump_on": 0.0,
+   "step_off": 0.3557,
+   "max_step": 2.1175,
+   "p99_step": 1.3147,
+   "lag_rms": 0.5472,
+   "lag_after_ramp_max": 0.0,
+   "switches": 5463
+  }
+ ],
+ "gates": [
+  {
+   "name": "calibration",
+   "pass": true,
+   "detail": "off=0.310 (t 0.31) on=0.787 (t 0.79)"
+  },
+  {
+   "name": "58.8 Hz + 5 ms: jump@switch -> 0",
+   "pass": true,
+   "detail": "0.0000 vs baseline 0.7832 Nm"
+  },
+  {
+   "name": "58.8 Hz + 5 ms: worst per-tick step improves",
+   "pass": true,
+   "detail": "2.1314 vs baseline 2.8946 Nm"
+  },
+  {
+   "name": "58.8 Hz + 5 ms: no residual lag after ramp",
+   "pass": true,
+   "detail": "max |cmd-policy| after ramp = 0.000e+00 Nm"
+  },
+  {
+   "name": "90.9 Hz + 5 ms (G1 shipped): jump@switch -> 0",
+   "pass": true,
+   "detail": "0.0000 vs baseline 0.7843 Nm"
+  },
+  {
+   "name": "90.9 Hz + 5 ms (G1 shipped): worst per-tick step improves",
+   "pass": true,
+   "detail": "2.1256 vs baseline 2.9799 Nm"
+  },
+  {
+   "name": "90.9 Hz + 5 ms (G1 shipped): no residual lag after ramp",
+   "pass": true,
+   "detail": "max |cmd-policy| after ramp = 0.000e+00 Nm"
+  },
+  {
+   "name": "100 Hz + 5 ms: jump@switch -> 0",
+   "pass": true,
+   "detail": "0.0000 vs baseline 0.7801 Nm"
+  },
+  {
+   "name": "100 Hz + 5 ms: worst per-tick step improves",
+   "pass": true,
+   "detail": "2.1324 vs baseline 2.9063 Nm"
+  },
+  {
+   "name": "100 Hz + 5 ms: no residual lag after ramp",
+   "pass": true,
+   "detail": "max |cmd-policy| after ramp = 0.000e+00 Nm"
+  },
+  {
+   "name": "200 Hz + 2 ms (Upkie shipped): jump@switch -> 0",
+   "pass": true,
+   "detail": "0.0000 vs baseline 0.7871 Nm"
+  },
+  {
+   "name": "200 Hz + 2 ms (Upkie shipped): worst per-tick step improves",
+   "pass": true,
+   "detail": "2.7142 vs baseline 2.9135 Nm"
+  },
+  {
+   "name": "200 Hz + 2 ms (Upkie shipped): no residual lag after ramp",
+   "pass": true,
+   "detail": "max |cmd-policy| after ramp = 0.000e+00 Nm"
+  },
+  {
+   "name": "200 Hz + 5 ms (overlap stress): jump@switch -> 0",
+   "pass": true,
+   "detail": "0.0000 vs baseline 0.7871 Nm"
+  },
+  {
+   "name": "200 Hz + 5 ms (overlap stress): worst per-tick step improves",
+   "pass": true,
+   "detail": "2.2419 vs baseline 2.9135 Nm"
+  },
+  {
+   "name": "90.9 Hz jittered +-2 ms + 5 ms: jump@switch -> 0",
+   "pass": true,
+   "detail": "0.0000 vs baseline 0.7847 Nm"
+  },
+  {
+   "name": "90.9 Hz jittered +-2 ms + 5 ms: worst per-tick step improves",
+   "pass": true,
+   "detail": "2.1175 vs baseline 2.9064 Nm"
+  },
+  {
+   "name": "90.9 Hz jittered +-2 ms + 5 ms: no residual lag after ramp",
+   "pass": true,
+   "detail": "max |cmd-policy| after ramp = 0.000e+00 Nm"
+  }
+ ]
+}

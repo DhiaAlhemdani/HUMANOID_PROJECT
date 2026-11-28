@@ -120,6 +120,7 @@ add_library(${PROJECT_NAME} SHARED
   src/common/target/mpc_targets_parser.cpp
   src/controller/config_builder.cpp
   src/controller/controller.cpp
+  src/controller/whole_body_feedback.cpp
   src/visualization/optimized_state_trajectory_visualization.cpp
   src/visualization/future_robot_model_visualization.cpp
   src/visualization/collision_sphere_visualization.cpp
@@ -199,8 +200,16 @@ if(BUILD_TESTING)
   add_test(NAME wheel_model_consistency_test COMMAND wheel_model_consistency_test
     ${CMAKE_CURRENT_SOURCE_DIR}/description/urdf/robots/upkie/upkie.urdf
     ${CMAKE_CURRENT_BINARY_DIR}/test_codegen)
+  # Eigen-only test of the whole-body feedback core (no pinocchio, no ROS).
+  add_executable(whole_body_feedback_core_test tests/whole_body_feedback_core_test.cpp)
+  target_include_directories(whole_body_feedback_core_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(whole_body_feedback_core_test PRIVATE Eigen3::Eigen)
+  target_compile_features(whole_body_feedback_core_test PRIVATE cxx_std_20)
+  target_compile_options(whole_body_feedback_core_test PRIVATE -UNDEBUG)
+  add_test(NAME whole_body_feedback_core_test COMMAND whole_body_feedback_core_test)
   foreach(test_name IN ITEMS wheel_contact_kinematics_test arm_body_collision_test
-      swing_flight_test gait_swing_height_test running_gait_transition_test wb_id_torque_window_test)
+      swing_flight_test gait_swing_height_test running_gait_transition_test wb_id_torque_window_test
+      continuous_gait_law_test contact_sync_test terrain_speed_cap_test slope_foot_reference_test)
     add_executable(${test_name} tests/${test_name}.cpp)
     target_link_libraries(${test_name} PRIVATE legged_robot_humanoid_wb_id_core)
     # These regression executables use assert; keep their checks active in Release builds.

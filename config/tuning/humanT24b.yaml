@@ -1,0 +1,976 @@
+controller_manager:
+  ros__parameters:
+    update_rate: $(var mrtFreq)
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    humanoid_inekf:
+      type: legged_robot_state_estimator/HumanoidInEkfController
+
+    humanoid_linear_kf:
+      type: legged_robot_state_estimator/HumanoidLinearKfController
+
+    humanoid_whole_body_inverse_dynamics_mpc_controller:
+      type: legged_robot_mpc_controller/HumanoidWholeBodyInverseDynamicsMpcController
+
+
+# Contact-aided right-invariant EKF (Hartley et al. 2018)
+humanoid_inekf:
+  ros__parameters:
+    update_rate: $(var mrtFreq)
+    urdfFile: $(var urdfFile)
+    baseFrame: pelvis
+    # Read by name, so the order is free; the MPC's robot.jointNames.
+    jointNames:
+      - left_hip_pitch_joint
+      - left_hip_roll_joint
+      - left_hip_yaw_joint
+      - left_knee_joint
+      - left_ankle_pitch_joint
+      - left_ankle_roll_joint
+
+      - right_hip_pitch_joint
+      - right_hip_roll_joint
+      - right_hip_yaw_joint
+      - right_knee_joint
+      - right_ankle_pitch_joint
+      - right_ankle_roll_joint
+      
+      - waist_yaw_joint
+      - waist_roll_joint
+      - waist_pitch_joint
+      
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_shoulder_yaw_joint
+      - left_elbow_joint
+      
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_shoulder_yaw_joint
+      - right_elbow_joint
+
+    imuInterfaceName: pelvis_imu
+    imuFrame: imu_in_pelvis
+    contactFrames:
+      [foot_l_heel_est, foot_l_toe_est, foot_r_heel_est, foot_r_toe_est]
+    odomTopic: /humanoid/state_estimate/odom
+    odomFrame: odom
+    publishRate: 100.0
+
+    # When the estimate may take over from ground truth. The timer is the real
+    # gate: the filter starts confident (ground-truth seed, small initial
+    # covariance) and its biases are barely observable while standing, so no
+    # covariance can show it has converged. The std-devs below are divergence
+    # guards on the OBSERVABLE states only - yaw and x/y position are gauge
+    # states whose covariance grows without bound, so they are not checked.
+    readiness:
+      minSeconds: 5.0
+      rollPitchStdDevMax: 0.10
+      heightStdDevMax: 0.10
+      velocityStdDevMax: 0.50
+
+    noise:
+      gyroscope: 1.0e-2
+      accelerometer: 1.5e0
+      gyroscopeBias: 1.0e-5
+      accelerometerBias: 1.0e-4
+      contact: 1.0e-2
+      contactPosition: 2.0e-3
+      contactRotation: 1.0e-2
+    height:
+      source: kinematic
+      kinematicWeight: 0.9
+      anchorUpdateThreshold: 0.05
+      groundZ: 0.0
+      holdThroughFlight: true
+    contact:
+      source: scheduled
+      footIndices:
+        [0, 0, 1, 1]
+      beta0:
+        [-20.0, -20.0, -20.0, -20.0]
+      beta1:
+        [0.7, 0.7, 0.7, 0.7]
+      forceCovarianceAlpha: 10.0
+      probabilityThreshold: 0.5
+      dynamicEstimation: false
+    lpf:
+      gyroCutoff: 80.0
+      gyroAccelCutoff: 50.0
+      linAccelCutoff: 15.0
+      dqJCutoff: 10.0
+      ddqJCutoff: 5.0
+      tauJCutoff: 10.0
+
+
+# Two-stage linear KF (Bledt et al. 2018)
+humanoid_linear_kf:
+  ros__parameters:
+    update_rate: $(var mrtFreq)
+    urdfFile: $(var urdfFile)
+    baseFrame: pelvis
+    # Read by name, so the order is free; the MPC's robot.jointNames.
+    jointNames:
+      - left_hip_pitch_joint
+      - left_hip_roll_joint
+      - left_hip_yaw_joint
+      - left_knee_joint
+      - left_ankle_pitch_joint
+      - left_ankle_roll_joint
+
+      - right_hip_pitch_joint
+      - right_hip_roll_joint
+      - right_hip_yaw_joint
+      - right_knee_joint
+      - right_ankle_pitch_joint
+      - right_ankle_roll_joint
+
+      - waist_yaw_joint
+      - waist_roll_joint
+      - waist_pitch_joint
+
+      - left_shoulder_pitch_joint
+      - left_shoulder_roll_joint
+      - left_shoulder_yaw_joint
+      - left_elbow_joint
+
+      - right_shoulder_pitch_joint
+      - right_shoulder_roll_joint
+      - right_shoulder_yaw_joint
+      - right_elbow_joint
+
+    imuInterfaceName: pelvis_imu
+    imuFrame: imu_in_pelvis
+    contactFrames:
+      [foot_l_heel_est, foot_l_toe_est, foot_r_heel_est, foot_r_toe_est]
+    odomTopic: /humanoid/state_estimate/odom
+    odomFrame: odom
+    publishRate: 100.0
+
+    # When the estimate may take over from ground truth. The timer is the real
+    # gate: the filter starts confident (ground-truth seed, small initial
+    # covariance) and its biases are barely observable while standing, so no
+    # covariance can show it has converged. The std-devs below are divergence
+    # guards on the OBSERVABLE states only - yaw and x/y position are gauge
+    # states whose covariance grows without bound, so they are not checked.
+    readiness:
+      minSeconds: 5.0
+      rollPitchStdDevMax: 0.10
+      heightStdDevMax: 0.10
+      velocityStdDevMax: 0.50
+
+    # The linear KF needs to know which feet are loaded too.
+    contact:
+      source: scheduled
+      footIndices: [0, 0, 1, 1]
+
+    # 0 = derive from inEKF.contact.footIndices ([0,0,1,1] -> 2 feet).
+    # The G1 has 2 FEET but 4 CONTACT POINTS (heel + toe each).
+    numFeet: 2
+    # 0.0, NOT legged_control's 0.02: that value compensates a SPHERICAL foot
+    # whose contact frame sits at the sphere centre (Unitree A1/Go1). The G1's
+    # foot_*_est frames are already at the sole (urdf origin z = -0.035 from the
+    # ankle), so a radius here biases the estimated base height up by exactly
+    # that amount - measured as a +20 mm offset before this was zeroed.
+    footRadius: 0.0
+    imuProcessNoisePosition: 0.02
+    imuProcessNoiseVelocity: 0.02
+    footProcessNoisePosition: 0.002
+    footSensorNoisePosition: 0.005
+    footSensorNoiseVelocity: 0.1
+    footHeightSensorNoise: 0.01
+    # A swing foot's noise is scaled by this, which is how the filter ignores
+    # a foot that is off the ground without resizing the problem.
+    swingNoiseMultiplier: 100.0
+
+
+humanoid_whole_body_inverse_dynamics_mpc_controller:
+  ros__parameters:
+    update_rate: $(var mrtFreq)
+
+    paths:
+      urdfFile: $(var urdfFile)
+      libFolder: $(var libFolder)
+
+    target:
+      walkingVelocityTopic: /humanoid/walking_velocity_command
+      basePoseTopic: /humanoid/base_pose_command
+      modeTopic: /humanoid/target_mode
+      defaultMode: base_twist
+      globalFrame: odom
+
+    robot:
+      commandInterface: effort_pd
+      stateInterfaces: [position, velocity, effort]
+      jointNames:
+        - left_hip_pitch_joint
+        - left_hip_roll_joint
+        - left_hip_yaw_joint
+        - left_knee_joint
+        - left_ankle_pitch_joint
+        - left_ankle_roll_joint
+
+        - right_hip_pitch_joint
+        - right_hip_roll_joint
+        - right_hip_yaw_joint
+        - right_knee_joint
+        - right_ankle_pitch_joint
+        - right_ankle_roll_joint
+
+        - waist_yaw_joint
+        - waist_roll_joint
+        - waist_pitch_joint
+
+        - left_shoulder_pitch_joint
+        - left_shoulder_roll_joint
+        - left_shoulder_yaw_joint
+        - left_elbow_joint
+
+        - right_shoulder_pitch_joint
+        - right_shoulder_roll_joint
+        - right_shoulder_yaw_joint
+        - right_elbow_joint
+
+    control:
+      observationVelocityFilterCutoffHz: 30.0
+      feedforward: policy_torque
+      # Ramp the command from the last written one when a new solve swaps the policy in
+      # (smooths the per-solve command step); ~half the solve period at 90-100 Hz MPC.
+      solveBlendSeconds: 0.005
+      jointEffortPd:
+        kp:
+          [200.0, 200.0, 200.0, 200.0, 200.0, 200.0,
+           200.0, 200.0, 200.0, 200.0, 200.0, 200.0,
+           200.0, 200.0, 200.0,
+           200.0, 200.0, 200.0, 200.0,
+           200.0, 200.0, 200.0, 200.0]
+        kd:
+          [20.0, 20.0, 20.0, 10.0, 20.0, 20.0,
+           20.0, 20.0, 20.0, 10.0, 20.0, 20.0,
+           20.0, 20.0, 20.0,
+           20.0, 20.0, 20.0, 20.0,
+           20.0, 20.0, 20.0, 20.0]
+      # Phase 2.B whole-body feedback layer (docs/design/wbc_layer.md). Shipped off: the servo
+      # path above is unchanged until the sweep (tests/tuning/run_wbc_sweep.sh) finds a winner.
+      # Base order [x y z yaw pitch roll]; acceleration-space gains (per-joint inertia scales them).
+      # Gains = the S1 sweep's 'soft' set: the 2x stiffer original defaults fell (wb_s1 11.7 s, wb_s1_stiff 1.5 s).
+      wholeBody:
+        enabled: true
+        residualKp: 20.0
+        residualKd: 3.0
+        gainRampSeconds: 0.5
+        contactBlendSeconds: 0.03
+        # The fade hands the switch to the plan's torque; when that torque is the torque-window fallback (policy
+        # older than the window) it is the plan's unbounded inverse dynamics and reached the actuator limits at
+        # late touchdowns (0.8 m/s falls, docs/results/human_gait_template.md run 6) - keep the layer's torque then.
+        holdOnTorqueWindowOverrun: true
+        baseKp: [0.0, 0.0, 50.0, 25.0, 100.0, 100.0]
+        baseKd: [0.0, 0.0, 14.0, 10.0, 20.0, 20.0]
+        baseWeight: [1.0, 1.0, 10.0, 10.0, 10.0, 10.0]
+        jointKp: 100.0
+        jointKd: 20.0
+        jointWeight: 1.0
+        # ROS 2's YAML parameter parser cannot type an empty list, so the uniform default is spelled out
+        # (23 entries, robot.jointNames order; the controller rejects any other length).
+        jointWeights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        orientationLink: ""
+        orientationKp: [100.0, 100.0, 25.0]
+        orientationKd: [20.0, 20.0, 10.0]
+        orientationWeight: 10.0
+        swingKp: [100.0, 100.0, 100.0]
+        swingKd: [20.0, 20.0, 20.0]
+        swingWeight: 5.0
+        wrenchWeight: 0.01
+        frictionCoefficient: 0.6
+        soleHalfLength: 0.10
+        soleHalfWidth: 0.04
+
+    diagnostics:
+      statusLogPeriod: 2.0
+      trackingRate: 500.0
+
+    floatingBase:
+      source: $(var floatingBaseSource)
+      estimator: $(var floatingBaseEstimator)
+      stateInterfaceName: pelvis
+      imuInterfaceName: pelvis_imu
+
+    bringUp:
+      autoStart: true
+      standUpSeconds: 3.0
+      settleSeconds: 0.5
+      settleGyroMax: 0.10
+      settleAccelTolerance: 0.5
+      settleFilterHz: 2.0
+      blendSeconds: 0.5
+      tiltLimit: 0.8
+
+    ocs2:
+      interface:
+        verbose: false
+
+      codegen:
+        verbose: true
+        recompileLibraries: false
+
+      model:
+        robotName: g1
+
+        fixedJointNames:
+          - left_wrist_roll_joint
+          - left_wrist_pitch_joint
+          - left_wrist_yaw_joint
+          - right_wrist_roll_joint
+          - right_wrist_pitch_joint
+          - right_wrist_yaw_joint
+
+        contactNames6DoF: 
+          [foot_l_contact, foot_r_contact]
+        contactParentJointNames: 
+          [left_ankle_roll_joint, right_ankle_roll_joint]
+        contactGeometry:
+          frameTranslation: [0.035, 0.0, -0.035]
+          rectangle: [0.09, -0.09, 0.03, -0.03]
+
+        # Roadmap v2 step A (force-rate formulation): wrenches as states, their rates as priced
+        # inputs (costs.r.contactWrenchRates). Off = the original [q, v] / [W, a, tau] layout.
+        # Shipped on (2026-11-27, docs/results/human_gait_template.md run 9/10): -21 % pelvis jerk at
+        # every speed, 0 falls; costs the solve rate (15.6 -> 24 ms per solve on the owner's machine).
+        wrenchState: true
+
+      solver:
+        sqp:
+          nThreads: 5
+          dt: 0.02
+          sqpIteration: 1
+          deltaTol: 0.0001
+          g_max: 0.01
+          g_min: 0.000001
+          projectStateInputEqualityConstraints: true
+          printSolverStatistics: true
+          printSolverStatus: false
+          printLinesearch: false
+          useFeedbackPolicy: false
+          integratorType: RK4
+          threadPriority: 50
+
+        rollout:
+          policyTimeOffset: 0.000
+
+      mpc:
+        solverType: sqp
+        mpcDesiredFrequency: $(var mpcFreq)
+        mrtDesiredFrequency: $(var mrtFreq)
+        timeHorizon: 1.0
+        solutionTimeWindow: -1.0
+        coldStart: false
+        debugPrint: false
+
+      costs:
+        qScaling: 1.0
+        rScaling: 0.001
+        terminalCostScaling: 1.0
+        
+        # Q/Qf on x = [base pose, joint positions, base velocity, joint velocities].
+        # Base pose: [x, y, z, yaw, pitch, roll].
+        # Base velocity: [vx, vy, vz, yaw rate, pitch rate, roll rate] (Euler rates).
+        q:
+          basePose: [0.0, 0.0, 50.0, 0.0, 100.0, 100.0]
+          baseVelocity: [100.0, 50.0, 5.0, 30.0, 30.0, 30.0]
+          # Waist 20 and arms x10 (the human template's trunk / arm curves are tracked, not the
+          # frozen posture; without the weight the optimizer uses both as a flywheel).
+          jointPositions:
+            [0.05, 0.2, 15.0, 0.1, 0.1, 0.1,
+             0.05, 0.2, 15.0, 0.1, 0.1, 0.1,
+             20.0, 20.0, 20.0,
+             50.0, 50.0, 20.0, 40.0,
+             50.0, 50.0, 20.0, 40.0]
+          jointVelocities:
+            [0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
+             0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
+             1.0, 1.0, 1.0,
+             0.6, 0.6, 0.6, 0.6,
+             0.6, 0.6, 0.6, 0.6]
+
+        qFinal:
+          basePose: [0.0, 0.0, 50.0, 0.0, 100.0, 100.0]
+          baseVelocity: [100.0, 50.0, 5.0, 30.0, 30.0, 30.0]
+          # Terminal arm weights stay at the raw-posture values: the terminal cost tracks
+          # defaultJointState, not the template.
+          jointPositions:
+            [0.05, 0.1, 30.0, 0.1, 0.1, 0.1,
+             0.05, 0.1, 30.0, 0.1, 0.1, 0.1,
+             20.0, 20.0, 20.0,
+             5.0, 5.0, 2.0, 4.0,
+             5.0, 5.0, 2.0, 4.0]
+          jointVelocities:
+            [0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
+             0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
+             1.0, 1.0, 1.0,
+             0.2, 0.2, 0.2, 0.2,
+             0.2, 0.2, 0.2, 0.2]
+
+        # R on u = [wrench_left, wrench_right, base acceleration, joint acceleration, joint torque].
+        # Contact wrench order per foot: [fx, fy, fz, mx, my, mz].
+        r:
+          contactWrenches:
+            [0.003, 0.003, 0.001, 0.01, 0.01, 5.0,
+             0.003, 0.003, 0.001, 0.01, 0.01, 5.0]
+          # Wrench-rate weights, used only with model.wrenchState (see parameters.yaml for the scale).
+          contactWrenchRates:  # 1e-4 = the sweep winner (docs/results/wrench_rate_sweep.md)
+            [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001,
+             0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]
+          baseAccelerations: [0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
+          jointAccelerations:
+            [0.005, 0.005, 0.005, 0.005, 0.005, 0.005,
+             0.005, 0.005, 0.005, 0.005, 0.005, 0.005,
+             0.005, 0.005, 0.005,
+             0.05, 0.05, 0.05, 0.05,
+             0.05, 0.05, 0.05, 0.05]
+          jointTorques:
+            [0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005,
+             0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005,
+             0.005, 0.005, 0.005,
+             0.05, 0.05, 0.05, 0.05,
+             0.05, 0.05, 0.05, 0.05]
+
+        # Flat-foot/task-space adaptations beyond the papers' state/input objective.
+        taskSpaceFootCost:
+          activate: true
+          weights:
+            [0.0, 0.0, 0.0, 50.0, 50.0, 0.0,
+             5.0, 5.0, 0.0, 1.0, 1.0, 0.005]
+
+        # Cartesian pose/twist tracking costs
+        taskSpaceCosts:
+          names:
+            [torso]
+
+          torso:
+            activate: false
+            linkName: mid360_link
+            weights:
+              [0.0, 0.0, 0.0, 100.0, 100.0, 0.0,
+               0.1, 0.1, 0.005, 5.0, 5.0, 2.0]
+
+        # Torso soft stabilization, not a hard upright constraint or a CoM-position target.
+        torsoTiltCost:
+          activate: true
+          linkName: torso_link
+          freeTiltAngle: 0.17453292519943295  # 10 degrees; soft lean corridor.
+          tiltWeight: 10.0
+          angularVelocityWeight: 5.0
+
+        # Flat-ground xy foothold reference for the swing foot (Raibert neutral point + optional
+        # capture-point correction) through the foot cost. Off = foot placement left to the
+        # optimizer (the behaviour before Phase 2.4); see docs/results/capture_point_sweep.md.
+        captureFootPlacement:
+          enabled: false
+          gain: 0.0                  # capture-point correction gain
+          stepWidth: 0.24            # G1 nominal foot spacing (hip pitch 0.0645 + hip roll 0.052 per side)
+          maxAdjustment: 0.10
+          trackingWeight: 50.0
+          projectionHorizon: 0.0
+          stepLengthGain: 0.0
+          stanceTimeGain: 0.5        # Raibert neutral point
+          footCenterOffset: 0.0      # contactGeometry already puts the frame at the sole centre
+          currentSwingOnly: true
+
+        # Active J_leg^T W load cost; separate from r.jointTorques.
+        legTorqueCost:
+          activate: false  # Initial terrain ablation; input torque cost and actuator limits remain.
+          scaling: 0.001
+          leftActiveJointNames:
+            - left_hip_pitch_joint
+            - left_hip_roll_joint
+            - left_hip_yaw_joint
+            - left_knee_joint
+            - left_ankle_pitch_joint
+            - left_ankle_roll_joint
+          leftWeights: 
+            [2.0, 2.0, 1.0, 8.0, 0.2, 0.2]
+          rightActiveJointNames:
+            - right_hip_pitch_joint
+            - right_hip_roll_joint
+            - right_hip_yaw_joint
+            - right_knee_joint
+            - right_ankle_pitch_joint
+            - right_ankle_roll_joint
+          rightWeights: 
+            [2.0, 2.0, 1.0, 8.0, 0.2, 0.2]
+
+        # Double-support load-share cost (D2/D3). Shipped as a lift-off end window (run 14,
+        # docs/results/human_gait_template.md): the plan used to drop the lifting foot's force
+        # (113 N) in one node, the pelvis jerk sat there (3.5-4x the stride average); with the last
+        # 60 ms shaped the force reaches zero continuously, hold jerk -10..-25 % at 0.2-0.8 m/s,
+        # 0 falls. Whole-DS shaping (windows 0) fell at 0.8 m/s at every weight >= 0.01 (run 13) and
+        # the touchdown window moved the jerk onto the (50 ms early) touchdown: both stay off.
+        contactLoadShareWeight: 0.1
+        contactLoadShareLiftOffWindow: 0.06
+        contactLoadShareTouchDownWindow: 0.0
+        # Wrench-as-state layout: share of the rate weight charged at the anchored first node (see parameters.yaml).
+        wrenchRateFirstNodeScale: 1.0
+
+      constraints:
+        inverseDynamics:
+          # Keep physical equalities enabled for locomotion; disabling is diagnostic-only.
+          activate: true
+          # 4, not the literature's 3: the window is (N-0.5)*dt and the policy interpolation can only use it
+          # up to (N-1)*dt of policy age. At 40-45 Hz the policy is 40-60 ms old on ~12 % of ticks, and on
+          # those the feedforward falls back to the plan's unbounded inverse dynamics (0.8 m/s falls,
+          # docs/results/human_gait_template.md runs 6-8). 4 nodes = 60 ms honoured; the hold in
+          # control.wholeBody covers the rest.
+          torqueConstraintNodes: 4
+
+        footMotionEquality:
+          activate: true
+          # Hard equalities, not cost weights or inequalities.
+          # Stance: keep the foot still and correct height/tilt.
+          # Swing: follow the vertical foot path.
+          positionErrorGain_z: 50.0              # Stance height correction; lower gains give slower correction (ramps).
+          swingPositionErrorGain_z: 200.0        # Swing height tracking: 50 lands 20 ms early at 0.26 m/s (plan sags
+                                                 # below its spline, -1 rad/s pole); 200 -> 8 ms / 0.19 m/s, acc_hf -26 %
+                                                 # (docs/results/touchdown_timing_sweep.md sweep 2/3). Stance stays 50.
+          orientationErrorGain: 100.0            # Tilt correction; lower gains avoid fighting shallow inclines.
+          linearVelocityErrorGain_z: 50.0        # Vertical speed damping.
+          linearVelocityErrorGain_xy: 50.0       # Horizontal speed damping in stance.
+          angularVelocityErrorGain: 50.0         # Rotation damping in stance.
+          linearAccelerationErrorGain_z: 1.0     # Vertical acceleration multiplier; keep positive.
+          linearAccelerationErrorGain_xy: 1.0    # Horizontal acceleration multiplier in stance; keep positive.
+          angularAccelerationErrorGain: 1.0      # Rotation acceleration multiplier in stance; keep positive.
+        
+        swingFootZeroWrench:
+          activate: true
+
+        frictionCone:
+          activate: true
+          frictionCoefficient: 0.4
+          mu: 0.2
+          delta: 5.0
+
+        contactMomentXY:
+          activate: true
+          mu: 0.6
+          delta: 0.03
+
+        jointPositionLimits:
+          activate: true
+          # Lower/upper joint position bounds come from the URDF.
+          mu: 1200.0
+          delta: 0.1
+
+        jointVelocityLimits:
+          activate: true
+          # Symmetric bounds are velocityScaling * URDF joint velocity limits; 0 < scaling <= 1.
+          velocityScaling: 1.0
+          mu: 0.1
+          delta: 1.0
+
+        jointTorqueLimits:
+          activate: true
+          # Scales URDF or override bounds for both the OCP penalty and feedforward clipping; 0 < scaling <= 1.
+          torqueScaling: 1.0
+          # Omit limits to use URDF joint <limit effort="..."> values for OCP bounds and feedforward clipping.
+          # To override, uncomment a full positive array in robot.jointNames order [Nm].
+          # limits: [88.0, 139.0, 88.0, 139.0, 50.0, 50.0,
+          #          88.0, 139.0, 88.0, 139.0, 50.0, 50.0,
+          #          88.0, 50.0, 50.0,
+          #          25.0, 25.0, 25.0, 25.0,
+          #          25.0, 25.0, 25.0, 25.0]
+          mu: 0.1
+          delta: 5.0
+
+        # Arm versus torso/pelvis/head only; independent of legSelfCollision.
+        armSelfCollision:
+          activate: true
+          minimumDistance: 0.015
+          # Polynomial is inactive beyond minimumDistance + delta; avoids spreading the arms at rest.
+          implementation: polynomial
+          # Polynomial boundary slope = -mu*delta/2 = -30; violation curvature = mu = 6000.
+          # For rbf, start separately with mu: 0.01, delta: 0.02 (curvature mu/delta^2 = 25).
+          mu: 6000.0
+          # A narrower buffer leaves the nominal 28.6 mm arm/body gap unpenalized.
+          delta: 0.01
+          arms:
+            # Selected upper-arm/forearm/hand volumes, excluding mechanical shoulder attachments.
+            names:
+              [left_upper_arm_0, left_upper_arm_1, left_forearm_0, left_forearm_1,
+               left_forearm_2, left_hand_0, left_hand_1, left_hand_2,
+               right_upper_arm_0, right_upper_arm_1, right_forearm_0, right_forearm_1,
+               right_forearm_2, right_hand_0, right_hand_1, right_hand_2]
+            left_upper_arm_0:
+              linkName: left_shoulder_yaw_link
+              center: [0.008, 0.0, -0.035]
+              radius: 0.047
+            left_upper_arm_1:
+              linkName: left_shoulder_yaw_link
+              center: [0.008, 0.0, -0.09]
+              radius: 0.047
+            left_forearm_0:
+              linkName: left_elbow_link
+              center: [0.01, 0.0, -0.005]
+              radius: 0.04
+            left_forearm_1:
+              linkName: left_elbow_link
+              center: [0.065, 0.0, -0.005]
+              radius: 0.04
+            left_forearm_2:
+              linkName: left_elbow_link
+              center: [0.1, 0.0, -0.005]
+              radius: 0.04
+            left_hand_0:
+              linkName: left_rubber_hand
+              center: [0.025, -0.012, 0.008]
+              radius: 0.052
+            left_hand_1:
+              linkName: left_rubber_hand
+              center: [0.075, -0.012, 0.008]
+              radius: 0.052
+            left_hand_2:
+              linkName: left_rubber_hand
+              center: [0.115, -0.012, 0.008]
+              radius: 0.052
+            right_upper_arm_0:
+              linkName: right_shoulder_yaw_link
+              center: [0.008, 0.0, -0.035]
+              radius: 0.047
+            right_upper_arm_1:
+              linkName: right_shoulder_yaw_link
+              center: [0.008, 0.0, -0.09]
+              radius: 0.047
+            right_forearm_0:
+              linkName: right_elbow_link
+              center: [0.01, 0.0, -0.005]
+              radius: 0.04
+            right_forearm_1:
+              linkName: right_elbow_link
+              center: [0.065, 0.0, -0.005]
+              radius: 0.04
+            right_forearm_2:
+              linkName: right_elbow_link
+              center: [0.1, 0.0, -0.005]
+              radius: 0.04
+            right_hand_0:
+              linkName: right_rubber_hand
+              center: [0.025, 0.012, 0.008]
+              radius: 0.052
+            right_hand_1:
+              linkName: right_rubber_hand
+              center: [0.075, 0.012, 0.008]
+              radius: 0.052
+            right_hand_2:
+              linkName: right_rubber_hand
+              center: [0.115, 0.012, 0.008]
+              radius: 0.052
+          bodies:
+            names:
+              [torso_0, torso_1, torso_2, pelvis_0,
+               pelvis_1, head]
+            torso_0:
+              linkName: torso_link
+              center: [0.0, 0.0, 0.035]
+              radius: 0.1
+            torso_1:
+              linkName: torso_link
+              center: [0.0, 0.0, 0.13]
+              radius: 0.1
+            torso_2:
+              linkName: torso_link
+              center: [0.0, 0.0, 0.225]
+              radius: 0.1
+            pelvis_0:
+              linkName: pelvis
+              center: [0.0, -0.025, -0.075]
+              radius: 0.08
+            pelvis_1:
+              linkName: pelvis
+              center: [0.0, 0.025, -0.075]
+              radius: 0.08
+            head:
+              linkName: head_link
+              center: [0.005, 0.0, 0.42]
+              radius: 0.115
+
+        legSelfCollision:
+          activate: true
+          leftAnkleFrame: left_ankle_roll_joint
+          rightAnkleFrame: right_ankle_roll_joint
+          footCollisionSphereRadius: 0.065
+          leftKneeFrame: left_knee_joint
+          rightKneeFrame: right_knee_joint
+          kneeCollisionSphereRadius: 0.07
+          # Keep airborne feet on their own side; 3D sphere distance alone permits crossover.
+          minimumLateralSeparation: 0.09
+          mu: 3000.0
+          delta: 0.02
+
+      reference:
+        targetDisplacementVelocity: 0.5
+        targetRotationVelocity: 0.5
+        maxDisplacementVelocityX: 1.0
+        maxDisplacementVelocityY: 0.5
+        maxRotationVelocity: 1.5708
+        defaultBaseHeight: 0.785  # kneeOffset 0.3 standing (humanGait); 0.793 = straight leg
+        # Commanded height range (GUI slider ends, command clamp): the leg's range. 0.60 m is the
+        # defaultJointState crouch (knee 1.6 rad), 0.79 m the straight leg minus a knee margin (0.19 rad);
+        # above it the height is unreachable with flat feet and the knee is at its singularity.
+        # config/g1/compute_posture_table.py gives the symmetric posture of each height in this range.
+        minBaseHeight: 0.60
+        maxBaseHeight: 0.79
+        basePosePositionTolerance: 0.02
+        basePoseOrientationTolerance: 0.03
+        
+        # Slew limits on the scaled walking command: ax, ay [m/s^2], height rate [m/s], yaw acceleration [rad/s^2]
+        # Height rate 0.2: a slider move while walking is a reference ramp of a few stride-fractions, not a
+        # step inside one single support (0.5 made a 5 cm move a 0.1 s kick).
+        velocityCommandRateLimits:
+          [0.5, 0.5, 0.2, 2.0]
+        # Jerk limits on the same axes (S-curve slew); 0 = plain rate clamp (legacy behaviour).
+        velocityCommandJerkLimits:
+          [0.0, 0.0, 0.0, 0.0]
+        
+        groundHeight:
+          useEstimate: true
+          maxStepPerSolve: 0.002
+
+        # Blind terrain speed cap (TerrainSpeedCap.h, run 24): a sole-height difference of stepKnots[i]
+        # between the two stance feet marks the ground as uneven at tier i for holdSeconds and caps the
+        # commanded planar speed at the smallest speedKnots of the tiers that hold. Off pending the terrain
+        # ladder (run 24: 1-2 cm steps are walked at 0.5 m/s and lost at 0.8, 2-4 cm steps at 0.2 and lost at 0.5).
+        terrainSpeedCap:
+          enabled: true
+          stepKnots: [0.01]
+          speedKnots: [0.5]
+          holdSeconds: 3.0
+          slopeKnots: [0.05, 0.12]      # run 25: a consistent incline is a plane, not roughness; 3 deg / 7 deg tiers
+          slopeSpeedKnots: [0.3, 0.2]
+          slopeMinSeparation: 0.08
+          slopeConsistency: 0.03
+          slopeHeightTolerance: 0.01   # run 25 E: a standing plane falls only to a sample off by more than this in height
+
+        # Gait-phase-locked arm swing superimposed on the nominal arm posture (left arm forward while
+        # the right leg swings). Off: the arms only hold the nominal posture, and whatever arm motion
+        # the optimizer finds useful for angular momentum is unreferenced. Amplitudes are per m/s of
+        # commanded forward speed; 0.4 rad/(m/s) is +-11 deg at 0.5 m/s, +-18 deg at 0.8 m/s.
+        armSwing:
+          enabled: false
+          shoulderPitchAmplitude: 0.4
+          elbowAmplitude: 0.3
+          phaseOffset: 0.15
+          maxOffset: 0.6
+          jointNames:
+            - left_shoulder_pitch_joint
+            - right_shoulder_pitch_joint
+            - left_elbow_joint
+            - right_elbow_joint
+
+        # ---- Human gait template (roadmap step H) --------------------------------------------
+        # Normative human walking kinematics as the reference instead of the fixed posture below:
+        # hip / knee / ankle curves over each leg's gait cycle (time-warped onto the planned step and
+        # double-support timing), pelvis obliquity and vertical excursion, trunk counter-rotation and
+        # arm swing, all scaled with the commanded step. Soft: the joint-position and base-pose
+        # weights decide how closely it is followed. With `legs` on, the leg entries of
+        # defaultJointState are replaced (standing: hip -kneeOffset/2, knee kneeOffset, ankle
+        # -kneeOffset/2) and defaultBaseHeight should match (kneeOffset 0.3 -> 0.785 m on the G1).
+        humanGait:
+          enabled: true
+          # Upper body only: the leg curves fell at >= 0.6 m/s in runs 3-5 and again on the fixed
+          # controller (run 11: fell on the ramp to 0.8, +55 % jerk at 0.2 / 0.5 before that). The
+          # leg reference fights the optimizer's own leg solution; it stays off (HUMAN_LEGS=true).
+          legs: false
+          arms: true
+          waist: true
+          base: true
+          jointNames:
+            - left_hip_pitch_joint
+            - left_knee_joint
+            - left_ankle_pitch_joint
+            - right_hip_pitch_joint
+            - right_knee_joint
+            - right_ankle_pitch_joint
+            - waist_yaw_joint
+          legLength: 0.65
+          humanStepRatio: 0.78
+          referenceSpeed: 1.3
+          maxScale: 1.2
+          kneeOffset: 0.3
+          stanceAnkleClosure: true
+          maxStanceDorsiflexion: 0.44
+          heightFromLegs: true
+          swingClearance: 0.05
+          thighLength: 0.3366
+          shankLength: 0.3
+          shoulderAmplitude: 0.35
+          elbowAmplitude: 0.15
+          elbowMean: -0.4
+          armMaxOffset: 0.6
+          waistYawAmplitude: 0.08
+          pelvisRollAmplitude: 0.05
+          pelvisPitchAmplitude: 0.0
+          heightOscillation: 0.015
+
+        # Nominal joint posture for reference generation; pelvis height is defaultBaseHeight.
+        defaultJointState:
+          [-0.8, 0.0, 0.0, 1.6, -0.8, 0.0,
+           -0.8, 0.0, 0.0, 1.6, -0.8, 0.0,
+            0.0, 0.0, 0.0,
+           0.20, 0.20, 0.0, 1.20,
+           0.20, -0.20, 0.0, 1.20]
+
+      gait:
+        phaseTransitionStanceTime: 0.0
+        stairClimbingFile: $(var stairClimbingFile)
+        terrainWalkingFile: $(var terrainWalkingFile)
+        initialModeSequence: [STANCE, STANCE]
+        initialEventTimes: [0.5]
+        defaultModeSequence: [STANCE]
+        defaultSwitchingTimes: [0.0, 0.5]
+
+        # Contact-synchronised touchdown (ContactSync.h): the plan loads the landing foot when its
+        # sole reaches the ground instead of at the scheduled event 20-50 ms later (runs 12-17 of
+        # docs/results/human_gait_template.md: the swing spline spends its last 27 ms inside the
+        # final millimetre, the plan sags 1-2 mm under it, and the scheduled switch then steps the
+        # foot's force 0 -> 120 N with the foot already down). earlyWindow moves the event to the
+        # solve time; lateWindow (0 = off) holds it while the foot is still in the air. Shipped on
+        # (run 18 + in-session pair): lead 50 -> 30 ms (one solve period is the limit), touchdown
+        # jerk concentration -25 %, suite steady jerk -20 % vs the lift-off window alone, every
+        # omni hold better, 0 falls, solve rate -6 %. The late half cost balance at 0.8 m/s: off.
+        # descentVelocity / blockedHeight (run 23) make "landed" velocity-aware for uneven ground
+        # (a sole passing the plane towards a lower tile is not landed; a sole stopped on a higher
+        # tile is); both 0 = the flat-ground height-only rule, pending the terrain ladder.
+        contactSync:
+          enabled: true
+          earlyWindow: 0.06
+          lateWindow: 0.0
+          heightThreshold: 0.002
+          holdStep: 0.02
+          minPhaseDuration: 0.02
+          descentVelocity: 0.0
+          blockedHeight: 0.0
+
+        # Swing-foot trajectory, shared by every template.
+        swingTrajectory:
+          liftOffVelocity: 0.05
+          # -0.05 m/s: sweep-proven softer landing (pelvis acc_hf 1.1805 -> 1.078, -8.7%,
+          # leg PD HF -7.8%); +0.05 was +29% acc_hf. Effective node velocity is 0.75x this
+          # for the 0.3 s walk swing. docs/results/touchdown_sweep.md
+          touchDownVelocity: -0.15
+          swingHeight: 0.08 # default fallback for templates that omit swingHeight; 0.08 [m] is the walk value.
+          touchDownHeightOffset: -0.001
+          swingTimeScale: 0.4
+          impactProximityFactorLiftOffVelocity: -0.15
+          impactProximityFactorTouchDownVelocity: 0.3
+          impactProximityFactorMidPointValue: 0.0
+
+        # Gait templates: N modes and N+1 switching times [s], repeated with period last - first.
+        # STANCE = both feet in contact, LF = left foot in contact (right swings), RF = right, FLY = none.
+        # Preserve slow walking; quicker supported steps bridge into the flight gait.
+        templates:
+          # Optional swingHeight [m] per gait; omitted or -1 uses swingTrajectory.swingHeight.
+          # The existing swingTimeScale still reduces clearance for short swings.
+          names: [stance, left_leg, right_leg, trot, fast_trot, slow_trot, slower_trot, walk, fast_walk, slow_walk, very_slow_walk, run, fast_run, skip, jump, terrain_walk]
+          stance:         {modeSequence: [STANCE],                   switchingTimes: [0.0, 0.5]}
+          left_leg:       {modeSequence: [LF],                       switchingTimes: [0.0, 0.5]}
+          right_leg:      {modeSequence: [RF],                       switchingTimes: [0.0, 0.5]}
+
+          walk:           {modeSequence: [LF, STANCE, RF, STANCE],   switchingTimes: [0.0, 0.3, 0.4, 0.7, 0.8], swingHeight: 0.08}
+          fast_walk:      {modeSequence: [LF, STANCE, RF, STANCE],   switchingTimes: [0.0, 0.3, 0.5, 0.8, 1.0]}
+          slow_walk:      {modeSequence: [LF, STANCE, RF, STANCE],   switchingTimes: [0.0, 0.4, 0.55, 0.95, 1.1]}
+          very_slow_walk: {modeSequence: [RF, STANCE, LF, STANCE],   switchingTimes: [0.0, 0.7, 1.1, 1.8, 2.2]}
+          
+          trot:           {modeSequence: [LF, RF],                   switchingTimes: [0.0, 0.5, 1.0], swingHeight: 0.09}
+          fast_trot:      {modeSequence: [LF, RF],                   switchingTimes: [0.0, 0.4, 0.8]}
+          slow_trot:      {modeSequence: [LF, RF],                   switchingTimes: [0.0, 0.55, 1.1]}
+          slower_trot:    {modeSequence: [LF, RF],                   switchingTimes: [0.0, 0.6, 1.2]}
+
+          # 0.25 s single support, then 0.08 s with both feet in swing.
+          run:            {modeSequence: [LF, FLY, RF, FLY],         switchingTimes: [0.0, 0.25, 0.33, 0.58, 0.66], swingHeight: 0.1}
+          fast_run:       {modeSequence: [LF, FLY, RF, FLY],         switchingTimes: [0.0, 0.3, 0.4, 0.7, 0.8]}
+          skip:           {modeSequence: [LF, FLY, LF, RF, FLY, RF], switchingTimes: [0.0, 0.25, 0.3, 0.5, 0.75, 0.8, 1.0]}
+          jump:           {modeSequence: [STANCE, FLY],              switchingTimes: [0.0, 0.3, 0.5]}
+          terrain_walk:   {modeSequence: [LF, STANCE, RF, STANCE],   switchingTimes: [0.0, 0.6, 0.7, 1.3, 1.4]}
+
+        # ---- Speed-continuous gait (roadmap v2 step B) --------------------------------------
+        # Off: the ladder below selects whole templates. On: the ladder only decides standing vs
+        # walking (rungs beyond the first walking one are ignored) and the step time, double
+        # support and swing clearance are interpolated at the command's speed and re-tiled from
+        # the next step boundary at every solve. Step length = speed x stepTime. The knots are
+        # human gait scaled to the G1's leg length: 0.36 m steps at 0.45 m/s (0.72 s, 0.25 s of
+        # double support) to 0.55 m steps at 1.15 m/s (0.48 s, 0.09 s). Planar commands below
+        # standBelow stand, those below minWalkSpeed are raised to it: nobody walks slower.
+        continuous:
+          enabled: true  # 0.8 m/s hold: jerk 88.7 vs 270.8 for the ladder (run 9)
+          speedKnots:    [0.0, 0.45, 0.8, 1.15]
+          stepTime:      [0.72, 0.72, 0.55, 0.48]
+          doubleSupport: [0.25, 0.25, 0.12, 0.09]
+          swingHeight:   [0.05, 0.05, 0.05, 0.06]
+          yawLever: 0.15
+          minDoubleSupport: 0.03
+          spliceDelay: 0.1
+          standBelow: 0.15
+          minWalkSpeed: 0.4
+
+        # ---- Gait selection: which template runs, and when ------------------------------
+        # ProceduralMpcMotionManager picks a template from `ladder` once per MPC solve,
+        # from the commanded velocity (scaled to m/s, rate limited and filtered) and the
+        # measured base velocity:
+        #   - the ladder is ordered slowest -> fastest and must start with `stance`; the FSM
+        #     moves at most one rung per change;
+        #   - UP one rung when the command leaves the current rung's band upward
+        #     (|vx| or |vy| > linearVelocity max, or |yaw| > yawRate max) AND the measured
+        #     speed is near that top (|vx| or |vy| > max - margin, or |yaw rate| > yaw max - margin);
+        #   - DOWN one rung when the command is below the band's min on all axes AND the
+        #     measured speed is below min + margin on all axes;
+        #   - overlapping bands give hysteresis between neighbouring rungs.
+        # The command is in the heading frame; the measured values are the pelvis velocity
+        # in world axes and the yaw Euler rate.
+        # Units are m/s and rad/s; 10.0 stands for "no limit". A margin of 10 (stance) means
+        # the robot leaves stance on the command alone.
+        #
+        # Common things to tune:
+        #   - a rung's bands (transitions.<gait>): the speeds at which it engages and disengages;
+        #   - measuredMargin: how close the measured speed must come to a band's top before
+        #     escalating (larger = escalate on the command alone, smaller = wait for the robot);
+        #   - minDwellTime: a change only takes effect after the splice delay below (0.7 s
+        #     here), so a dwell shorter than that lets the next change be requested before
+        #     the previous one has started;
+        #   - switchDelayHorizonFraction: smaller reacts sooner, larger gives the solver more
+        #     of the horizon to prepare for the new contact pattern;
+        #   - `ladder`: any templates from templates.names, so a rung can use a different contact pattern.
+        transitions:
+          # Minimum time between two gait changes [s].
+          minDwellTime: 0.2
+          # A new gait starts at the first contact event after
+          # initTime + switchDelayHorizonFraction * horizon (0.3 of a 1.0 s horizon = 0.3 s).
+          switchDelayHorizonFraction: 0.3
+          ladder: [stance, walk, trot, run]
+          #             linearVelocity [m/s]          yawRate [rad/s]        measuredMargin [lin, yaw]
+          # Start walking at 0.03 m/s, return to stance below 0.02 m/s.
+          stance:       {linearVelocity: [-0.1, 0.03], yawRate: [-0.1, 0.1],  measuredMargin: [10.0, 10.0]}
+          walk:         {linearVelocity: [0.02, 0.45], yawRate: [0.05, 10.0], measuredMargin: [0.05, 0.05]}
+          trot:         {linearVelocity: [0.40, 0.75], yawRate: [0.65, 10.0], measuredMargin: [0.2, 0.2]}
+          run:          {linearVelocity: [0.70, 10.0], yawRate: [10.0, 10.0], measuredMargin: [0.05, 0.05]}
+
+    visualization:
+      frameId: odom
+      update_rate: 30.0
+      optimizedStateRobotModelsActivate: true
+      optimizedStateRobotModelsInterval: 0.2 # [s]
+      collisionSpheres:
+        activate: true
+        markerTopic: /performance_visualization/collisionSpheres
+        alpha: 0.25
+      trajectory:
+        activate: true
+        markerTopic: /performance_visualization/optimizedStateTrajectory
+        frame_names:
+          - pelvis
+          - mid360_link
+          - left_wrist_yaw_link
+          - right_wrist_yaw_link
+          - foot_l_contact
+          - foot_r_contact
+        lineWidth: 0.005
+        pointScale: 0.01

@@ -61,6 +61,12 @@ vector_t WbIdInitializer::weightCompensatingInput(const vector_t& state, const c
 void WbIdInitializer::compute(scalar_t time, const vector_t& state, scalar_t /*nextTime*/, vector_t& input, vector_t& nextState) {
   input = weightCompensatingInput(state, referenceManagerPtr_->getContactFlags(time), time);
   nextState = state;
+  if (mpcRobotModelPtr_->hasWrenchState()) {
+    // Keep the guess consistent with W == Ws: the next wrench state is the initializing wrench, rate zero.
+    for (size_t c = 0; c < N_CONTACTS; ++c) {
+      mpcRobotModelPtr_->setWrenchState(nextState, mpcRobotModelPtr_->getContactWrench(input, c), c);
+    }
+  }
 }
 
 }  // namespace ocs2::humanoid

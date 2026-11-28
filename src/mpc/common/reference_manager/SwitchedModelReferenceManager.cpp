@@ -32,6 +32,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <legged_robot_mpc_controller/mpc/common/model/DynamicsHelperFunctions.h>
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
 #include <pinocchio/algorithm/frames.hpp>
 #include <pinocchio/algorithm/kinematics.hpp>
 
@@ -165,7 +170,401 @@ vector_t SwitchedModelReferenceManager::getDesiredState(const TargetTrajectories
     addArmSwingOffsets(desiredJointAngles, xNominal, state, time);
     mpcRobotModelPtr_->setJointAngles(xNominal, desiredJointAngles);
   }
+  if (humanGait_.enabled) {
+    addHumanGaitTemplate(xNominal, time);
+  }
   return xNominal;
+}
+
+/******************************************************************************************************/
+/******************************************************************************************************/
+/******************************************************************************************************/
+namespace {
+
+// Normative sagittal joint angles of normal human walking over one gait cycle of a leg, every 5 %
+// from its heel strike (0 %) back to its heel strike (100 %), in degrees. Flexion positive for the hip
+// and the knee, dorsiflexion positive for the ankle. The same values live in tests/tuning/human_gait.py
+// (the human-likeness score). Toe-off of this leg is at 60 %, the other leg strikes at 50 %.
+constexpr std::array<double, 21> kHumanHipFlexionDeg = {30, 29, 26, 22, 17, 12, 7, 2, -3, -7, -10, -10, -6, 2, 12, 21, 28, 32, 33, 32, 30};
+constexpr std::array<double, 21> kHumanKneeFlexionDeg = {5, 10, 16, 18, 16, 13, 10, 7, 5, 6, 10, 19, 35, 52, 62, 62, 55, 42, 27, 13, 5};
+constexpr std::array<double, 21> kHumanAnkleDorsiflexionDeg = {0, -4, -6, -3, 0, 3, 6, 8, 9, 10, 9, 4, -8, -17, -16, -10, -5, -2, 0, 1, 0};
+
+// Weight of the flat-foot ankle closure over the cycle: 1 in stance [0, 0.6), blended out over
+// [0.6, 0.7) and in over [0.9, 1.0).
+scalar_t stanceClosureWeight(scalar_t phase) {
+  if (phase < 0.6) {
+    return 1.0;
+  }
+  if (phase < 0.7) {
+    return (0.7 - phase) / 0.1;
+  }
+  if (phase < 0.9) {
+    return 0.0;
+  }
+  return (phase - 0.9) / 0.1;
+}
+
+scalar_t humanCurveRad(const std::array<double, 21>& curve, scalar_t phase) {
+  const scalar_t p = phase - std::floor(phase);
+  const scalar_t x = p * 20.0;
+  size_t i = static_cast<size_t>(x);
+  if (i >= 20) {
+    i = 19;
+  }
+  const scalar_t a = x - static_cast<scalar_t>(i);
+  return ((1.0 - a) * curve[i] + a * curve[i + 1]) * M_PI / 180.0;
+}
+
+using HumanGaitSettings = SwitchedModelReferenceManager::HumanGaitSettings;
+
+// Pelvis height above the sole for a leg at (hip, knee) with the foot flat under a level pelvis, up to a
+// constant (pelvis-to-hip and ankle-to-sole offsets cancel against the standing posture).
+scalar_t humanLegHeight(const HumanGaitSettings& g, scalar_t hip, scalar_t knee) {
+  return g.thighLength * std::cos(hip) + g.shankLength * std::cos(hip + knee);
+}
+
+// Hip / knee / ankle reference of one leg at `phase` and amplitude `scale` (robot conventions, G1: hip pitch
+// and ankle pitch positive = extension / plantarflexion, knee positive = flexion). `swingKnee` scales the
+// knee curve in swing (1 = human).
+void humanLegPosture(const HumanGaitSettings& g, scalar_t phase, scalar_t scale, scalar_t swingKnee, scalar_t& hip,
+                     scalar_t& knee, scalar_t& ankle) {
+  const scalar_t half = 0.5 * g.kneeOffset;
+  const scalar_t wClosure = stanceClosureWeight(phase);
+  hip = -(scale * humanCurveRad(kHumanHipFlexionDeg, phase)) - half;
+  knee = scale * humanCurveRad(kHumanKneeFlexionDeg, phase) * (1.0 - (1.0 - swingKnee) * (1.0 - wClosure)) + g.kneeOffset;
+  ankle = -(scale * humanCurveRad(kHumanAnkleDorsiflexionDeg, phase)) - half;
+  if (g.stanceAnkleClosure) {
+    // Flat foot under a level pelvis: ankle = -hip - knee; the knee is capped so the ankle stays within
+    // maxStanceDorsiflexion (the heel cannot come up).
+    const scalar_t kneeStance = std::min(knee, g.maxStanceDorsiflexion - hip);
+    knee = wClosure * kneeStance + (1.0 - wClosure) * knee;
+    ankle = wClosure * (-hip - kneeStance) + (1.0 - wClosure) * ankle;
+  }
+}
+
+// Swing-knee factor at `scale`: the largest value in [0, 1] whose foot clearance (swing-leg FK under the
+// pelvis height the stance leg implies half a cycle on) stays within swingClearance.
+scalar_t humanSwingKneeFactor(const HumanGaitSettings& g, scalar_t scale) {
+  if (!(g.swingClearance > 0.0) || scale <= 0.0) {
+    return 1.0;
+  }
+  constexpr std::array<scalar_t, 4> kSwingPhases = {0.65, 0.70, 0.75, 0.80};
+  const auto clearance = [&](scalar_t factor) {
+    scalar_t worst = -1.0;
+    for (const scalar_t ph : kSwingPhases) {
+      scalar_t hipS, kneeS, ankleS, hipW, kneeW, ankleW;
+      humanLegPosture(g, ph - 0.5, scale, factor, hipS, kneeS, ankleS);  // the stance leg, half a cycle on
+      humanLegPosture(g, ph, scale, factor, hipW, kneeW, ankleW);
+      worst = std::max(worst, humanLegHeight(g, hipS, kneeS) - humanLegHeight(g, hipW, kneeW));
+    }
+    return worst;
+  };
+  if (clearance(1.0) <= g.swingClearance) {
+    return 1.0;
+  }
+  scalar_t lo = 0.0, hi = 1.0;
+  for (int i = 0; i < 16; ++i) {
+    const scalar_t mid = 0.5 * (lo + hi);
+    (clearance(mid) > g.swingClearance ? hi : lo) = mid;
+  }
+  return lo;
+}
+
+}  // namespace
+
+void SwitchedModelReferenceManager::setHumanGaitSettings(const HumanGaitSettings& settings) {
+  humanGait_ = settings;
+  if (!settings.enabled) {
+    return;
+  }
+  // Swing-knee factor over the amplitude scale, solved once here (the reference is evaluated at every node).
+  swingKneeTable_.resize(kSwingKneeTableSize);
+  for (size_t i = 0; i < kSwingKneeTableSize; ++i) {
+    const scalar_t scale = settings.maxScale * static_cast<scalar_t>(i) / static_cast<scalar_t>(kSwingKneeTableSize - 1);
+    swingKneeTable_[i] = humanSwingKneeFactor(settings, scale);
+  }
+  if (settings.jointNames.size() != humanGaitJointIndices_.size()) {
+    throw std::invalid_argument("[SwitchedModelReferenceManager] humanGait.jointNames needs 7 entries "
+                                "[l_hip_pitch, l_knee, l_ankle_pitch, r_hip_pitch, r_knee, r_ankle_pitch, waist_yaw]");
+  }
+  const auto& names = mpcRobotModelPtr_->modelSettings.mpcModelJointNames;
+  for (size_t i = 0; i < humanGaitJointIndices_.size(); ++i) {
+    const auto it = std::find(names.begin(), names.end(), settings.jointNames[i]);
+    if (it == names.end()) {
+      throw std::invalid_argument("[SwitchedModelReferenceManager] humanGait joint '" + settings.jointNames[i] +
+                                  "' is not an MPC joint");
+    }
+    humanGaitJointIndices_[i] = static_cast<size_t>(it - names.begin());
+  }
+  if (settings.arms && !mpcRobotModelPtr_->modelSettings.hasArmSwingJoints) {
+    throw std::invalid_argument("[SwitchedModelReferenceManager] humanGait.arms needs reference.armSwing.jointNames");
+  }
+}
+
+/******************************************************************************************************/
+/******************************************************************************************************/
+/******************************************************************************************************/
+SwitchedModelReferenceManager::StridePhase SwitchedModelReferenceManager::getLegStridePhase(size_t leg, scalar_t time) const {
+  constexpr scalar_t kFadeCycles = 0.4;  // amplitude ramp at walk start / stop, in step times
+  StridePhase out;
+  const auto& eventTimes = modeSchedule_.eventTimes;
+  const auto& modes = modeSchedule_.modeSequence;
+  const size_t n = modes.size();
+  if (n < 2 || eventTimes.size() + 1 != n) {
+    return out;
+  }
+  const size_t other = 1 - leg;
+  const auto inContact = [&](size_t i, size_t l) { return modeNumber2StanceLeg(modes[i])[l]; };
+  // modes[i] is active on [eventTimes[i-1], eventTimes[i]); the change into modes[i] happens at eventTimes[i-1].
+  const auto changeTime = [&](size_t i) { return eventTimes[i - 1]; };
+  // First i > from where leg l changes into `toContact`; n when there is none.
+  const auto nextChange = [&](size_t from, size_t l, bool toContact) {
+    for (size_t i = from + 1; i < n; ++i) {
+      if (inContact(i, l) == toContact && inContact(i - 1, l) != toContact) {
+        return i;
+      }
+    }
+    return n;
+  };
+
+  size_t k = static_cast<size_t>(std::upper_bound(eventTimes.begin(), eventTimes.end(), time) - eventTimes.begin());
+  if (k >= n) {
+    k = n - 1;
+  }
+  // Latest contact change of this leg at or before now, and the heel strike that started its cycle.
+  size_t latest = n;
+  for (size_t i = k; i > 0; --i) {
+    if (inContact(i, leg) != inContact(i - 1, leg)) {
+      latest = i;
+      break;
+    }
+  }
+  if (latest == n) {
+    return out;  // this leg never changed contact: standing
+  }
+  size_t heelStrike = n;
+  if (inContact(latest, leg)) {
+    heelStrike = latest;
+  } else {
+    for (size_t i = latest - 1; i > 0; --i) {
+      if (inContact(i, leg) && !inContact(i - 1, leg)) {
+        heelStrike = i;
+        break;
+      }
+    }
+  }
+
+  if (heelStrike == n) {
+    // First swing out of standing: no heel strike before it, only the touchdown ahead.
+    const size_t touchdown = nextChange(latest, leg, true);
+    if (touchdown >= n) {
+      return out;
+    }
+    const scalar_t t0 = changeTime(latest);
+    const scalar_t t1 = changeTime(touchdown);
+    if (!(t1 > t0)) {
+      return out;
+    }
+    out.valid = true;
+    out.stepTime = (t1 - t0) / 0.8;  // the swing is 40 % of the cycle = 0.8 step
+    out.phase = std::clamp(0.6 + 0.4 * (time - t0) / (t1 - t0), 0.6, 1.0 - 1e-9);
+    out.fade = std::clamp((time - t0) / (kFadeCycles * out.stepTime), 0.0, 1.0);
+    return out;
+  }
+
+  const scalar_t hs = changeTime(heelStrike);
+  const size_t iToOther = nextChange(heelStrike, other, false);
+  const size_t iHsOther = iToOther < n ? nextChange(iToOther, other, true) : n;
+  const size_t iTo = nextChange(heelStrike, leg, false);
+  const size_t iHsNext = iTo < n ? nextChange(iTo, leg, true) : n;
+
+  scalar_t stepTime = std::numeric_limits<scalar_t>::quiet_NaN();
+  if (iHsOther < n) {
+    stepTime = changeTime(iHsOther) - hs;
+  } else if (iHsNext < n) {
+    stepTime = 0.5 * (changeTime(iHsNext) - hs);
+  } else if (iTo < n) {
+    stepTime = (changeTime(iTo) - hs) / 1.2;
+  }
+  if (!(stepTime > 0.0)) {
+    // Nobody steps after this heel strike: the robot stops here. Hold the heel-strike posture and fade it
+    // out over a fraction of the step time taken from this leg's own swing.
+    size_t toeOff = n;
+    for (size_t i = heelStrike - 1; i > 0; --i) {
+      if (!inContact(i, leg) && inContact(i - 1, leg)) {
+        toeOff = i;
+        break;
+      }
+    }
+    const scalar_t lastStep = toeOff < n ? (hs - changeTime(toeOff)) / 0.8 : 0.0;
+    if (!(lastStep > 0.0)) {
+      return out;
+    }
+    const scalar_t fade = 1.0 - (time - hs) / (kFadeCycles * lastStep);
+    if (fade <= 0.0) {
+      return out;
+    }
+    out.valid = true;
+    out.stepTime = lastStep;
+    out.phase = 0.0;
+    out.fade = std::min(fade, 1.0);
+    return out;
+  }
+  // Missing boundaries (schedule ends inside the cycle) follow the human proportions.
+  const scalar_t tToOther = iToOther < n ? changeTime(iToOther) : hs + 0.2 * stepTime;
+  const scalar_t tHsOther = iHsOther < n ? changeTime(iHsOther) : hs + stepTime;
+  if (iTo >= n && iHsOther < n && time >= tHsOther) {
+    // The other leg lands and this one never leaves the ground again: the last step, then standing.
+    // Hold the double-support posture (phase 0.5) and fade it out.
+    const scalar_t fade = 1.0 - (time - tHsOther) / (kFadeCycles * stepTime);
+    if (fade <= 0.0) {
+      return out;
+    }
+    out.valid = true;
+    out.stepTime = stepTime;
+    out.phase = 0.5;
+    out.fade = std::min(fade, 1.0);
+    return out;
+  }
+  const scalar_t tTo = iTo < n ? changeTime(iTo) : hs + 1.2 * stepTime;
+  const scalar_t tHsNext = iHsNext < n ? changeTime(iHsNext) : hs + 2.0 * stepTime;
+
+  scalar_t phase;
+  if (time < tToOther && tToOther > hs) {
+    phase = 0.10 * (time - hs) / (tToOther - hs);
+  } else if (time < tHsOther && tHsOther > tToOther) {
+    phase = 0.10 + 0.40 * (time - tToOther) / (tHsOther - tToOther);
+  } else if (time < tTo && tTo > tHsOther) {
+    phase = 0.50 + 0.10 * (time - tHsOther) / (tTo - tHsOther);
+  } else if (tHsNext > tTo) {
+    phase = 0.60 + 0.40 * (time - tTo) / (tHsNext - tTo);
+  } else {
+    return out;
+  }
+  out.valid = true;
+  out.stepTime = stepTime;
+  out.phase = std::clamp(phase, 0.0, 1.0 - 1e-9);
+  return out;
+}
+
+/******************************************************************************************************/
+/******************************************************************************************************/
+/******************************************************************************************************/
+void SwitchedModelReferenceManager::addHumanGaitTemplate(vector_t& xNominal, scalar_t time) const {
+  const HumanGaitSettings& g = humanGait_;
+  const StridePhase left = getLegStridePhase(0, time);
+  const StridePhase right = getLegStridePhase(1, time);
+
+  // Commanded forward speed in the heading frame (the reference velocity, as for the arm swing).
+  const vector3_t linVelCommand = mpcRobotModelPtr_->getBaseComLinearVelocity(xNominal);
+  const vector6_t nominalPose = mpcRobotModelPtr_->getBasePose(xNominal);
+  const scalar_t yaw = nominalPose[3];
+  const scalar_t forwardSpeed = std::cos(yaw) * linVelCommand[0] + std::sin(yaw) * linVelCommand[1];
+  const scalar_t stepTime = right.valid ? right.stepTime : (left.valid ? left.stepTime : 0.0);
+  // Leg curves scale with the commanded step length relative to the leg; arms with speed. The signed
+  // scales carry the direction of travel: backward walking is forward walking run in reverse, so the
+  // arm swing and the trunk counter-rotation keep their coupling to the legs with the sign flipped
+  // (at a foot's contact the own arm is back going forward, forward going backward), while the
+  // obliquity and the height oscillation only depend on which leg swings. The leg curves themselves
+  // are forward-only (not time-reversible as angles): backward they stay at the stance posture.
+  // Lateral and turning commands give 0 everywhere: the stance posture, the MPC's own stepping.
+  const scalar_t legScaleSigned = std::clamp(forwardSpeed * stepTime / (g.legLength * g.humanStepRatio), -g.maxScale, g.maxScale);
+  const scalar_t legScale = std::max(legScaleSigned, 0.0);
+  const scalar_t legScaleAbs = std::abs(legScaleSigned);
+  const scalar_t armScale = std::clamp(forwardSpeed / g.referenceSpeed, -g.maxScale, g.maxScale);
+  constexpr scalar_t kTwoPi = 2.0 * M_PI;
+
+  vector_t q = mpcRobotModelPtr_->getJointAngles(xNominal);
+
+  const auto legHeight = [&](scalar_t hip, scalar_t knee) { return humanLegHeight(g, hip, knee); };
+  const scalar_t half = 0.5 * g.kneeOffset;
+  const scalar_t standingHeight = legHeight(-half, g.kneeOffset);
+  scalar_t stanceHeightSum = 0.0;
+  scalar_t stanceWeightSum = 0.0;
+
+  if (g.legs) {
+    // Swing-knee factor at this amplitude, from the table built in setHumanGaitSettings.
+    scalar_t swingKnee = 1.0;
+    if (swingKneeTable_.size() >= 2 && g.maxScale > 0.0) {
+      const scalar_t x = std::clamp(legScale / g.maxScale, 0.0, 1.0) * static_cast<scalar_t>(swingKneeTable_.size() - 1);
+      const size_t i = std::min(static_cast<size_t>(x), swingKneeTable_.size() - 2);
+      const scalar_t a = x - static_cast<scalar_t>(i);
+      swingKnee = (1.0 - a) * swingKneeTable_[i] + a * swingKneeTable_[i + 1];
+    }
+    const auto legPosture = [&](scalar_t phase, scalar_t scale, scalar_t& hip, scalar_t& knee, scalar_t& ankle) {
+      humanLegPosture(g, phase, scale, swingKnee, hip, knee, ankle);
+    };
+    const auto legReference = [&](size_t leg, const StridePhase& w) {
+      const scalar_t phase = w.valid ? w.phase : 0.3;  // standing: the mid-stance point of the curves at scale 0
+      const scalar_t scale = w.valid ? legScale * w.fade : 0.0;
+      scalar_t hip, knee, ankle;
+      legPosture(phase, scale, hip, knee, ankle);
+      q[humanGaitJointIndices_[3 * leg + 0]] = hip;
+      q[humanGaitJointIndices_[3 * leg + 1]] = knee;
+      q[humanGaitJointIndices_[3 * leg + 2]] = ankle;
+      if (w.valid) {
+        // Height contribution: the stance posture, held at its toe-off value while fading out over the
+        // first 10 % of swing and at its heel-strike value while fading in over the last 10 %, so the
+        // reference is continuous across contact changes.
+        const scalar_t weight = stanceClosureWeight(phase);
+        if (weight > 0.0) {
+          const scalar_t stancePhase = phase < 0.7 ? std::min(phase, 0.6 - 1e-9) : 0.0;
+          scalar_t hipS, kneeS, ankleS;
+          legPosture(stancePhase, scale, hipS, kneeS, ankleS);
+          stanceHeightSum += weight * legHeight(hipS, kneeS);
+          stanceWeightSum += weight;
+        }
+      }
+    };
+    legReference(0, left);
+    legReference(1, right);
+  }
+
+  // The base and trunk follow the right leg's cycle (the left is the same cycle half a period on).
+  const bool cycleValid = right.valid || left.valid;
+  const scalar_t cyclePhase = right.valid ? right.phase : (left.valid ? left.phase + 0.5 : 0.0);
+  const scalar_t cycleFade = right.valid ? right.fade : (left.valid ? left.fade : 0.0);
+
+  if (g.arms && mpcRobotModelPtr_->modelSettings.hasArmSwingJoints) {
+    const ModelSettings& ms = mpcRobotModelPtr_->modelSettings;
+    const auto clampArm = [&](scalar_t v) { return std::clamp(v, -g.armMaxOffset, g.armMaxOffset); };
+    // The arm is back at its own leg's heel strike and forward at the other leg's: cos of the own-leg phase
+    // (walking backward armScale is negative and the arm is forward at its own leg's contact).
+    // Shoulder pitch positive = arm back; elbow positive = flexion, largest with the arm forward.
+    const auto armReference = [&](size_t shoulder, size_t elbow, const StridePhase& w) {
+      const scalar_t c = w.valid ? w.fade * std::cos(kTwoPi * w.phase) : 0.0;
+      q[shoulder] += clampArm(g.shoulderAmplitude * armScale * c);
+      q[elbow] += clampArm(g.elbowMean - g.elbowAmplitude * armScale * c);
+    };
+    armReference(ms.j_l_shoulder_y_index, ms.j_l_elbow_y_index, left);
+    armReference(ms.j_r_shoulder_y_index, ms.j_r_elbow_y_index, right);
+  }
+
+  if (g.waist && cycleValid) {
+    // Trunk counter-rotation: at right heel strike the pelvis has the right side forward and the
+    // shoulders the left side forward, i.e. positive yaw of the trunk relative to the pelvis.
+    q[humanGaitJointIndices_[6]] += g.waistYawAmplitude * legScaleSigned * cycleFade * std::cos(kTwoPi * cyclePhase);
+  }
+  mpcRobotModelPtr_->setJointAngles(xNominal, q);
+
+  if (g.base && cycleValid) {
+    vector6_t pose = nominalPose;
+    if (g.heightFromLegs && g.legs) {
+      // What the stance legs' template implies with the foot flat: high at mid stance, 2-5 cm lower
+      // around heel strike / toe-off. Commanded height = standing posture.
+      if (stanceWeightSum > 0.0) {
+        pose[2] += stanceHeightSum / stanceWeightSum - standingHeight;
+      }
+    } else {
+      // Vertical excursion: high at mid single stance (30 %, 80 %), low in double support (5 %, 55 %).
+      pose[2] += g.heightOscillation * legScaleAbs * legScaleAbs * cycleFade * (-std::cos(2.0 * kTwoPi * (cyclePhase - 0.05)));
+    }
+    // Pelvis pitch, twice per cycle (sign left to the amplitude).
+    pose[4] += g.pelvisPitchAmplitude * legScaleAbs * cycleFade * (-std::cos(2.0 * kTwoPi * cyclePhase));
+    // Obliquity: the swing-side hip drops; right swing is centred at 80 % (roll positive = right side down).
+    pose[5] += g.pelvisRollAmplitude * legScaleAbs * cycleFade * std::sin(kTwoPi * (cyclePhase - 0.55));
+    mpcRobotModelPtr_->setBasePose(xNominal, pose);
+  }
 }
 
 /******************************************************************************************************/
@@ -227,6 +626,7 @@ void SwitchedModelReferenceManager::modifyReferences(scalar_t initTime,
                                                      size_t initMode,
                                                      TargetTrajectories& targetTrajectories,
                                                      ModeSchedule& modeSchedule) {
+  solveInitTime_ = initTime;
   // Swap in the latest external targets on the solver thread before the costs read them.
   externalJointTargets_.updateFromBuffer();
   stairClimbingPlan_.updateFromBuffer();
@@ -235,9 +635,17 @@ void SwitchedModelReferenceManager::modifyReferences(scalar_t initTime,
 
   const auto timeHorizon = finalTime - initTime;
   modeSchedule = gaitSchedulePtr_->getModeSchedule(initTime - timeHorizon, finalTime + timeHorizon);
+  const auto& stairPlan = stairClimbingPlan_.get();
+  if (contactSync_.enabled && !stairPlan && !isTerrainWalkActive()) {
+    applyContactSync(initTime, initState, modeSchedule);
+  }
+  if (!stairPlan && !isTerrainWalkActive()) {
+    updateTerrainSpeedCap(initTime, initState, modeSchedule);
+  } else {
+    terrainSpeedCapValue_.store(std::numeric_limits<scalar_t>::infinity());  // those modes pace themselves
+  }
   const auto& swingHeights = gaitSchedulePtr_->getSwingHeightSequence();
 
-  const auto& stairPlan = stairClimbingPlan_.get();
   if (stairPlan) {
     // Fixed-sequence stair climbing: feed the planned per-phase support heights
     // to the swing planner instead of the flat-ground estimate.
@@ -313,8 +721,27 @@ void SwitchedModelReferenceManager::modifyReferences(scalar_t initTime,
     planner.getHeightSequences(modeSchedule, liftOffHeightSequence, touchDownHeightSequence);
     swingTrajectoryPtr_->update(modeSchedule, liftOffHeightSequence, touchDownHeightSequence, swingHeights);
   } else {
-    scalar_t terrainHeight = adaptToCurrentGroundHeight(targetTrajectories, initState, initMode);
-    swingTrajectoryPtr_->update(modeSchedule, terrainHeight, swingHeights);
+    const scalar_t terrainHeight = adaptToCurrentGroundHeight(targetTrajectories, initState, initMode);
+    const bool wellFormed = modeSchedule.eventTimes.size() + 1 == modeSchedule.modeSequence.size();
+    if (slopeFootReference_ && useTerrainHeightEstimate_ && slopePlaneRead() && wellFormed) {
+      // On an incline the cap has read: per-foot support heights on the plane (SlopeFootReference.h).
+      updateSwingOnSlope(initTime, initState, modeSchedule, swingHeights);
+    } else if (wellFormed && (probeOffset_[0] > 0.0 || probeOffset_[1] > 0.0)) {
+      // Flat estimate with a probed foot: the single-height update, with that foot's target lowered.
+      const scalar_array_t liftOff(modeSchedule.modeSequence.size(), terrainHeight);
+      const scalar_array_t touchDown(modeSchedule.modeSequence.size(),
+                                     terrainHeight + swingTrajectoryPtr_->getConfig().touchDownHeightOffset);
+      feet_array_t<scalar_array_t> liftOffHeights;
+      liftOffHeights.fill(liftOff);
+      feet_array_t<scalar_array_t> touchDownHeights;
+      touchDownHeights.fill(touchDown);
+      applyProbeOffsets(initTime, modeSchedule, touchDownHeights);
+      swingTrajectoryPtr_->update(modeSchedule, liftOffHeights, touchDownHeights, swingHeights);
+      slopeNextTouchDownHeight_.store(std::numeric_limits<scalar_t>::quiet_NaN());
+    } else {
+      swingTrajectoryPtr_->update(modeSchedule, terrainHeight, swingHeights);
+      slopeNextTouchDownHeight_.store(std::numeric_limits<scalar_t>::quiet_NaN());
+    }
   }
 
   modeSchedule_ = modeSchedule;
@@ -480,6 +907,173 @@ void SwitchedModelReferenceManager::updateCaptureFootholds(scalar_t initTime, co
   }
 }
 
+void SwitchedModelReferenceManager::applyContactSync(scalar_t initTime, const vector_t& initState, ModeSchedule& modeSchedule) {
+  // Sole heights above the support plane the swing planner lands on (the flat-ground estimate of
+  // the previous solve; 0 until the estimate is enabled). Flat ground is the only case here: the
+  // stair and terrain modes are excluded by the caller. The velocity terms (measured sole velocity,
+  // the previous solve's swing plan at this time) only matter when contactSync.descentVelocity /
+  // blockedHeight are set; the swing planner is updated after this call, so its plan is the
+  // previous solve's, which covers initTime.
+  const feet_array_t<vector3_t> feetPositions = computeFeetPositions(initState);
+  const bool needVelocities = contactSync_.descentVelocity > 0.0 || contactSync_.blockedHeight > 0.0;
+  feet_array_t<scalar_t> feetVz;
+  if (needVelocities) {
+    feetVz = computeFeetVerticalVelocities(initState);
+  }
+  feet_array_t<ContactSyncFootObservation> feet;
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    feet[foot].soleHeight = feetPositions[foot](2) - previousGroundHeightEstimate_;
+    if (needVelocities) {
+      feet[foot].soleVelocity = feetVz[foot];
+      if (swingTrajectoryPtr_ && swingTrajectoryPtr_->hasTrajectory(foot)) {
+        feet[foot].plannedHeight = swingTrajectoryPtr_->getZpositionConstraint(foot, initTime) - previousGroundHeightEstimate_;
+        feet[foot].plannedVelocity = swingTrajectoryPtr_->getZvelocityConstraint(foot, initTime);
+      }
+    }
+  }
+  // A held touchdown has to outlive the policy that carries it: the schedule this solve builds is used
+  // from the end of this solve to the end of the next one, so the push is at least three measured solve
+  // periods (ContactSync.h, run 28 A); a stalled solver does not turn it into a long hold.
+  ContactSyncSettings settings = contactSync_;
+  if (std::isfinite(contactSyncPreviousTime_) && initTime > contactSyncPreviousTime_) {
+    constexpr scalar_t kHoldPeriods = 3.0;
+    constexpr scalar_t kMaxHold = 0.1;  // [s]
+    settings.holdStep = std::max(settings.holdStep, std::min(kHoldPeriods * (initTime - contactSyncPreviousTime_), kMaxHold));
+  }
+  contactSyncPreviousTime_ = initTime;
+  const ContactSyncResult result = synchroniseTouchdowns(settings, initTime, feet, modeSchedule, contactSyncHold_);
+  // The probe: a held foot's touchdown target goes down with the hold (ContactSync.h), read by the swing
+  // planner update later in this solve; a foot not held this solve has no offset.
+  probeOffset_.fill(0.0);
+  if (result.heldFoot >= 0 && result.probing && contactSync_.probeDescent > 0.0) {
+    probeOffset_[static_cast<size_t>(result.heldFoot)] = contactSync_.probeDescent * result.heldBy;
+  }
+  contactSyncProbeDepth_.store(result.heldFoot >= 0 ? probeOffset_[static_cast<size_t>(result.heldFoot)] : 0.0);
+  if (result.probing) {
+    contactSyncProbed_.fetch_add(1);
+  }
+  if (result.blockedLandings > 0) {
+    contactSyncBlocked_.fetch_add(static_cast<size_t>(result.blockedLandings));
+  }
+  if (result.descendingRejections > 0) {
+    contactSyncDescending_.fetch_add(static_cast<size_t>(result.descendingRejections));
+  }
+  if (result.advancedFoot < 0 && result.heldFoot < 0) {
+    return;
+  }
+  // Persist the moved event: the next solve's getModeSchedule() starts from the stored schedule.
+  gaitSchedulePtr_->updateEventTimes(modeSchedule.eventTimes);
+  if (result.advancedFoot >= 0) {
+    contactSyncAdvanced_.fetch_add(1);
+    scalar_t sum = contactSyncAdvancedSeconds_.load();
+    while (!contactSyncAdvancedSeconds_.compare_exchange_weak(sum, sum + result.advancedBy)) {
+    }
+  }
+  if (result.heldFoot >= 0) {
+    contactSyncHeld_.fetch_add(1);
+  }
+}
+
+void SwitchedModelReferenceManager::updateTerrainSpeedCap(scalar_t initTime, const vector_t& initState,
+                                                          const ModeSchedule& modeSchedule) {
+  if (!terrainSpeedCap_.getSettings().enabled) {
+    terrainSpeedCapValue_.store(std::numeric_limits<scalar_t>::infinity());
+    slopeGradientX_.store(0.0);
+    slopeGradientY_.store(0.0);
+    return;
+  }
+  // The schedule after contactSync: an advanced touchdown counts as double support at once.
+  const contact_flag_t contacts = modeNumber2StanceLeg(modeSchedule.modeAtTime(initTime));
+  const feet_array_t<vector3_t> feet = computeFeetPositions(initState);
+  // World-frame sole positions: the signed step over the feet's separation is the slope sample; the heading
+  // tells a single sample which way to lay its plane.
+  const scalar_t yaw = mpcRobotModelPtr_->getBasePose(initState)(3);
+  const vector2_t heading(std::cos(yaw), std::sin(yaw));
+  feet_array_t<scalar_t> soleHeights;
+  feet_array_t<vector2_t> solePositions;
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    soleHeights[foot] = feet[foot](2);
+    solePositions[foot] = feet[foot].head<2>();
+  }
+  const scalar_t cap = terrainSpeedCap_.update(initTime, contacts, soleHeights, solePositions, heading);
+  terrainSpeedCapValue_.store(cap);
+  terrainStepCount_.store(terrainSpeedCap_.stepCount());
+  terrainLastStep_.store(terrainSpeedCap_.lastStep());
+  const vector2_t gradient = terrainSpeedCap_.slopeConsistent() ? terrainSpeedCap_.gradient() : vector2_t::Zero();
+  terrainSlope_.store(gradient.dot(heading));  // telemetry: the plane's rise along the heading
+  // The plane the foot references follow (getContactNormal, the swing update): zero while flat or off. A plane
+  // under 0.01 (0.6 deg: the first sample of a stand, the sole noise of a flat stride) is flat - the flat-ground
+  // swing update, not a plane of millimetres.
+  constexpr scalar_t kFlatGradient = 0.01;
+  const vector2_t followed = slopeFootReference_ && gradient.norm() >= kFlatGradient ? gradient : vector2_t::Zero();
+  slopeGradientX_.store(followed(0));
+  slopeGradientY_.store(followed(1));
+}
+
+void SwitchedModelReferenceManager::updateSwingOnSlope(scalar_t initTime, const vector_t& initState,
+                                                       const ModeSchedule& modeSchedule, const scalar_array_t& swingHeights) {
+  // Same frame as the cap's plane: world sole heights and planar positions.
+  const feet_array_t<vector3_t> feet = computeFeetPositions(initState);
+  const vector6_t baseVelocity = mpcRobotModelPtr_->getBaseComVelocity(initState);  // [v world (3), euler ZYX rates (3)]
+  SlopeFootReferenceInput input;
+  input.initTime = initTime;
+  input.gradient = vector2_t(slopeGradientX_.load(), slopeGradientY_.load());
+  input.velocity = baseVelocity.head<2>();
+  input.yawRate = baseVelocity(3);
+  input.basePosition = mpcRobotModelPtr_->getBasePosition(initState).head<2>();
+  input.contacts = modeNumber2StanceLeg(modeSchedule.modeAtTime(initTime));
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    input.soleHeights[foot] = feet[foot](2);
+    input.solePositions[foot] = feet[foot].head<2>();
+  }
+  input.touchDownHeightOffset = swingTrajectoryPtr_->getConfig().touchDownHeightOffset;
+
+  feet_array_t<std::vector<bool>> contactSequence;
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    contactSequence[foot].reserve(modeSchedule.modeSequence.size());
+  }
+  for (const size_t mode : modeSchedule.modeSequence) {
+    const contact_flag_t flags = modeNumber2StanceLeg(mode);
+    for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+      contactSequence[foot].push_back(flags[foot]);
+    }
+  }
+  SlopeFootReferencePlan plan = planSlopeFootReference(input, modeSchedule.eventTimes, contactSequence);
+  applyProbeOffsets(initTime, modeSchedule, plan.touchDownHeights);
+  swingTrajectoryPtr_->update(modeSchedule, plan.liftOffHeights, plan.touchDownHeights, swingHeights);
+
+  // Diagnostics: the next touchdown's planned height.
+  scalar_t next = std::numeric_limits<scalar_t>::quiet_NaN();
+  const auto& eventTimes = modeSchedule.eventTimes;
+  const size_t current = static_cast<size_t>(std::upper_bound(eventTimes.begin(), eventTimes.end(), initTime) - eventTimes.begin());
+  for (size_t e = current; e < eventTimes.size() && std::isnan(next); ++e) {
+    for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+      if (!contactSequence[foot][e] && contactSequence[foot][e + 1]) {
+        next = plan.touchDownHeights[foot][e];
+        break;
+      }
+    }
+  }
+  slopeNextTouchDownHeight_.store(next);
+}
+
+void SwitchedModelReferenceManager::applyProbeOffsets(scalar_t initTime, const ModeSchedule& modeSchedule,
+                                                      feet_array_t<scalar_array_t>& touchDownHeights) const {
+  // The held foot is still swinging in the schedule (its touchdown was pushed past initTime); the planner
+  // reads the touchdown height at the swing's last mode, so every swing mode of the current swing is lowered.
+  const auto& events = modeSchedule.eventTimes;
+  const auto& modes = modeSchedule.modeSequence;
+  const size_t k = static_cast<size_t>(std::upper_bound(events.begin(), events.end(), initTime) - events.begin());
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    if (!(probeOffset_[foot] > 0.0)) {
+      continue;
+    }
+    for (size_t p = k; p < modes.size() && p < touchDownHeights[foot].size() && !modeNumber2StanceLeg(modes[p])[foot]; ++p) {
+      touchDownHeights[foot][p] -= probeOffset_[foot];
+    }
+  }
+}
+
 feet_array_t<vector3_t> SwitchedModelReferenceManager::computeFeetPositions(const vector_t& initState) {
   const auto& model = pinocchioInterface_.getModel();
   auto& data = pinocchioInterface_.getData();
@@ -493,6 +1087,30 @@ feet_array_t<vector3_t> SwitchedModelReferenceManager::computeFeetPositions(cons
     feetPositions[foot] = pinocchio::updateFramePlacement(model, data, frameId).translation();
   }
   return feetPositions;
+}
+
+feet_array_t<scalar_t> SwitchedModelReferenceManager::computeFeetVerticalVelocities(const vector_t& initState) {
+  const auto& model = pinocchioInterface_.getModel();
+  auto& data = pinocchioInterface_.getData();
+  const vector_t q = mpcRobotModelPtr_->getGeneralizedCoordinates(initState);
+  // Generalized velocities in the model's own layout: [base twist (6), joint rates]; the whole-body
+  // model keeps both in the state (the input is not needed and a zero one is passed).
+  const vector_t zeroInput = vector_t::Zero(mpcRobotModelPtr_->getInputDim());
+  const vector_t jointVelocities = mpcRobotModelPtr_->getJointVelocities(initState, zeroInput);
+  vector_t v(q.size());
+  v.setZero();
+  v.head<6>() = mpcRobotModelPtr_->getBaseComVelocity(initState);
+  v.tail(jointVelocities.size()) = jointVelocities;
+  pinocchio::forwardKinematics(model, data, q, v);
+
+  feet_array_t<scalar_t> feetVz;
+  const auto& contactNames = mpcRobotModelPtr_->modelSettings.contactNames;
+  for (size_t foot = 0; foot < feetVz.size(); ++foot) {
+    const auto frameId = model.getFrameId(contactNames[foot]);
+    pinocchio::updateFramePlacement(model, data, frameId);
+    feetVz[foot] = pinocchio::getFrameVelocity(model, data, frameId, pinocchio::LOCAL_WORLD_ALIGNED).linear()(2);
+  }
+  return feetVz;
 }
 
 /******************************************************************************************************/

@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -38,6 +39,7 @@
 #include <legged_robot_mpc_controller/mpc/wb_id/model/WbIdMpcRobotModel.h>
 
 #include "legged_robot_mpc_controller/common/ros2_procedural_mpc_motion_manager.hpp"
+#include "legged_robot_mpc_controller/controller/whole_body_feedback.hpp"
 #include "legged_robot_mpc_controller/common/yaw_unwrapper.hpp"
 #include "legged_robot_state_estimator/estimator_state_interfaces.hpp"
 #include "legged_robot_mpc_controller/humanoid_whole_body_inverse_dynamics_mpc_controller_parameters.hpp"
@@ -117,6 +119,8 @@ private:
   void solver_worker();
   vector_t compute_weight_compensating_torque(const ocs2::SystemObservation& observation);
   JointActionCommand compute_mpc_joint_action(const ocs2::SystemObservation& observation);
+  //! Ramp a freshly swapped-in policy's command from the last written one (control.solveBlendSeconds).
+  JointActionCommand apply_policy_swap_blend(JointActionCommand command, double now, bool policy_updated);
   void clamp_torque(vector_t& tau) const;
 
   // Humanoids settle/initialise before MPC; planned wheeled stand-up blends directly.
@@ -154,6 +158,32 @@ private:
   //! Where the joint torque feedforward comes from (control.feedforward).
   enum class Feedforward { PolicyTorque, InverseDynamics };
   Feedforward feedforward_{Feedforward::PolicyTorque};
+
+  // Phase 2.B whole-body feedback layer (control.wholeBody): replaces the feedforward of
+  // compute_mpc_joint_action with the contact-consistent torque at the measured state and
+  // lowers the written servo gains to the residual PD while it is engaged.
+  std::unique_ptr<legged_robot_mpc_controller::wbc::WholeBodyFeedback> whole_body_feedback_;
+  vector_t whole_body_residual_kp_;
+  vector_t whole_body_residual_kd_;
+  vector_t whole_body_written_kp_;  //!< gains written this tick while engaged (ramped)
+  vector_t whole_body_written_kd_;
+  bool whole_body_tick_{false};        //!< this tick's command came from the layer
+  bool whole_body_engaged_{false};     //!< gains are on the residual set (ramping or settled)
+  double whole_body_engage_time_{-1.0};
+  double whole_body_gain_alpha_{0.0};  //!< 0 = jointEffortPd, 1 = residual
+  std::atomic<std::size_t> whole_body_invalid_ticks_{0};
+  double whole_body_last_residual_{0.0};
+  int whole_body_last_clips_{0};
+  std::size_t whole_body_last_mode_{std::numeric_limits<std::size_t>::max()};  //!< plan mode of the previous layer tick
+  double whole_body_last_switch_time_{-1.0};        //!< policy time at which that mode last changed
+  double whole_body_contact_alpha_{1.0};            //!< 1 = layer torque, 0 = plan torque (contact-switch fade)
+  std::array<bool, legged_robot_mpc_controller::wbc::kContacts> whole_body_searching_{{false, false}};  //!< touchdown search this tick (estimator flags, telemetry)
+  std::array<bool, legged_robot_mpc_controller::wbc::kContacts> whole_body_search_previous_{{false, false}};  //!< the previous layer tick's decision (fade restart edge)
+  std::atomic<std::size_t> whole_body_search_ticks_{0};  //!< servo ticks with a foot in touchdown search (solver telemetry)
+  double contact_switch_fade(double policy_time, std::size_t policy_mode);
+  //! Select the servo gains for this tick (stand-up override > whole-body residual > jointEffortPd).
+  void select_servo_gains(const vector_t*& kp, const vector_t*& kd) const;
+  void update_whole_body_gain_ramp(double now);
 
   void write_joint_action_command(
     const vector_t& q_des, const vector_t& qd_des, const vector_t& tau_ff);
@@ -207,6 +237,9 @@ private:
   std::vector<std::string> solver_state_soft_terms_;
   ocs2::PrimalSolution solver_primal_;
   std_msgs::msg::Float64MultiArray solver_row_;
+  //! Column of "grid_nodes": the row's tail (mesh, contactSync, terrain) is written from here, after the
+  //! optional cost evaluation, so its layout must not be hard-coded as an offset from the end.
+  std::size_t solver_tail_start_{0};
   //! The policy compute_mpc_joint_action evaluated this tick, if any.
   bool tracking_policy_valid_{false};
   vector_t tracking_policy_state_;
@@ -258,6 +291,12 @@ private:
   std::atomic_bool reset_mpc_warm_start_requested_{false};
   bool has_active_policy_{false};  // Owned by the control thread, like the active MRT policy.
   bool active_policy_ready_{false};  // Revalidated against this tick's timestamp.
+  //! Solve-handover blend (control thread): what was last written to the hardware,
+  //! the command the active ramp started from, and when it started (negative = idle).
+  JointActionCommand last_written_command_;
+  JointActionCommand last_policy_blend_from_;
+  bool has_last_written_command_{false};
+  double policy_blend_start_time_{-1.0};
   std::atomic_bool stand_up_requested_{false};
   std::atomic_bool start_requested_{false};
   std::atomic_bool sit_down_requested_{false};
@@ -273,6 +312,10 @@ private:
   ocs2::SystemObservation last_hardware_observation_;
   bool has_hardware_observation_{false};
   bool observation_from_hardware_{false};
+  //! Wrench-as-state layout (ocs2.model.wrenchState): the last evaluated policy wrenches, which the
+  //! next observation reports as the current wrench states (no force sensing is assumed).
+  bool has_last_policy_wrench_{false};
+  std::array<ocs2::vector6_t, 2> last_policy_wrench_{};
 };
 
 }  // namespace legged_robot_mpc_controller

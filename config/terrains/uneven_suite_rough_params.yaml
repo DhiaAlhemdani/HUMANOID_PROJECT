@@ -1,0 +1,38 @@
+# Uneven field for the command-space suite (tests/tuning/suite, TERRAIN=suite_rough): a 40 m long strip so the
+# speeds / backward ladders (about 16 m each way) stay on it, 0.5 m cells, a 1 m clear patch to start on.
+# Generate with:
+# python3 description/mujoco/terrains/generate_uneven_terrain.py --params config/terrains/uneven_suite_rough_params.yaml \
+#   --mjcf description/mujoco/terrains/uneven_suite_rough.xml --urdf /tmp/uneven_suite_rough.urdf.xacro
+# Values are meters/radians unless noted. No terrain map is supplied to the MPC (blind walking).
+uneven_terrain:
+  base:
+    pos: [0.0, 0.0, 0.0]
+    yaw: 0.0
+  size: [40.0, 6.0]
+  grid: [80, 12]              # 0.5 m cells
+  seed: 7
+
+  height:
+    min: 0.0
+    max: 0.10
+    adjacent_difference:
+      min: 0.02
+      max: 0.04
+      distribution: triangular
+      mode: 0.03
+    jitter: 0.002
+
+  profile:
+    amplitude: 0.015
+    wavelength: [6.0, 5.0]
+    strength: 0.75
+
+  clear_patch:
+    center: [0.0, 0.0]
+    size: [1.0, 1.0]
+    blend_radius: 2.0         # heights fade to the floor within 2 m of the patch: a gradual entry, not a step up
+
+  depth: 0.25
+  gap: 0.0
+  friction: [0.9, 0.005, 0.0001]
+  color_gray: 0.55

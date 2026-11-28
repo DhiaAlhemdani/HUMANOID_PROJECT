@@ -47,6 +47,7 @@ WalkingVelocityTarget::WalkingVelocityTarget(const ReferenceConfig& referenceCon
       minBaseHeight_(referenceConfig.minBaseHeight),
       maxBaseHeight_(referenceConfig.maxBaseHeight),
       commandRateLimits_(referenceConfig.commandRateLimits),
+      commandJerkLimits_(referenceConfig.commandJerkLimits),
       takeoverHeightRate_(referenceConfig.takeoverHeightRate),
       previousCommand_(0.0, 0.0, referenceConfig.defaultBaseHeight, 0.0),
       velocityCommandFilter_(5, vector4_t(0.0, 0.0, referenceConfig.defaultBaseHeight, 0.0)) {}
@@ -73,7 +74,34 @@ WalkingVelocityCommand WalkingVelocityTarget::scaleCommand(WalkingVelocityComman
   if (std::isfinite(postureHeight) && postureHeight > 0.0) {
     command.desired_pelvis_height = postureHeight;
   }
+  const scalar_t minWalkSpeed = minWalkSpeed_.load();
+  if (minWalkSpeed > 0.0) {
+    const scalar_t speed = std::hypot(command.linear_velocity_x, command.linear_velocity_y);
+    if (speed < standBelow_.load()) {
+      command.linear_velocity_x = command.linear_velocity_y = 0.0;
+    } else if (speed > 0.0 && speed < minWalkSpeed) {
+      command.linear_velocity_x *= minWalkSpeed / speed;
+      command.linear_velocity_y *= minWalkSpeed / speed;
+    }
+  }
+  // Terrain speed cap: scale the planar command down to the cap, keeping its direction and the yaw rate.
+  const scalar_t cap = speedCap_.load();
+  if (std::isfinite(cap) && cap > 0.0) {
+    const scalar_t speed = std::hypot(command.linear_velocity_x, command.linear_velocity_y);
+    if (speed > cap) {
+      command.linear_velocity_x *= cap / speed;
+      command.linear_velocity_y *= cap / speed;
+    }
+  }
   return command;
+}
+
+/******************************************************************************************************/
+/******************************************************************************************************/
+/******************************************************************************************************/
+void WalkingVelocityTarget::setMinimumWalkSpeed(scalar_t standBelow, scalar_t minWalkSpeed) {
+  standBelow_.store(std::max(standBelow, 0.0));
+  minWalkSpeed_.store(std::max(minWalkSpeed, 0.0));
 }
 
 /******************************************************************************************************/
@@ -101,6 +129,7 @@ WalkingVelocityTarget::Output WalkingVelocityTarget::evaluate(scalar_t initTime,
       risingFromResetHeight_ = takeoverHeightRate_ > 0.0;
     }
     previousTime_ = initTime;
+    previousRate_.setZero();
     velocityCommandFilter_.reset(previousCommand_);
   }
   vector4_t conditionedCommand = velocityCommandFilter_.getFilteredVector(scaledCommand.toVector(), initTime);
@@ -109,11 +138,14 @@ WalkingVelocityTarget::Output WalkingVelocityTarget::evaluate(scalar_t initTime,
   for (int i = 0; i < 4; ++i) {
     const scalar_t rateLimit = (i == 2 && risingFromResetHeight_) ? takeoverHeightRate_ : commandRateLimits_(i);
     if (rateLimit > 0.0) {
-      const scalar_t increment = rateLimit * dt;
       const scalar_t unlimited = conditionedCommand(i);
-      conditionedCommand(i) = std::clamp(unlimited, previousCommand_(i) - increment, previousCommand_(i) + increment);
+      // The takeover rise keeps the plain rate clamp (a constant-rate rise is its definition).
+      const scalar_t jerkLimit = (i == 2 && risingFromResetHeight_) ? 0.0 : commandJerkLimits_(i);
+      conditionedCommand(i) = slewLimitStep(unlimited, previousCommand_(i), previousRate_(i), dt, rateLimit, jerkLimit);
       // The takeover rise ends once the height reference reaches the command without being limited.
       if (i == 2 && risingFromResetHeight_ && dt > 0.0 && conditionedCommand(i) == unlimited) risingFromResetHeight_ = false;
+    } else {
+      previousRate_(i) = 0.0;
     }
   }
   previousCommand_ = conditionedCommand;

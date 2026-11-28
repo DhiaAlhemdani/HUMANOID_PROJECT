@@ -30,6 +30,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "legged_robot_mpc_controller/mpc/common/gait/GaitSchedule.h"
 
+#include <algorithm>
+#include <functional>
+
 #include <ocs2_core/misc/Lookup.h>
 
 #include <ocs2_core/misc/LoadData.h>
@@ -187,6 +190,16 @@ std::shared_ptr<GaitSchedule> GaitSchedule::createGaitSchedule(const ModeSchedul
 void GaitSchedule::updateModeSchedule(const ModeSchedule& modeSchedule) {
   modeSchedule_ = modeSchedule;
   swingHeightSequence_.assign(modeSchedule_.modeSequence.size(), -1.0);
+}
+
+void GaitSchedule::updateEventTimes(const scalar_array_t& eventTimes) {
+  if (eventTimes.size() != modeSchedule_.eventTimes.size()) {
+    throw std::runtime_error("[GaitSchedule::updateEventTimes] event count differs from the schedule's");
+  }
+  if (!std::is_sorted(eventTimes.begin(), eventTimes.end(), std::less_equal<scalar_t>())) {
+    throw std::runtime_error("[GaitSchedule::updateEventTimes] event times must be strictly increasing");
+  }
+  modeSchedule_.eventTimes = eventTimes;
 }
 
 }  // namespace ocs2::humanoid

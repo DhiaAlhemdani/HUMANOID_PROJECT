@@ -236,6 +236,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
     control:
       observationVelocityFilterCutoffHz: 30.0
       feedforward: policy_torque
+      # Ramp the command from the last written one when a new solve swaps the policy in
+      # (smooths the per-solve command step); ~half the solve period at 90-100 Hz MPC.
+      solveBlendSeconds: 0.005
       jointEffortPd:
         kp:
           [200.0, 200.0, 200.0, 200.0, 200.0, 200.0,
@@ -249,6 +252,45 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
            20.0, 20.0, 20.0,
            20.0, 20.0, 20.0, 20.0,
            20.0, 20.0, 20.0, 20.0]
+      # Phase 2.B whole-body feedback layer (docs/design/wbc_layer.md). Shipped off: the servo
+      # path above is unchanged until the sweep (tests/tuning/run_wbc_sweep.sh) finds a winner.
+      # Base order [x y z yaw pitch roll]; acceleration-space gains (per-joint inertia scales them).
+      # Gains = the S1 sweep's 'soft' set: the 2x stiffer original defaults fell (wb_s1 11.7 s, wb_s1_stiff 1.5 s).
+      wholeBody:
+        enabled: true
+        residualKp: 20.0
+        residualKd: 3.0
+        gainRampSeconds: 0.5
+        contactBlendSeconds: 0.03
+        # The fade hands the switch to the plan's torque; when that torque is the torque-window fallback (policy
+        # older than the window) it is the plan's unbounded inverse dynamics and reached the actuator limits at
+        # late touchdowns (0.8 m/s falls, docs/results/human_gait_template.md run 6) - keep the layer's torque then.
+        holdOnTorqueWindowOverrun: true
+        baseKp: [0.0, 0.0, 50.0, 25.0, 100.0, 100.0]
+        baseKd: [0.0, 0.0, 14.0, 10.0, 20.0, 20.0]
+        baseWeight: [1.0, 1.0, 10.0, 10.0, 10.0, 10.0]
+        jointKp: 100.0
+        jointKd: 20.0
+        jointWeight: 1.0
+        # ROS 2's YAML parameter parser cannot type an empty list, so the uniform default is spelled out
+        # (23 entries, robot.jointNames order; the controller rejects any other length).
+        jointWeights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+        orientationLink: ""
+        orientationKp: [100.0, 100.0, 25.0]
+        orientationKd: [20.0, 20.0, 10.0]
+        orientationWeight: 10.0
+        swingKp: [100.0, 100.0, 100.0]
+        swingKd: [20.0, 20.0, 20.0]
+        swingWeight: 5.0
+        wrenchWeight: 0.01
+        frictionCoefficient: 0.6
+        soleHalfLength: 0.10
+        soleHalfWidth: 0.04
+        # Touchdown search (run 29): off here, candidate config/tuning/humanT29.yaml turns it on (0.3 s).
+        searchWindow: 0.0
+        searchLandedVelocity: 0.05
+        searchDescentVelocity: 0.15
+        searchDescentAcceleration: 0.0
 
     diagnostics:
       statusLogPeriod: 2.0
@@ -296,6 +338,12 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           frameTranslation: [0.035, 0.0, -0.035]
           rectangle: [0.09, -0.09, 0.03, -0.03]
 
+        # Roadmap v2 step A (force-rate formulation): wrenches as states, their rates as priced
+        # inputs (costs.r.contactWrenchRates). Off = the original [q, v] / [W, a, tau] layout.
+        # Shipped on (2026-11-27, docs/results/human_gait_template.md run 9/10): -21 % pelvis jerk at
+        # every speed, 0 falls; costs the solve rate (15.6 -> 24 ms per solve on the owner's machine).
+        wrenchState: true
+
       solver:
         sqp:
           nThreads: 5
@@ -334,35 +382,39 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # Base velocity: [vx, vy, vz, yaw rate, pitch rate, roll rate] (Euler rates).
         q:
           basePose: [0.0, 0.0, 50.0, 0.0, 100.0, 100.0]
-          baseVelocity: [30.0, 15.0, 5.0, 30.0, 30.0, 30.0]
+          baseVelocity: [100.0, 50.0, 5.0, 30.0, 30.0, 30.0]
+          # Waist 20 and arms x10 (the human template's trunk / arm curves are tracked, not the
+          # frozen posture; without the weight the optimizer uses both as a flywheel).
           jointPositions:
             [0.05, 0.2, 15.0, 0.1, 0.1, 0.1,
              0.05, 0.2, 15.0, 0.1, 0.1, 0.1,
-             2.0, 2.0, 2.0,
-             5.0, 5.0, 2.0, 4.0,
-             5.0, 5.0, 2.0, 4.0]
+             20.0, 20.0, 20.0,
+             50.0, 50.0, 20.0, 40.0,
+             50.0, 50.0, 20.0, 40.0]
           jointVelocities:
             [0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
              0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
-             0.2, 0.2, 0.2,
-             0.06, 0.06, 0.06, 0.06,
-             0.06, 0.06, 0.06, 0.06]
+             1.0, 1.0, 1.0,
+             0.6, 0.6, 0.6, 0.6,
+             0.6, 0.6, 0.6, 0.6]
 
         qFinal:
           basePose: [0.0, 0.0, 50.0, 0.0, 100.0, 100.0]
-          baseVelocity: [30.0, 15.0, 5.0, 30.0, 30.0, 30.0]
+          baseVelocity: [100.0, 50.0, 5.0, 30.0, 30.0, 30.0]
+          # Terminal arm weights stay at the raw-posture values: the terminal cost tracks
+          # defaultJointState, not the template.
           jointPositions:
             [0.05, 0.1, 30.0, 0.1, 0.1, 0.1,
              0.05, 0.1, 30.0, 0.1, 0.1, 0.1,
-             2.0, 2.0, 2.0,
+             20.0, 20.0, 20.0,
              5.0, 5.0, 2.0, 4.0,
              5.0, 5.0, 2.0, 4.0]
           jointVelocities:
             [0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
              0.001, 0.001, 0.001, 0.001, 0.001, 0.001,
-             0.2, 0.2, 0.2,
-             0.02, 0.02, 0.02, 0.02,
-             0.02, 0.02, 0.02, 0.02]
+             1.0, 1.0, 1.0,
+             0.2, 0.2, 0.2, 0.2,
+             0.2, 0.2, 0.2, 0.2]
 
         # R on u = [wrench_left, wrench_right, base acceleration, joint acceleration, joint torque].
         # Contact wrench order per foot: [fx, fy, fz, mx, my, mz].
@@ -370,13 +422,17 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           contactWrenches:
             [0.003, 0.003, 0.001, 0.01, 0.01, 5.0,
              0.003, 0.003, 0.001, 0.01, 0.01, 5.0]
+          # Wrench-rate weights, used only with model.wrenchState (see parameters.yaml for the scale).
+          contactWrenchRates:  # 1e-4 = the sweep winner (docs/results/wrench_rate_sweep.md)
+            [0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001,
+             0.0001, 0.0001, 0.0001, 0.0001, 0.0001, 0.0001]
           baseAccelerations: [0.005, 0.005, 0.005, 0.005, 0.005, 0.005]
           jointAccelerations:
             [0.005, 0.005, 0.005, 0.005, 0.005, 0.005,
              0.005, 0.005, 0.005, 0.005, 0.005, 0.005,
              0.005, 0.005, 0.005,
-             0.005, 0.005, 0.005, 0.005,
-             0.005, 0.005, 0.005, 0.005]
+             0.05, 0.05, 0.05, 0.05,
+             0.05, 0.05, 0.05, 0.05]
           jointTorques:
             [0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005,
              0.0005, 0.0005, 0.0005, 0.0005, 0.0005, 0.0005,
@@ -411,6 +467,21 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           tiltWeight: 10.0
           angularVelocityWeight: 5.0
 
+        # Flat-ground xy foothold reference for the swing foot (Raibert neutral point + optional
+        # capture-point correction) through the foot cost. Off = foot placement left to the
+        # optimizer (the behaviour before Phase 2.4); see docs/results/capture_point_sweep.md.
+        captureFootPlacement:
+          enabled: false
+          gain: 0.0                  # capture-point correction gain
+          stepWidth: 0.24            # G1 nominal foot spacing (hip pitch 0.0645 + hip roll 0.052 per side)
+          maxAdjustment: 0.10
+          trackingWeight: 50.0
+          projectionHorizon: 0.0
+          stepLengthGain: 0.0
+          stanceTimeGain: 0.5        # Raibert neutral point
+          footCenterOffset: 0.0      # contactGeometry already puts the frame at the sole centre
+          currentSwingOnly: true
+
         # Active J_leg^T W load cost; separate from r.jointTorques.
         legTorqueCost:
           activate: false  # Initial terrain ablation; input torque cost and actuator limits remain.
@@ -434,18 +505,38 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           rightWeights: 
             [2.0, 2.0, 1.0, 8.0, 0.2, 0.2]
 
+        # Double-support load-share cost (D2/D3). Shipped as a lift-off end window (run 14,
+        # docs/results/human_gait_template.md): the plan used to drop the lifting foot's force
+        # (113 N) in one node, the pelvis jerk sat there (3.5-4x the stride average); with the last
+        # 60 ms shaped the force reaches zero continuously, hold jerk -10..-25 % at 0.2-0.8 m/s,
+        # 0 falls. Whole-DS shaping (windows 0) fell at 0.8 m/s at every weight >= 0.01 (run 13) and
+        # the touchdown window moved the jerk onto the (50 ms early) touchdown: both stay off.
+        contactLoadShareWeight: 0.1
+        contactLoadShareLiftOffWindow: 0.06
+        contactLoadShareTouchDownWindow: 0.0
+        # Wrench-as-state layout: share of the rate weight charged at the anchored first node (see parameters.yaml).
+        wrenchRateFirstNodeScale: 1.0
+
       constraints:
         inverseDynamics:
           # Keep physical equalities enabled for locomotion; disabling is diagnostic-only.
           activate: true
-          torqueConstraintNodes: 3
+          # 4, not the literature's 3: the window is (N-0.5)*dt and the policy interpolation can only use it
+          # up to (N-1)*dt of policy age. At 40-45 Hz the policy is 40-60 ms old on ~12 % of ticks, and on
+          # those the feedforward falls back to the plan's unbounded inverse dynamics (0.8 m/s falls,
+          # docs/results/human_gait_template.md runs 6-8). 4 nodes = 60 ms honoured; the hold in
+          # control.wholeBody covers the rest.
+          torqueConstraintNodes: 4
 
         footMotionEquality:
           activate: true
           # Hard equalities, not cost weights or inequalities.
           # Stance: keep the foot still and correct height/tilt.
           # Swing: follow the vertical foot path.
-          positionErrorGain_z: 50.0              # Height correction; lower gains give slower correction.
+          positionErrorGain_z: 50.0              # Stance height correction; lower gains give slower correction (ramps).
+          swingPositionErrorGain_z: 200.0        # Swing height tracking: 50 lands 20 ms early at 0.26 m/s (plan sags
+                                                 # below its spline, -1 rad/s pole); 200 -> 8 ms / 0.19 m/s, acc_hf -26 %
+                                                 # (docs/results/touchdown_timing_sweep.md sweep 2/3). Stance stays 50.
           orientationErrorGain: 100.0            # Tilt correction; lower gains avoid fighting shallow inclines.
           linearVelocityErrorGain_z: 50.0        # Vertical speed damping.
           linearVelocityErrorGain_xy: 50.0       # Horizontal speed damping in stance.
@@ -625,26 +716,116 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         maxDisplacementVelocityX: 1.0
         maxDisplacementVelocityY: 0.5
         maxRotationVelocity: 1.5708
-        defaultBaseHeight: 0.795
-        minBaseHeight: 0.395
-        maxBaseHeight: 1.195
+        defaultBaseHeight: 0.785  # kneeOffset 0.3 standing (humanGait); 0.793 = straight leg
+        # Commanded height range (GUI slider ends, command clamp): the leg's range. 0.60 m is the
+        # defaultJointState crouch (knee 1.6 rad), 0.79 m the straight leg minus a knee margin (0.19 rad);
+        # above it the height is unreachable with flat feet and the knee is at its singularity.
+        # config/g1/compute_posture_table.py gives the symmetric posture of each height in this range.
+        minBaseHeight: 0.60
+        maxBaseHeight: 0.79
         basePosePositionTolerance: 0.02
         basePoseOrientationTolerance: 0.03
         
         # Slew limits on the scaled walking command: ax, ay [m/s^2], height rate [m/s], yaw acceleration [rad/s^2]
+        # Height rate 0.2: a slider move while walking is a reference ramp of a few stride-fractions, not a
+        # step inside one single support (0.5 made a 5 cm move a 0.1 s kick).
         velocityCommandRateLimits:
-          [0.5, 0.5, 0.5, 2.0]
+          [0.5, 0.5, 0.2, 2.0]
+        # Jerk limits on the same axes (S-curve slew); 0 = plain rate clamp (legacy behaviour).
+        velocityCommandJerkLimits:
+          [0.0, 0.0, 0.0, 0.0]
         
+        # Shipped as the terrain recipe (config/tuning/humanT25c.yaml, runs 22-27): stance-foot FK is the
+        # ground height (run 22 D: the first config to walk suite_mild both ways; flat unchanged).
         groundHeight:
-          useEstimate: false
+          useEstimate: true
           maxStepPerSolve: 0.002
+          # Run 25 C: on an incline the cap reads, per-foot support heights on the plane and the plane's
+          # normal for the foot orientation (a level sole on a 10 deg ramp rests on its heel or toe edge).
+          # Needs useEstimate and terrainSpeedCap.enabled. Run 27 ladder: slope_10 and slope_5 every
+          # script 0 falls, the stands on the ramps level in the plane; tiles and flat read no plane.
+          followSlope: true
 
+        # Blind terrain speed cap (TerrainSpeedCap.h, run 24): a sole-height difference of stepKnots[i]
+        # between the two stance feet marks the ground as uneven at tier i for holdSeconds and caps the
+        # commanded planar speed at the smallest speedKnots of the tiers that hold. Tiers from run 24: 1-2 cm
+        # steps are walked at 0.5 m/s and lost at 0.8, 2-4 cm steps at 0.2 and lost at 0.5, a 3.5 cm step means
+        # the big edges are here. Slopes (run 25): the stance feet's signed step over their separation along the
+        # heading is a slope sample; four agreeing samples make the ground a plane (roughness = the residual)
+        # and cap the incline at slopeSpeedKnots. Rough ground (run 27) has no plane: two contradictions in a
+        # row, a recent raw step or a short base keep the references level until samples agree again. On
+        # since run 27 (humanT27: flat unchanged, suite_mild / slope_5 / slope_10 0 falls).
+        terrainSpeedCap:
+          enabled: true
+          stepKnots: [0.01, 0.02, 0.035]
+          speedKnots: [0.5, 0.2, 0.1]
+          holdSeconds: 3.0
+          slopeKnots: [0.05, 0.12]      # run 25: a consistent incline is a plane, not roughness; 3 deg / 7 deg tiers
+          slopeSpeedKnots: [0.3, 0.2]
+          slopeMinSeparation: 0.08
+          slopeConsistency: 0.03
+          slopeHeightTolerance: 0.01   # run 25 E: a standing plane falls only to a sample off by more than this in height
+
+        # Gait-phase-locked arm swing superimposed on the nominal arm posture (left arm forward while
+        # the right leg swings). Off: the arms only hold the nominal posture, and whatever arm motion
+        # the optimizer finds useful for angular momentum is unreferenced. Amplitudes are per m/s of
+        # commanded forward speed; 0.4 rad/(m/s) is +-11 deg at 0.5 m/s, +-18 deg at 0.8 m/s.
         armSwing:
+          enabled: false
+          shoulderPitchAmplitude: 0.4
+          elbowAmplitude: 0.3
+          phaseOffset: 0.15
+          maxOffset: 0.6
           jointNames:
             - left_shoulder_pitch_joint
             - right_shoulder_pitch_joint
             - left_elbow_joint
             - right_elbow_joint
+
+        # ---- Human gait template (roadmap step H) --------------------------------------------
+        # Normative human walking kinematics as the reference instead of the fixed posture below:
+        # hip / knee / ankle curves over each leg's gait cycle (time-warped onto the planned step and
+        # double-support timing), pelvis obliquity and vertical excursion, trunk counter-rotation and
+        # arm swing, all scaled with the commanded step. Soft: the joint-position and base-pose
+        # weights decide how closely it is followed. With `legs` on, the leg entries of
+        # defaultJointState are replaced (standing: hip -kneeOffset/2, knee kneeOffset, ankle
+        # -kneeOffset/2) and defaultBaseHeight should match (kneeOffset 0.3 -> 0.785 m on the G1).
+        humanGait:
+          enabled: true
+          # Upper body only: the leg curves fell at >= 0.6 m/s in runs 3-5 and again on the fixed
+          # controller (run 11: fell on the ramp to 0.8, +55 % jerk at 0.2 / 0.5 before that). The
+          # leg reference fights the optimizer's own leg solution; it stays off (HUMAN_LEGS=true).
+          legs: false
+          arms: true
+          waist: true
+          base: true
+          jointNames:
+            - left_hip_pitch_joint
+            - left_knee_joint
+            - left_ankle_pitch_joint
+            - right_hip_pitch_joint
+            - right_knee_joint
+            - right_ankle_pitch_joint
+            - waist_yaw_joint
+          legLength: 0.65
+          humanStepRatio: 0.78
+          referenceSpeed: 1.3
+          maxScale: 1.2
+          kneeOffset: 0.3
+          stanceAnkleClosure: true
+          maxStanceDorsiflexion: 0.44
+          heightFromLegs: true
+          swingClearance: 0.05
+          thighLength: 0.3366
+          shankLength: 0.3
+          shoulderAmplitude: 0.35
+          elbowAmplitude: 0.15
+          elbowMean: -0.4
+          armMaxOffset: 0.6
+          waistYawAmplitude: 0.08
+          pelvisRollAmplitude: 0.05
+          pelvisPitchAmplitude: 0.0
+          heightOscillation: 0.015
 
         # Nominal joint posture for reference generation; pelvis height is defaultBaseHeight.
         defaultJointState:
@@ -663,10 +844,42 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         defaultModeSequence: [STANCE]
         defaultSwitchingTimes: [0.0, 0.5]
 
+        # Contact-synchronised touchdown (ContactSync.h): the plan loads the landing foot when its
+        # sole reaches the ground instead of at the scheduled event 20-50 ms later (runs 12-17 of
+        # docs/results/human_gait_template.md: the swing spline spends its last 27 ms inside the
+        # final millimetre, the plan sags 1-2 mm under it, and the scheduled switch then steps the
+        # foot's force 0 -> 120 N with the foot already down). earlyWindow moves the event to the
+        # solve time; lateWindow (0 = off) holds it while the foot is still in the air. Shipped on
+        # (run 18 + in-session pair): lead 50 -> 30 ms (one solve period is the limit), touchdown
+        # jerk concentration -25 %, suite steady jerk -20 % vs the lift-off window alone, every
+        # omni hold better, 0 falls, solve rate -6 %. The late half cost balance at 0.8 m/s: off.
+        # descentVelocity / blockedHeight (run 23) make "landed" velocity-aware for uneven ground
+        # (a sole passing the plane towards a lower tile is not landed; a sole stopped on a higher
+        # tile is); both 0 = the flat-ground height-only rule. Shipped on with heightThreshold 0.01 from
+        # run 27 (run 23 C: the T23d recipe; flat unchanged through humanT27F).
+        contactSync:
+          enabled: true
+          earlyWindow: 0.06
+          lateWindow: 0.0
+          heightThreshold: 0.01
+          holdStep: 0.02
+          minPhaseDuration: 0.02
+          descentVelocity: 0.05
+          blockedHeight: 0.01
+          # Probe (run 28, candidate config/tuning/humanT28.yaml): hold a still-descending foot past its planned
+          # touchdown and take its target down to find the ground (the first stride off a crest). Off here.
+          probeWindow: 0.0
+          probeDescent: 0.0
+
         # Swing-foot trajectory, shared by every template.
         swingTrajectory:
           liftOffVelocity: 0.05
-          touchDownVelocity: -0.0
+          # -0.05 m/s was the flat sweep's softest landing (pelvis acc_hf 1.1805 -> 1.078, -8.7%,
+          # leg PD HF -7.8%; docs/results/touchdown_sweep.md). -0.15 since run 27: with
+          # groundHeight.useEstimate the swing has to reach a tile 1-2 cm below the plan, and the
+          # flat suite did not move (humanT27F vs the -0.05 flat runs within noise). Effective node
+          # velocity is 0.75x this for the 0.3 s walk swing.
+          touchDownVelocity: -0.15
           swingHeight: 0.08 # default fallback for templates that omit swingHeight; 0.08 [m] is the walk value.
           touchDownHeightOffset: -0.001
           swingTimeScale: 0.4
@@ -701,6 +914,26 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           skip:           {modeSequence: [LF, FLY, LF, RF, FLY, RF], switchingTimes: [0.0, 0.25, 0.3, 0.5, 0.75, 0.8, 1.0]}
           jump:           {modeSequence: [STANCE, FLY],              switchingTimes: [0.0, 0.3, 0.5]}
           terrain_walk:   {modeSequence: [LF, STANCE, RF, STANCE],   switchingTimes: [0.0, 0.6, 0.7, 1.3, 1.4]}
+
+        # ---- Speed-continuous gait (roadmap v2 step B) --------------------------------------
+        # Off: the ladder below selects whole templates. On: the ladder only decides standing vs
+        # walking (rungs beyond the first walking one are ignored) and the step time, double
+        # support and swing clearance are interpolated at the command's speed and re-tiled from
+        # the next step boundary at every solve. Step length = speed x stepTime. The knots are
+        # human gait scaled to the G1's leg length: 0.36 m steps at 0.45 m/s (0.72 s, 0.25 s of
+        # double support) to 0.55 m steps at 1.15 m/s (0.48 s, 0.09 s). Planar commands below
+        # standBelow stand, those below minWalkSpeed are raised to it: nobody walks slower.
+        continuous:
+          enabled: true  # 0.8 m/s hold: jerk 88.7 vs 270.8 for the ladder (run 9)
+          speedKnots:    [0.0, 0.45, 0.8, 1.15]
+          stepTime:      [0.72, 0.72, 0.55, 0.48]
+          doubleSupport: [0.25, 0.25, 0.12, 0.09]
+          swingHeight:   [0.05, 0.05, 0.05, 0.06]
+          yawLever: 0.15
+          minDoubleSupport: 0.03
+          spliceDelay: 0.1
+          standBelow: 0.15
+          minWalkSpeed: 0.4
 
         # ---- Gait selection: which template runs, and when ------------------------------
         # ProceduralMpcMotionManager picks a template from `ladder` once per MPC solve,

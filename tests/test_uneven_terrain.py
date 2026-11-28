@@ -105,6 +105,37 @@ class UnevenTerrainTest(unittest.TestCase):
         self.assertEqual(len(blocks), math.prod(config["grid"]))
         self.assertAlmostEqual(blocks[0]["size"][0], config["size"][0] / config["grid"][0] - .01)
 
+    def test_blend_radius_fades_the_field_to_the_floor_around_the_patch(self):
+        config = defaults()
+        plain = terrain.generate_heights(config)
+        config["clear_patch"]["blend_radius"] = 2.0
+        blended = terrain.generate_heights(config)
+        nx, ny = config["grid"]
+        lx, ly = config["size"]
+        hx, hy = (s / 2 for s in config["clear_patch"]["size"])
+        for i in range(nx):
+            x = -lx / 2 + (i + .5) * lx / nx
+            for j in range(ny):
+                y = -ly / 2 + (j + .5) * ly / ny
+                d = math.hypot(max(abs(x) - hx, 0.), max(abs(y) - hy, 0.))
+                self.assertAlmostEqual(blended[i][j], min(plain[i][j], config["height"]["max"] * d / 2.))
+        # the cells touching the patch are nearly on the floor, the far field is untouched, steps never grow
+        touching = [blended[i][j] for i in range(nx) for j in range(ny)
+                    if abs(-lx / 2 + (i + .5) * lx / nx) < hx + lx / nx and abs(-ly / 2 + (j + .5) * ly / ny) < hy + ly / ny]
+        self.assertLess(max(touching), .3 * config["height"]["max"])
+        self.assertEqual(blended[0][0], plain[0][0])
+        self.assertLessEqual(max(terrain.adjacent_differences(blended)), config["height"]["adjacent_difference"]["max"] + 1e-10)
+        # the suite fields are generated from their params files
+        for name in ("mild", "rough"):
+            cfg = yaml.safe_load((ROOT / f"config/terrains/uneven_suite_{name}_params.yaml").read_text())["uneven_terrain"]
+            blocks = terrain.generate_blocks(cfg, terrain.generate_heights(cfg))
+            self.assertEqual((ROOT / f"description/mujoco/terrains/uneven_suite_{name}.xml").read_text(),
+                             terrain.xml_text(terrain.build_mjcf(cfg, blocks)))
+        for bad in (-1., .5):  # negative; too short for the step bound (0.12 m * 0.5 m / 0.5 m > 0.05 m)
+            config["clear_patch"]["blend_radius"] = bad
+            with self.assertRaises(ValueError):
+                terrain.generate_heights(config)
+
     def test_mjcf_and_urdf_agree_on_pose_geometry_and_material(self):
         config = defaults()
         config["base"] = {"pos": [2., -3., .1], "yaw": .7}

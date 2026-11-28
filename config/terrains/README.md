@@ -50,6 +50,7 @@ Regeneration is explicit, not performed by the launch or the MPC; the checked-in
 | `profile.amplitude/wavelength/strength` | Broad sinusoidal tendency and the probability of stepping toward it; strength zero removes that directional bias |
 | `seed` | Reproduce a particular field, or choose another deterministic random variation |
 | `clear_patch.center/size` | Exact rectangular opening in field-local coordinates; defaults to a centered 0.5 by 0.5 m patch, or `[0, 0]` size disables it |
+| `clear_patch.blend_radius` | Optional fade-in [m], default 0 (off): each cell height is capped at `height.max` times its distance to the patch edge over the radius, so the field rises from the floor at the patch to full height at the radius. The cap never enlarges a neighbor step; `height.max * cell pitch / radius` must stay within `adjacent_difference.max`. Used by `uneven_suite_{mild,rough}_params.yaml` (the tuning-suite strips) |
 | `depth`, `gap` | Block bottom at local `-depth`, and optional horizontal gap between cells |
 | `friction`, `color_gray` | Existing MuJoCo sliding/spinning/rolling friction and RViz gray; MuJoCo reuses the stair texture |
 

@@ -1,0 +1,32 @@
+# DRAFT combined scene: mild field 1-5 m, 4 cm curb 5.5-8.5, 5 deg ramp up 9-13 to a 0.35 m plateau 13-15, ramp down 15-19,
+# rough field 20-24 m; mirrored at -x. Final composition follows the individual rungs (docs/results, Run 22).
+course:
+  model: g1_course
+  half_width: 3.0
+  mirror_x: true
+  friction: [0.9, 0.005, 0.0001]
+  uneven_fields:
+  - name: field_mild
+    x: [1.0, 5.0]
+    seed: 7
+    edge_blend: 1.5
+    tiles: ../uneven_suite_mild_params.yaml
+  - name: field_rough
+    x: [20.0, 24.0]
+    seed: 11
+    edge_blend: 1.5
+    tiles: ../uneven_suite_rough_params.yaml
+  plateaus:
+  - name: curb
+    x: [5.5, 8.5]
+    top: 0.04
+  - name: plateau
+    x: [13.0, 15.0]
+    top: 0.35
+  ramps:
+  - name: ramp_up
+    x: [9.0, 13.0]
+    z: [0.0, 0.35]
+  - name: ramp_down
+    x: [15.0, 19.0]
+    z: [0.35, 0.0]

@@ -70,6 +70,13 @@ class GaitSchedule {
 
   void updateModeSchedule(const ModeSchedule& modeSchedule);
 
+  /**
+   * Replaces the event times only (same count); the modes and per-phase swing clearances stay.
+   * Used by the contact-synchronised touchdown, which moves single events of the schedule
+   * getModeSchedule() just returned. Throws when the count differs or the times are not increasing.
+   */
+  void updateEventTimes(const scalar_array_t& eventTimes);
+
  private:
   /**
    * Extends the switch information from lowerBoundTime to upperBoundTime based on the template mode sequence.

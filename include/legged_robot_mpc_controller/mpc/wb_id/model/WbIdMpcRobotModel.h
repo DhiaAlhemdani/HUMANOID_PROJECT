@@ -34,10 +34,15 @@ namespace ocs2::humanoid {
 template <typename SCALAR_T>
 class WbIdMpcRobotModel : public MpcRobotModelBase<SCALAR_T> {
  public:
+  // x = [q (nv), v (nv)] and u = [W_l (6), W_r (6), a (nv), tau_j (nj)]. With modelSettings.wrenchState the
+  // wrenches are also states and their rates inputs, both appended: x = [q, v, Ws (12)], u = [W, a, tau, dW (12)],
+  // d(Ws)/dt = dW, with the equality W == Ws (WbIdWrenchStateConstraint) so every consumer of the input wrench is
+  // unchanged. A cost on dW then charges the solver for force steps between nodes (roadmap v2 step A).
   explicit WbIdMpcRobotModel(const ModelSettings& modelSettings)
       : MpcRobotModelBase<SCALAR_T>(modelSettings,
-                                    2 * (6 + modelSettings.mpc_joint_dim),
-                                    6 * N_CONTACTS + (6 + modelSettings.mpc_joint_dim) + modelSettings.mpc_joint_dim) {}
+                                    2 * (6 + modelSettings.mpc_joint_dim) + (modelSettings.wrenchState ? 6 * N_CONTACTS : 0),
+                                    6 * N_CONTACTS + (6 + modelSettings.mpc_joint_dim) + modelSettings.mpc_joint_dim +
+                                        (modelSettings.wrenchState ? 6 * N_CONTACTS : 0)) {}
   ~WbIdMpcRobotModel() override = default;
   WbIdMpcRobotModel* clone() const override { return new WbIdMpcRobotModel(*this); }
 
@@ -53,6 +58,13 @@ class WbIdMpcRobotModel : public MpcRobotModelBase<SCALAR_T> {
   size_t getGeneralizedAccelerationStartIndex() const { return 6 * N_CONTACTS; }
   size_t getJointAccelerationStartIndex() const { return getGeneralizedAccelerationStartIndex() + 6; }
   size_t getJointTorqueStartIndex() const { return getGeneralizedAccelerationStartIndex() + this->gen_coordinates_dim; }
+
+  //! Wrench-as-state layout (modelSettings.wrenchState); the indices are meaningful only when hasWrenchState().
+  bool hasWrenchState() const { return this->modelSettings.wrenchState; }
+  size_t getWrenchStateStartIndex(size_t contactIndex) const { return 2 * this->gen_coordinates_dim + 6 * contactIndex; }
+  size_t getWrenchRateStartIndex(size_t contactIndex) const {
+    return getJointTorqueStartIndex() + this->modelSettings.mpc_joint_dim + 6 * contactIndex;
+  }
 
   size_t getContactWrenchStartIndices(size_t contactIndex) const override { return 6 * contactIndex; }
   size_t getContactForceStartIndices(size_t contactIndex) const override { return 6 * contactIndex; }
@@ -101,17 +113,17 @@ class WbIdMpcRobotModel : public MpcRobotModelBase<SCALAR_T> {
 
   VECTOR_T<SCALAR_T> getJointVelocities(const VECTOR_T<SCALAR_T>& state, const VECTOR_T<SCALAR_T>& /*input*/) const override {
     assert(state.size() == this->state_dim);
-    return state.tail(this->modelSettings.mpc_joint_dim);
+    return state.segment(getJointVelocitiesStartindex(), this->modelSettings.mpc_joint_dim);
   }
 
   VECTOR_T<SCALAR_T> getGeneralizedVelocities(const VECTOR_T<SCALAR_T>& state, const VECTOR_T<SCALAR_T>& /*input*/) override {
     assert(state.size() == this->state_dim);
-    return state.tail(this->gen_coordinates_dim);
+    return state.segment(this->gen_coordinates_dim, this->gen_coordinates_dim);
   }
 
   VECTOR_T<SCALAR_T> getGeneralizedVelocities(const VECTOR_T<SCALAR_T>& state) const {
     assert(state.size() == this->state_dim);
-    return state.tail(this->gen_coordinates_dim);
+    return state.segment(this->gen_coordinates_dim, this->gen_coordinates_dim);
   }
 
   VECTOR_T<SCALAR_T> getGeneralizedAccelerations(const VECTOR_T<SCALAR_T>& input) const {
@@ -121,7 +133,19 @@ class WbIdMpcRobotModel : public MpcRobotModelBase<SCALAR_T> {
 
   VECTOR_T<SCALAR_T> getJointTorques(const VECTOR_T<SCALAR_T>& input) const {
     assert(input.size() == this->input_dim);
-    return input.tail(this->modelSettings.mpc_joint_dim);
+    return input.segment(getJointTorqueStartIndex(), this->modelSettings.mpc_joint_dim);
+  }
+
+  //! Wrench state of a contact (hasWrenchState() only).
+  VECTOR6_T<SCALAR_T> getWrenchState(const VECTOR_T<SCALAR_T>& state, size_t contactIndex) const {
+    assert(hasWrenchState() && state.size() == this->state_dim);
+    return state.template segment<6>(getWrenchStateStartIndex(contactIndex));
+  }
+
+  //! Wrench-rate input of a contact (hasWrenchState() only).
+  VECTOR6_T<SCALAR_T> getWrenchRate(const VECTOR_T<SCALAR_T>& input, size_t contactIndex) const {
+    assert(hasWrenchState() && input.size() == this->input_dim);
+    return input.template segment<6>(getWrenchRateStartIndex(contactIndex));
   }
 
   void setGeneralizedCoordinates(VECTOR_T<SCALAR_T>& state, const VECTOR_T<SCALAR_T>& generalizedCoordinates) const override {
@@ -133,7 +157,17 @@ class WbIdMpcRobotModel : public MpcRobotModelBase<SCALAR_T> {
   void setGeneralizedVelocities(VECTOR_T<SCALAR_T>& state, const VECTOR_T<SCALAR_T>& generalizedVelocities) const {
     assert(state.size() == this->state_dim);
     assert(generalizedVelocities.size() == this->gen_coordinates_dim);
-    state.tail(this->gen_coordinates_dim) = generalizedVelocities;
+    state.segment(this->gen_coordinates_dim, this->gen_coordinates_dim) = generalizedVelocities;
+  }
+
+  void setWrenchState(VECTOR_T<SCALAR_T>& state, const VECTOR6_T<SCALAR_T>& wrench, size_t contactIndex) const {
+    assert(hasWrenchState() && state.size() == this->state_dim);
+    state.template segment<6>(getWrenchStateStartIndex(contactIndex)) = wrench;
+  }
+
+  void setWrenchRate(VECTOR_T<SCALAR_T>& input, const VECTOR6_T<SCALAR_T>& rate, size_t contactIndex) const {
+    assert(hasWrenchState() && input.size() == this->input_dim);
+    input.template segment<6>(getWrenchRateStartIndex(contactIndex)) = rate;
   }
 
   void setBasePose(VECTOR_T<SCALAR_T>& state, const VECTOR6_T<SCALAR_T>& basePose) const override {
@@ -163,7 +197,7 @@ class WbIdMpcRobotModel : public MpcRobotModelBase<SCALAR_T> {
 
   void setJointVelocities(VECTOR_T<SCALAR_T>& state, VECTOR_T<SCALAR_T>& /*input*/, const VECTOR_T<SCALAR_T>& jointVelocities) const override {
     assert(state.size() == this->state_dim);
-    state.tail(this->modelSettings.mpc_joint_dim) = jointVelocities;
+    state.segment(getJointVelocitiesStartindex(), this->modelSettings.mpc_joint_dim) = jointVelocities;
   }
 
   void setGeneralizedAccelerations(VECTOR_T<SCALAR_T>& input, const VECTOR_T<SCALAR_T>& accelerations) const {
@@ -173,7 +207,7 @@ class WbIdMpcRobotModel : public MpcRobotModelBase<SCALAR_T> {
 
   void setJointTorques(VECTOR_T<SCALAR_T>& input, const VECTOR_T<SCALAR_T>& torques) const {
     assert(input.size() == this->input_dim);
-    input.tail(this->modelSettings.mpc_joint_dim) = torques;
+    input.segment(getJointTorqueStartIndex(), this->modelSettings.mpc_joint_dim) = torques;
   }
 
   void adaptBasePoseHeight(VECTOR_T<SCALAR_T>& state, scalar_t heightChange) const override {

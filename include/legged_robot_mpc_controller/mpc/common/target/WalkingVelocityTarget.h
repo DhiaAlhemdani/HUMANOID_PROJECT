@@ -41,6 +41,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "legged_robot_mpc_controller/mpc/common/command/TargetTrajectoriesCalculatorBase.h"
 #include "legged_robot_mpc_controller/mpc/common/command/WalkingVelocityCommand.h"
 #include "legged_robot_mpc_controller/mpc/common/reference_manager/BreakFrequencyAlphaFilter.h"
+#include "legged_robot_mpc_controller/mpc/common/target/CommandSlewLimiter.h"
 
 namespace ocs2::humanoid {
 
@@ -82,6 +83,15 @@ class WalkingVelocityTarget {
 
   /// Controller-only kneeling target, outside the operator's height range; NaN removes the override.
   void setPostureHeightOverride(scalar_t height) { postureHeightOverride_.store(height); }
+  /// Planar speed cap [m/s] applied to the scaled command before filtering and slew limiting (the
+  /// limiter turns it into a ramp); +inf / NaN / <= 0 = none. Thread-safe.
+  void setSpeedCap(scalar_t cap) { speedCap_.store(cap); }
+  scalar_t getSpeedCap() const { return speedCap_.load(); }
+
+  /// Round the scaled planar command [m/s]: magnitudes below standBelow become zero, those between standBelow
+  /// and minWalkSpeed are raised to minWalkSpeed with the direction kept (ocs2.gait.continuous: a person does
+  /// not walk slower than that; the slew limiter still ramps the result). 0, 0 disables. Thread-safe.
+  void setMinimumWalkSpeed(scalar_t standBelow, scalar_t minWalkSpeed);
 
  private:
   WalkingVelocityCommand scaleCommand(WalkingVelocityCommand command) const;
@@ -93,6 +103,8 @@ class WalkingVelocityTarget {
   scalar_t minBaseHeight_;
   scalar_t maxBaseHeight_;
   vector4_t commandRateLimits_;
+  vector4_t commandJerkLimits_;
+  vector4_t previousRate_{vector4_t::Zero()};
   scalar_t takeoverHeightRate_;
   bool risingFromResetHeight_{false};
   vector4_t previousCommand_;
@@ -105,6 +117,9 @@ class WalkingVelocityTarget {
   std::atomic_bool filterResetRequested_{true};
   std::atomic<scalar_t> resetHeight_{std::numeric_limits<scalar_t>::quiet_NaN()};
   std::atomic<scalar_t> postureHeightOverride_{std::numeric_limits<scalar_t>::quiet_NaN()};
+  std::atomic<scalar_t> speedCap_{std::numeric_limits<scalar_t>::infinity()};
+  std::atomic<scalar_t> standBelow_{0.0};
+  std::atomic<scalar_t> minWalkSpeed_{0.0};
 };
 
 }  // namespace ocs2::humanoid

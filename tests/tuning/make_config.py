@@ -18,6 +18,7 @@ The text is edited in place, so comments and $(var ...) substitutions survive.
 import argparse
 import pathlib
 import re
+import sys
 
 WB = "humanoid_whole_body_inverse_dynamics_mpc_controller"
 LEG = ["hp", "hr", "hy", "kn", "ap", "ar"]
@@ -100,7 +101,22 @@ def main():
         except KeyError:
             i, _, indent, key = locate(lines, root + ["diagnostics", "statusLogPeriod"])
             lines.insert(i + 1, f"{indent}trackingRate: {a.tracking}")
-    open(a.out, "w").write("\n".join(lines))
+    text = "\n".join(lines)
+    # rcl's YAML parser rejects lists mixing integers and doubles ("Sequence should be of same type"); the
+    # simulator then dies at startup and the suite reports an empty run. Catch it here.
+    for i, line in enumerate(text.split("\n"), 1):
+        m = re.search(r"\[([^\]]*)\]", line)
+        if m and m.group(1).strip():
+            items = [x.strip() for x in m.group(1).split(",")]
+            nums = [x for x in items if re.fullmatch(r"-?\d+(\.\d+)?([eE]-?\d+)?", x)]
+            if nums and len(nums) == len(items):
+                if any("e" in x.lower() for x in nums):
+                    sys.exit(f"make_config: line {i} uses exponent notation, which rcl reads as a string: {line.strip()}")
+                kinds = {("double" if "." in x else "int") for x in nums}
+                if len(kinds) > 1:
+                    sys.exit(f"make_config: line {i} mixes integers and doubles in one list (rcl rejects it): {line.strip()}")
+    pathlib.Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+    open(a.out, "w").write(text)
     print(a.out)
 
 

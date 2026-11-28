@@ -60,7 +60,8 @@ gt = np.column_stack([gt[:, 0], wall, gt[:, 1:]])
 np.savez_compressed(OUT, track=np.array(track), track_names=np.array(track_names), solver=np.array(solver),
                     solver_names=np.array(solver_names), gt=gt, js_t=np.array(js_t), js_q=np.array(js_q),
                     js_v=np.array(js_v), js_e=np.array(js_e), js_names=np.array(js_names), phases=meta["phases"],
-                    fell=meta["fell"], profile=meta["profile"] if "profile" in meta.files else np.array("vx"))
+                    fell=meta["fell"], profile=meta["profile"] if "profile" in meta.files else np.array("vx"),
+                    script=meta["script"] if "script" in meta.files else np.zeros((0, 4)))
 dur = lambda t: max(1e-9, t[-1] - t[0]) if len(t) > 1 else float("nan")
 print(f"bag: joint_states {len(js_t) / dur(np.array(js_t)):.0f} Hz, ground truth {len(gt) / dur(gt[:, 0]):.0f} Hz, "
       f"tracking {len(track) / dur(np.array([r[0] for r in track])) if track else 0:.0f} Hz, solver rows {len(solver)}")

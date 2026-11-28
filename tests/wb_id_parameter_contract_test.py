@@ -81,19 +81,30 @@ def main():
         assert set(costs[stage]) == {"basePose", "baseVelocity", "jointPositions", "jointVelocities"}
         for key in ("jointPositions", "jointVelocities"):
             assert len(costs[stage][key]) == count
-    assert set(costs["r"]) == {"contactWrenches", "baseAccelerations", "jointAccelerations", "jointTorques"}
+    assert set(costs["r"]) == {"contactWrenches", "contactWrenchRates", "baseAccelerations", "jointAccelerations", "jointTorques"}
+    # Wrench-as-state layout: 12 strictly positive rate weights (the SQP needs R > 0). Shipped on
+    # for the G1 (docs/results/human_gait_template.md run 10) together with the human gait template
+    # (upper body) and the continuous gait law; the standing height is the template's 0.3 rad knee.
+    assert len(costs["r"]["contactWrenchRates"]) == 12 and all(v > 0 for v in costs["r"]["contactWrenchRates"])
+    assert params["ocs2"]["model"]["wrenchState"] is True
+    human = params["ocs2"]["reference"]["humanGait"]
+    assert human["enabled"] is True and human["legs"] is False and human["arms"] is True and human["waist"] is True
+    assert params["ocs2"]["gait"]["continuous"]["enabled"] is True
+    assert abs(params["ocs2"]["reference"]["defaultBaseHeight"] - 0.785) < 1e-9
     for key in ("jointAccelerations", "jointTorques"):
         assert len(costs["r"][key]) == count
     for stage in ("q", "qFinal", "r"):
         assert all(v >= 0 for values in costs[stage].values() for v in values)
-    assert "captureFootPlacement" not in costs and "icpErrorWeight" not in costs
+    # costs.captureFootPlacement is the shipped capture-point foot adjustment (schema + G1); the old
+    # icpErrorWeight knob must not come back.
+    assert "icpErrorWeight" not in costs and "enabled" in costs["captureFootPlacement"]
     # WB-ID foot stabilization belongs to constraints, not rigid-body model settings.
     assert "footConstraint" not in params["ocs2"]["model"]
     assert "footConstraint" not in schema["ocs2"]["model"]
     foot = params["ocs2"]["constraints"]["footMotionEquality"]
     foot_schema = schema["ocs2"]["constraints"]["footMotionEquality"]
     foot_gains = {
-        "positionErrorGain_z", "orientationErrorGain", "linearVelocityErrorGain_z",
+        "positionErrorGain_z", "swingPositionErrorGain_z", "orientationErrorGain", "linearVelocityErrorGain_z",
         "linearVelocityErrorGain_xy", "angularVelocityErrorGain",
         "linearAccelerationErrorGain_z", "linearAccelerationErrorGain_xy", "angularAccelerationErrorGain",
     }
@@ -138,6 +149,7 @@ def main():
         assert not re.search(rf"\bp\.{re.escape(previous)}\b", builder), f"Obsolete WB-ID builder mapping: {previous}"
     assert set(params["ocs2"]["model"]) == {
         "robotName", "fixedJointNames", "contactNames6DoF", "contactParentJointNames", "contactGeometry",
+        "wrenchState",
     }
     assert len(params["ocs2"]["reference"]["armSwing"]["jointNames"]) == 4
     assert set(params["ocs2"]["solver"]) == {"sqp", "rollout"}

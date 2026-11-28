@@ -10,12 +10,19 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 MODULES = {"none": None, "stairs": "terrains/stairs.xml", "ramp": "terrains/ramp.xml",
            "rough": "terrains/uneven_terrain.xml", "slope": "terrains/slope.xml", "boxes": "objects/boxes.xml",
+           "suite_mild": "terrains/uneven_suite_mild.xml", "suite_rough": "terrains/uneven_suite_rough.xml",
+           "slope_5": "terrains/g1_slope_5.xml", "slope_10": "terrains/g1_slope_10.xml",
+           "curb_4": "terrains/g1_curb_4.xml", "curb_8": "terrains/g1_curb_8.xml",
+           "stairs_3x10": "terrains/g1_stairs_3x10.xml", "course": "terrains/g1_course.xml",
            "upkie_ramp": "terrains/upkie_ramp.xml", "upkie_rough": "terrains/upkie_uneven_terrain.xml",
            "upkie_course": "terrains/upkie_course.xml",
            "split_height": None}
 
 
-def write_scene(output, robot="g1", terrain="none", package=ROOT, split_height=0.01):
+def write_scene(output, robot="g1", terrain="none", package=ROOT, split_height=0.01, robot_model=None):
+    """Compose a scene; `robot_model` (optional path) swaps the robot MJCF include for a
+    variant file (e.g. a tests/tuning/make_model.py output) while the compiler
+    directories still come from the shipped robot model."""
     scenes = (Path(package) / "description/mujoco").resolve()
     robot_dir = scenes / "robots" / robot
     root = ET.parse(robot_dir / "scene.xml").getroot()
@@ -29,6 +36,10 @@ def write_scene(output, robot="g1", terrain="none", package=ROOT, split_height=0
             continue
         if path.parent == robot_dir:
             robot_compiler = ET.parse(path).find("compiler")
+            if robot_model is not None:
+                path = Path(robot_model).resolve()
+                if not path.is_file():
+                    raise FileNotFoundError(f"robot model variant not found: {path}")
         if path.name.startswith("background_"):
             background = "background_night_upkie.xml" if robot == "upkie" else "background_night.xml"
             path = scenes / "common/backgrounds" / ("background_day.xml" if terrain == "none" else background)
@@ -70,5 +81,8 @@ if __name__ == "__main__":
     parser.add_argument("--terrain", choices=MODULES, default="none")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--split-height", type=float, default=0.01, help="Raised left-wheel strip [m]")
+    parser.add_argument("--robot-model", type=Path, default=None,
+                        help="Variant robot MJCF to include instead of the shipped one (tuning sweeps)")
     args = parser.parse_args()
-    print(write_scene(args.output, args.robot_name, args.terrain, split_height=args.split_height))
+    print(write_scene(args.output, args.robot_name, args.terrain, split_height=args.split_height,
+                      robot_model=args.robot_model))

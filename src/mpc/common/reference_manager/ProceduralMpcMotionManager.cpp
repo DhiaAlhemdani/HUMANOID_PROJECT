@@ -31,7 +31,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "legged_robot_mpc_controller/mpc/common/reference_manager/ProceduralMpcMotionManager.h"
 
 
+#include <algorithm>
 #include <cmath>
+#include <iostream>
 #include <stdexcept>
 #include "legged_robot_mpc_controller/mpc/common/gait/GaitScheduleUpdater.h"
 #include "legged_robot_mpc_controller/mpc/common/gait/ModeSequenceTemplate.h"
@@ -71,6 +73,23 @@ ProceduralMpcMotionManager::ProceduralMpcMotionManager(GaitMap gaitMap,
                                   "', which the gait library does not define");
     }
   }
+}
+
+/******************************************************************************************************/
+/******************************************************************************************************/
+/******************************************************************************************************/
+
+void ProceduralMpcMotionManager::setContinuousGaitConfig(ContinuousGaitConfig config) {
+  if (config.enabled) {
+    validateContinuousGaitConfig(config);
+    if (gaitModeStates_.size() > 2) {
+      std::cerr << "[ProceduralMpcMotionManager] ocs2.gait.continuous is enabled: the ladder's rungs above the first "
+                   "walking rung are never selected (their bands are ignored)." << std::endl;
+    }
+  }
+  continuousGait_ = std::move(config);
+  walkingVelocityTarget_.setMinimumWalkSpeed(continuousGait_.enabled ? continuousGait_.standBelow : 0.0,
+                                             continuousGait_.enabled ? continuousGait_.minWalkSpeed : 0.0);
 }
 
 /******************************************************************************************************/
@@ -214,6 +233,8 @@ void ProceduralMpcMotionManager::preSolverRun(scalar_t initTime,
     switchedModelReferenceManagerPtr_->setTargetTrajectories(std::move(target.targetTrajectories));
     filteredVelCommand = target.motionCommand;
   } else {
+    // Blind terrain speed cap decided by the reference manager on the previous solve (+inf = none).
+    walkingVelocityTarget_.setSpeedCap(switchedModelReferenceManagerPtr_->terrainSpeedCapValue());
     WalkingVelocityTarget::Output target = walkingVelocityTarget_.evaluate(initTime, finalTime, initState);
     switchedModelReferenceManagerPtr_->setTargetTrajectories(std::move(target.targetTrajectories));
     filteredVelCommand = target.conditionedCommand;
@@ -275,7 +296,9 @@ void ProceduralMpcMotionManager::preSolverRun(scalar_t initTime,
     // reaches). Those do hold today, but they are the only thing standing
     // between this and a size_t underflow at mode 0 or an out-of-bounds read at
     // the last mode, and they are easy to invalidate by editing a threshold.
-    if (currentGaitMode_ + 1 < gaitModeStates_.size() &&
+    // With the continuous law the ladder only decides standing vs walking: rung 1 is the top.
+    const size_t topRung = continuousGait_.enabled ? std::min<size_t>(1, gaitModeStates_.size() - 1) : gaitModeStates_.size() - 1;
+    if (currentGaitMode_ < topRung &&
         transitionToFasterGait(filteredVelCommand, baseVelocity, currentCfg)) {
       std::cout << "filteredVelCommand: " << filteredVelCommand.transpose() << std::endl;
       std::cout << "Linear limits: " << currentCfg.minLinVelCmd << ", " << currentCfg.maxLinVelCmd << std::endl;
@@ -300,7 +323,47 @@ void ProceduralMpcMotionManager::preSolverRun(scalar_t initTime,
     GaitScheduleUpdater::updateGaitSchedule(gaitSchedulePtr_, modeSequenceTemplate, initTime, finalTime,
                                             gaitSwitchDelayHorizonFraction_);
     lastGaitCommand_ = currentGaitCommand_;
+    lastSplicedPhases_ = ContinuousGaitPhases{0.0, 0.0, -1.0};  // the rung's template is in the schedule now
   }
+
+  const bool walkingRung = currentGaitMode_ > 0 && !requestedGaitActive_ && targetMode != TargetMode::TerrainWalk;
+  if (continuousGait_.enabled && walkingRung) {
+    applyContinuousGait(initTime, finalTime, filteredVelCommand);
+  } else {
+    continuousGaitPhases_ = ContinuousGaitPhases{0.0, 0.0, -1.0};
+  }
+}
+
+/******************************************************************************************************/
+/******************************************************************************************************/
+/******************************************************************************************************/
+
+void ProceduralMpcMotionManager::applyContinuousGait(scalar_t initTime, scalar_t finalTime, const vector4_t& filteredVelCommand) {
+  const scalar_t speed = continuousGaitSpeed(continuousGait_, filteredVelCommand(0), filteredVelCommand(1), filteredVelCommand(3));
+  const ContinuousGaitPhases phases = evaluateContinuousGait(continuousGait_, speed);
+  continuousGaitPhases_ = phases;
+
+  // Re-tile only when the law moved (the schedule keeps extending itself with the last template otherwise).
+  constexpr scalar_t resolution = 2e-3;  // [s]; MPC nodes are 20 ms apart
+  const bool moved = std::abs(phases.swing - lastSplicedPhases_.swing) > resolution ||
+                     std::abs(phases.doubleSupport - lastSplicedPhases_.doubleSupport) > resolution ||
+                     std::abs(phases.swingHeight - lastSplicedPhases_.swingHeight) > 1e-3;
+  if (!moved) {
+    return;
+  }
+
+  // Splice at the start of the first single support after the delay: whatever is in progress is kept,
+  // everything from that step on is the law's. getModeSchedule() also keeps the schedule tiled past the horizon.
+  const scalar_t timeHorizon = finalTime - initTime;
+  const ModeSchedule schedule = gaitSchedulePtr_->getModeSchedule(initTime, finalTime + timeHorizon);
+  scalar_t spliceTime = 0.0;
+  size_t nextSwing = LF;
+  if (!continuousGaitSplicePoint(schedule, initTime + continuousGait_.spliceDelay, spliceTime, nextSwing)) {
+    return;  // no single support planned after the delay; next solve
+  }
+  gaitSchedulePtr_->insertModeSequenceTemplate(continuousGaitTemplate(phases, nextSwing), spliceTime, initTime + 1.5 * timeHorizon);
+  lastSplicedPhases_ = phases;
+  lastSpliceTime_ = spliceTime;
 }
 
 /******************************************************************************************************/

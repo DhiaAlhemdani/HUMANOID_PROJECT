@@ -80,6 +80,20 @@ class WbIdMpcInterface final : public RobotInterface {
     bool activateTaskSpaceFootCost = true;
     EndEffectorKinematicsWeights taskSpaceFootCostWeights;
     bool activateLegTorqueCost = true;
+    //! Linear weight of the double-support load-share cost (WbIdContactLoadShareCost);
+    //! 0 disables the cost — the shipped default until a sweep adopts a value.
+    scalar_t contactLoadShareWeight = 0.0;
+    //! End windows [s] of the load-share cost: > 0 shapes only the last liftOff / first touchDown
+    //! seconds of each double support (weight ramps (1 - tau/window)^2); both 0 = the whole DS.
+    scalar_t contactLoadShareLiftOffWindow = 0.0;
+    scalar_t contactLoadShareTouchDownWindow = 0.0;
+    //! Wrench-as-state layout (model.wrenchState): diagonal pulling a swing foot's wrench state
+    //! to zero (WbIdWrenchStateSwingCost), [fx, fy, fz, mx, my, mz]; the builder derives it from
+    //! the wrench-rate weights (one node of rate cost: contactWrenchRates * rScaling / dt^2).
+    vector6_t wrenchStateSwingWeights = vector6_t::Zero();
+    //! Wrench-rate weights (scaled, 12) charged on every node but the first (WbIdWrenchRateCost);
+    //! empty or zero = R carries the whole rate weight.
+    vector_t wrenchRateWeightsAfterFirstNode;
     WbIdTorsoTiltCost::Config torsoTiltCost;
 
     //! Acceleration-level stance/swing foot constraint gains.
@@ -117,8 +131,15 @@ class WbIdMpcInterface final : public RobotInterface {
 
     SwitchedModelReferenceManager::CaptureFootPlacementSettings captureFootPlacement;
     SwitchedModelReferenceManager::ArmSwingSettings armSwing;
+    SwitchedModelReferenceManager::HumanGaitSettings humanGait;
+    //! Contact-synchronised touchdown (ContactSync.h); off by default.
+    ContactSyncSettings contactSync;
+    //! Blind terrain speed cap (TerrainSpeedCap.h); off by default.
+    TerrainSpeedCapSettings terrainSpeedCap;
     bool useTerrainHeightEstimate = false;
     scalar_t maxTerrainHeightStep = 0.01;
+    //! Foot references follow the incline the cap reads (SlopeFootReference.h); needs both of the above on.
+    bool followSlope = false;
 
     std::vector<TaskSpaceCostConfig> taskSpaceCosts;
   };
