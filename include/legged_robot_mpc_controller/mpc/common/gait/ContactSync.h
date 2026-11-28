@@ -72,12 +72,26 @@ namespace ocs2::humanoid {
  * Probe (run 28): the first stride down off a crest reaches its planned touchdown at the plane the
  * plateau laid, still descending, with the ground 1.5-2.6 cm lower (slope_5: the plan loaded the foot
  * in the air and the body pivoted onto it, pitch 22 deg). With `probeWindow` > 0 the planned touchdown
- * of a foot that is still DESCENDING faster than `descentVelocity` is held like the late half, up to
- * `probeWindow` after the planned time - and only while it descends: a stopped sole is landed (on the
- * plane or blocked) or loaded where it is, which is what made the general late half destructive on
- * tiles (run 23 B: a sole pressed on a tile, held and lifted again). Needs the velocity terms. The
- * reference manager lowers the held foot's touchdown target by `probeDescent` x the hold so far, so the
- * swing keeps going down instead of hovering at the plane (a re-stretched spline alone lifts the foot).
+ * of a foot that is at the plane and still DESCENDING through it faster than `descentVelocity` (the
+ * `Descending` landing) is held like the late half, up to `probeWindow` after the planned time - and
+ * only while it descends: a stopped sole is landed (on the plane or blocked) or loaded where it is,
+ * which is what made the general late half destructive on tiles (run 23 B: a sole pressed on a tile,
+ * held and lifted again); a sole still above the plane is late, not probing, and is loaded as before.
+ * Needs the velocity terms. The reference manager lowers the held foot's touchdown target by
+ * `probeDescent` x the hold so far, so the swing keeps going down instead of hovering at the plane (a
+ * re-stretched spline alone lifts the foot). A probe hold slides the rest of the schedule with the
+ * touchdown (the step takes longer); when the foot lands, the part of the push it did not use slides
+ * back, so the stride after a probed touchdown keeps its planned phases. The late half squeezes the
+ * following double support instead. A probe needs a stride to follow the touchdown (the next phase after
+ * its double support is a single support): the last touchdown before a stand is loaded where it is (run
+ * 28 A: probing the stop on a ramp held the robot on one leg while it decelerated, pitch 31 deg).
+ *
+ * Run 28 A (tiles, two falls, plan_mode flickering swing/stance - the step clock read 0.4 s against a
+ * 0.72 s gait): a held event must outlive the policy that carries it. The schedule a solve builds is
+ * published when the solve ends and is used until the next one is, so an event `holdStep` = 20 ms past
+ * the solve time is already in the past for a controller running at 50 Hz effective: the whole-body
+ * side loads the foot the plan still swings. The reference manager raises holdStep to three measured
+ * solve periods (capped), and a held foot that lands is synchronised whatever its lead.
  */
 struct ContactSyncSettings {
   bool enabled = false;
@@ -115,6 +129,12 @@ bool contactSyncLanded(const ContactSyncSettings& settings, const ContactSyncFoo
 
 void validateContactSyncSettings(const ContactSyncSettings& settings);
 
+/** Per-foot state of a held touchdown, kept by the caller between solves. */
+struct ContactSyncHold {
+  scalar_t origin = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [s] originally planned touchdown time of the held event; NaN = not holding
+  bool probing = false;                                           //!< the hold slid the schedule (a probe): the unused push slides back on landing
+};
+
 struct ContactSyncResult {
   int advancedFoot = -1;        //!< foot whose touchdown was moved to the solve time, -1 = none
   scalar_t advancedBy = 0.0;    //!< [s] how much earlier the touchdown now is
@@ -135,11 +155,10 @@ struct ContactSyncResult {
  * @param feet       per-foot measured sole height / velocity and planned swing height / velocity (see
  *                   ContactSyncFootObservation; NaN = unknown).
  * @param schedule   the mode schedule the solve is built on (eventTimes strictly increasing).
- * @param holdOrigin per-foot originally planned touchdown time of a held event (NaN when not holding);
- *                   owned by the caller, updated here.
+ * @param hold       per-foot state of a held event (ContactSyncHold); owned by the caller, updated here.
  */
 ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, scalar_t time,
                                         const feet_array_t<ContactSyncFootObservation>& feet, ModeSchedule& schedule,
-                                        feet_array_t<scalar_t>& holdOrigin);
+                                        feet_array_t<ContactSyncHold>& hold);
 
 }  // namespace ocs2::humanoid

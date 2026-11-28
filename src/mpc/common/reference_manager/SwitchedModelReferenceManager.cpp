@@ -931,7 +931,17 @@ void SwitchedModelReferenceManager::applyContactSync(scalar_t initTime, const ve
       }
     }
   }
-  const ContactSyncResult result = synchroniseTouchdowns(contactSync_, initTime, feet, modeSchedule, contactSyncHoldOrigin_);
+  // A held touchdown has to outlive the policy that carries it: the schedule this solve builds is used
+  // from the end of this solve to the end of the next one, so the push is at least three measured solve
+  // periods (ContactSync.h, run 28 A); a stalled solver does not turn it into a long hold.
+  ContactSyncSettings settings = contactSync_;
+  if (std::isfinite(contactSyncPreviousTime_) && initTime > contactSyncPreviousTime_) {
+    constexpr scalar_t kHoldPeriods = 3.0;
+    constexpr scalar_t kMaxHold = 0.1;  // [s]
+    settings.holdStep = std::max(settings.holdStep, std::min(kHoldPeriods * (initTime - contactSyncPreviousTime_), kMaxHold));
+  }
+  contactSyncPreviousTime_ = initTime;
+  const ContactSyncResult result = synchroniseTouchdowns(settings, initTime, feet, modeSchedule, contactSyncHold_);
   // The probe: a held foot's touchdown target goes down with the hold (ContactSync.h), read by the swing
   // planner update later in this solve; a foot not held this solve has no offset.
   probeOffset_.fill(0.0);

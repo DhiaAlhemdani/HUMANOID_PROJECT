@@ -66,9 +66,17 @@ class ContactSyncContractTest(unittest.TestCase):
             shipped.pop(key)
             probed.pop(key)
         self.assertEqual(shipped, probed)
-        self.assertIn("const scalar_t window = std::max(settings.lateWindow, descending ? settings.probeWindow : 0.0);", SYNC_CPP)
+        # Run 28 B: a probe needs the sole AT the plane and descending (the Descending landing), a stride to
+        # follow, slides the unused push back on landing; a held event outlives the policy (hold >= 3 solve periods).
+        self.assertIn("const bool descending = landing == ContactSyncLanding::Descending;", SYNC_CPP)
+        self.assertIn("descending && strideFollows ? settings.probeWindow : 0.0", SYNC_CPP)
         self.assertIn("events[i] += shift;", SYNC_CPP)
+        self.assertIn("events[i] -= unused;", SYNC_CPP)
+        self.assertIn("(lead > settings.earlyWindow && !held)", SYNC_CPP)
         self.assertIn("bool probing = false;", SYNC_H)
+        self.assertIn("struct ContactSyncHold {", SYNC_H)
+        self.assertIn("constexpr scalar_t kHoldPeriods = 3.0;", REFMGR_CPP)
+        self.assertIn("synchroniseTouchdowns(settings, initTime, feet, modeSchedule, contactSyncHold_);", REFMGR_CPP)
         for needle in ("probeOffset_[static_cast<size_t>(result.heldFoot)] = contactSync_.probeDescent * result.heldBy;",
                        "applyProbeOffsets(initTime, modeSchedule, touchDownHeights);",
                        "applyProbeOffsets(initTime, modeSchedule, plan.touchDownHeights);"):

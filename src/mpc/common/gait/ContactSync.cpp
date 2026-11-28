@@ -89,9 +89,8 @@ bool contactSyncLanded(const ContactSyncSettings& s, const ContactSyncFootObserv
 
 ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, scalar_t time,
                                         const feet_array_t<ContactSyncFootObservation>& feet, ModeSchedule& schedule,
-                                        feet_array_t<scalar_t>& holdOrigin) {
+                                        feet_array_t<ContactSyncHold>& hold) {
   ContactSyncResult result;
-  constexpr scalar_t kNaN = std::numeric_limits<scalar_t>::quiet_NaN();
   if (!settings.enabled) {
     return result;
   }
@@ -116,8 +115,11 @@ ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, sca
       if (settings.earlyWindow <= 0.0 || k >= events.size() || !modeNumber2StanceLeg(modes[k + 1])[foot]) {
         continue;
       }
+      // A held touchdown sits up to holdStep ahead of the solve time, which may exceed the early window:
+      // a held foot that lands is synchronised whatever its lead.
+      const bool held = std::isfinite(hold[foot].origin);
       const scalar_t lead = events[k] - time;
-      if (lead <= 0.0 || lead > settings.earlyWindow) {
+      if (lead <= 0.0 || (lead > settings.earlyWindow && !held)) {
         continue;
       }
       count();
@@ -132,29 +134,41 @@ ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, sca
       if (newTime >= events[k]) {
         continue;
       }
+      if (hold[foot].probing) {
+        // The probe slid the rest of the schedule with the pushed touchdown; the push it did not use
+        // slides back, so the stride after the touchdown keeps its planned phases.
+        const scalar_t unused = events[k] - newTime;
+        for (size_t i = k + 1; i < events.size(); ++i) {
+          events[i] -= unused;
+        }
+      }
       events[k] = newTime;
-      holdOrigin[foot] = kNaN;
+      hold[foot] = ContactSyncHold{};
       result.advancedFoot = static_cast<int>(foot);
       result.advancedBy = lead - (newTime - time);
     } else {
       // Late half: the schedule has the foot down since events[k - 1] but it is still in the air. The
-      // probe is the late half for a sole that is still descending (it has not found the ground the plan
-      // assumed); a stopped sole gets the late window only.
-      const bool descending = settings.descentVelocity > 0.0 && std::isfinite(feet[foot].soleVelocity) &&
-                              feet[foot].soleVelocity < -settings.descentVelocity;
-      const scalar_t window = std::max(settings.lateWindow, descending ? settings.probeWindow : 0.0);
+      // probe is the late half for a sole that has reached the plane the plan aimed at and is still going
+      // down through it (Descending: the ground the plan assumed is not there); a sole still above the plane
+      // is merely late and is loaded as before, a stopped sole gets the late window only.
+      // A probe also needs a stride to follow: the phase after this touchdown's double support is a single
+      // support. The last touchdown before a stand is loaded where it is (ContactSync.h).
+      const bool descending = landing == ContactSyncLanding::Descending;
+      const bool strideFollows = k + 1 < modes.size() && (modes[k + 1] == ModeNumber::LF || modes[k + 1] == ModeNumber::RF);
+      const scalar_t window = std::max(settings.lateWindow, descending && strideFollows ? settings.probeWindow : 0.0);
       if (window <= 0.0 || k == 0 || modeNumber2StanceLeg(modes[k - 1])[foot]) {
-        holdOrigin[foot] = kNaN;
+        hold[foot] = ContactSyncHold{};
         continue;
       }
-      if (time - (std::isnan(holdOrigin[foot]) ? events[k - 1] : holdOrigin[foot]) <= window) {
+      const bool held = std::isfinite(hold[foot].origin);
+      const scalar_t planned = held ? hold[foot].origin : events[k - 1];
+      if (time - planned <= window) {
         count();
       }
       if (landed) {
-        holdOrigin[foot] = kNaN;
+        hold[foot] = ContactSyncHold{};
         continue;
       }
-      const scalar_t planned = std::isnan(holdOrigin[foot]) ? events[k - 1] : holdOrigin[foot];
       const bool probing = descending && window > settings.lateWindow;
       scalar_t newTime = std::min(time + settings.holdStep, planned + window);
       if (!probing) {
@@ -162,7 +176,7 @@ ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, sca
         newTime = std::min(newTime, events[k] - std::max(settings.minPhaseDuration, scalar_t(1e-3)));
       }
       if (newTime <= events[k - 1] || newTime <= time) {
-        holdOrigin[foot] = kNaN;  // the window is used up: the plan loads the foot where it is
+        hold[foot] = ContactSyncHold{};  // the window is used up: the plan loads the foot where it is
         continue;
       }
       if (probing) {
@@ -174,7 +188,7 @@ ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, sca
         }
       }
       events[k - 1] = newTime;
-      holdOrigin[foot] = planned;
+      hold[foot] = ContactSyncHold{planned, probing};
       result.heldFoot = static_cast<int>(foot);
       result.heldBy = newTime - planned;
       result.probing = probing;

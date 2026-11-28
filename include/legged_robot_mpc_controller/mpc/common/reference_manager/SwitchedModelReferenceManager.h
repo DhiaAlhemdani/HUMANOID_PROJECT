@@ -522,8 +522,8 @@ scalar_t maxOffset = 0.6;
   /// Contact-synchronised touchdown: solver thread only (modifyReferences).
   void applyContactSync(scalar_t initTime, const vector_t& initState, ModeSchedule& modeSchedule);
   ContactSyncSettings contactSync_;
-  feet_array_t<scalar_t> contactSyncHoldOrigin_{std::numeric_limits<scalar_t>::quiet_NaN(),
-                                                std::numeric_limits<scalar_t>::quiet_NaN()};
+  scalar_t contactSyncPreviousTime_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [s] the previous solve's initTime: the solve period a held event must clear
+  feet_array_t<ContactSyncHold> contactSyncHold_{};  //!< per-foot held touchdown (ContactSync.h), kept between solves
   std::atomic<size_t> contactSyncAdvanced_{0};
   std::atomic<size_t> contactSyncHeld_{0};
   std::atomic<scalar_t> contactSyncAdvancedSeconds_{0.0};

@@ -2061,3 +2061,43 @@ Expected on the ladder: slope_5 `backward` crest-down pitch well under 22° with
 `probe_depth_max` ≈ 0.015-0.026 at that stride; slope_10 the same at its crest; tiles: `probed` > 0
 on every lower-tile landing (1-2 cm, 0.1-0.15 s each) - the risk is there, the gait on tiles becomes
 a gait of variable step time; flat: `probed 0` and nothing else moves. Run: `suite_mild` first.
+
+**Run 28 A results (humanT28, code `3dd4fd7`).** slope_5 did what the probe was built for: `backward`
+crest-down pitch_pp 22.08 → 5.0 (ramp → −0.2) / 2.44 (hold −0.2), `probed 8`, `probe_depth_max 0.009`,
+steady unchanged (25.5 / 0.425 / 144 vs 27.6 / 0.441 / 147). It also made two things worse. **Tiles
+(humanT28M suite_mild): two falls** - `speeds` at 13.5 s in "hold +0.5", `backward` at 22.9 s in
+"ramp → −0.5" - `probed 12 / 17`, depth 0.021 / 0.014, and the decisive symptom: the plan's step clock
+(`step_t` from `plan_mode`, single-support starts) read 0.40-0.45 s from the moment probing started
+against the law's 0.72 s, step_l 0.17-0.20, jerk ≈ 50 for ten seconds of walking before the fall. A
+probe can only lengthen a step; `plan_mode` showing *more* single-support starts means the published
+mode flickered swing → stance → swing inside each probe. That is the hold's size: a held event is
+pushed `holdStep` = 20 ms past the solve time, but the schedule a solve builds is published when the
+solve ends and used until the next one is - on a solver at 50 Hz effective (the `solve_hz` guards fail
+on this machine under load) the event is already in the past when the whole-body side reads it, so
+the controller loads the foot the plan still swings, the next solve pushes it ahead again, and so on
+every probe; on tiles every lower-tile landing is a probe. The late half of run 23 B had the same
+20 ms push, which is at least part of why it "held and lifted". **slope_5 stop on the ramp:** the
+final "ramp → +0.0" of `speeds` pitched 30.98 (jerk 66.5, tau_rate 269, `probe_depth_max 0.036`, i.e.
+a 0.24 s hold), `backward` stop 8.33 - the last touchdown before the stand was probed, holding the
+robot on one leg while it decelerated; guards failed on transition jerk 42.4 → 66.5 and tau_rate.
+
+**Run 28 B (code, same `humanT28.yaml`):**
+
+- a held event outlives the policy that carries it: the reference manager raises `holdStep` to three
+  measured solve periods (capped at 0.1 s; 30 ms at 100 Hz, 60 ms at 50 Hz), and a held foot that
+  lands is synchronised whatever its lead (the early window no longer caps it);
+- on landing, the part of the push the foot did not use slides back, so the stride after a probed
+  touchdown keeps its planned double support and swing (the step is longer by exactly the hold);
+- a probe needs the sole **at the plane** and descending (the `Descending` landing - a sole still
+  above the plane at its planned time is a late swing, loaded as before) and **a stride to follow**
+  (the phase after the touchdown's double support is a single support): the last touchdown before a
+  stand is loaded where it is;
+- state is now `ContactSyncHold {origin, probing}` per foot; unit tests add the slow-solver landing
+  (lead 0.065 > earlyWindow, the un-slide: DS 0.1 again), the unheld foot still bound by the early
+  window, and the stop schedule.
+
+Expected: tiles back to `step_t 0.72` with `probed` > 0 and no falls (if `step_t` still collapses
+with `probed` > 0 the flicker has another source and `policy_t0` in the tracking stream will show
+the policy age); slope_5 crest-down stays ≈ 5°, the stop segments back to T27S5 (transition jerk ≤
+42, `probe_depth_max` ≈ 0.01-0.03 only mid-run). Order: `suite_mild`, then `slope_5`, then flat and
+slope_10.
