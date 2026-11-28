@@ -2177,3 +2177,24 @@ Expected: tiles - `searches` ≈ the number of lower-tile landings, `longest` 0.
 to `step_t` (the plan is not touched) and jerk within T27M; slope_5 - crest-down `backward` pitch_pp
 22 → < 10 with one search of ≈ 0.2 s there, the stop segments unchanged; flat - searches of a few ms
 at most. Order: `suite_mild`, `slope_5`, then flat and slope_10.
+
+**Run 29 A results (humanT29, code `abe4830`).** slope_5: 0 falls and **the crest residual is gone** -
+`backward` crest-down pitch_pp 22.08 → 1.74 (ramp → −0.2) / 1.41 (hold −0.2), with 4-6 searches per
+run of at most 0.034-0.054 s; steady identical to T27S5 (25.4 / 0.428 / 144 vs 27.6 / 0.441 / 147),
+v_err_max 0.196. One guard a hair over: transition_tau_rate_max 192.7 → 221.9 (limit 221.6), from the
+`speeds` stop, which this time fell on the down-ramp (slope −0.072, z 1.224) instead of the plateau
+(T27: slope 0, z 1.265) - a different stop, not the search. Tiles: `backward` survived with better
+numbers than T27M in most segments (steady jerk 33.5 vs 40.2; 14 searches, longest 0.046 s); `speeds`
+walked the first three speeds *better* than T27M (hold +0.5: 39.3 / 0.743 vs 59.5 / 0.931) and fell
+at 21.0 s in hold +0.8 (cap 0.44) with `searches 9 longest 0.232 s`. The long one is the fall: a
+search that lasts 0.23 s is a foot that did not find a tile 1-2 cm down at 0.15 m/s (0.13 s); it was
+hovering. The posture task explains it - during a search the layer's joint PD (jointKp 100 toward the
+plan's configuration, and the plan has the leg in its *landed* pose) pulls the leg back up while the
+swing task (weight 5, three rows) pushes it down; the foot creeps at 0.05-0.1 m/s just above the tile,
+still "descending" by the rule, until the plan lifts the other foot, the search ends, and the foot is
+loaded in the air - the old pivot.
+
+**Run 29 B (code, same `humanT29.yaml`):** a searching leg is let go of by the posture task - its
+joints (the chain between the base and the contact frame, found once from the model) track the plan's
+acceleration only, at 1 % of their weight, so the swing task's descent is unopposed. Expected: tiles
+`longest` ≤ 0.15 s and no fall at +0.8; slope_5 unchanged.

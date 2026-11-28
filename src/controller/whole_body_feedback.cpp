@@ -15,6 +15,12 @@
 
 namespace legged_robot_mpc_controller::wbc
 {
+namespace
+{
+//! Posture weight of a searching leg's joints relative to the configured one: the swing task (weight
+//! swingWeight, 3 rows) must win over the posture PD toward the plan's landed configuration.
+constexpr double kSearchLegWeight = 1e-2;
+}  // namespace
 
 WholeBodyFeedback::WholeBodyFeedback(Settings settings, const std::array<std::string, kContacts>& contactFrames,
                                      const ocs2::PinocchioInterface& pinocchioInterface)
@@ -42,6 +48,18 @@ WholeBodyFeedback::WholeBodyFeedback(Settings settings, const std::array<std::st
     throw std::invalid_argument("[WholeBodyFeedback] jointWeights needs one entry per MPC joint (or none)");
   }
   problem_.tasks.resize(hasOrientationTask_ ? 1 : 0);
+  // The joints between the base and each contact frame (the leg): the touchdown search frees them from
+  // the posture task.
+  for (std::size_t c = 0; c < kContacts; ++c) {
+    for (pinocchio::JointIndex j = model.frames[frameIds_[c]].parentJoint; j > 1; j = model.parents[j]) {
+      const Eigen::Index idx = model.joints[j].idx_v();
+      for (Eigen::Index k = 0; k < model.joints[j].nv(); ++k) {
+        if (idx + k >= kBaseDof) {
+          legColumns_[c].push_back(idx + k);
+        }
+      }
+    }
+  }
 }
 
 Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, const Input& in)
@@ -106,7 +124,9 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
   }
 
   // 4. Touchdown search: a foot the plan has in contact but whose measured sole still descends is not
-  //    on the ground; the layer keeps it a swing foot (Settings::searchWindow).
+  //    on the ground; the layer keeps it a swing foot (Settings::searchWindow). Its leg is let go of
+  //    by the posture task (run 29 A: the posture PD toward the plan's landed configuration held the
+  //    foot hovering 1-2 cm above a lower tile for 0.23 s until the plan lifted the other foot).
   std::array<Eigen::Vector3d, kContacts> foot, footVel;
   for (std::size_t c = 0; c < kContacts; ++c) {
     foot[c] = data.oMf[frameIds_[c]].translation();
@@ -125,6 +145,13 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
   }
   for (std::size_t c = 0; c < kContacts; ++c) {
     inContact[c] = in.inContact[c] && !out.searching[c];
+    if (!out.searching[c]) {
+      continue;
+    }
+    for (const Eigen::Index col : legColumns_[c]) {
+      p.desiredAcc(col) = in.accPlan(col);
+      p.accWeight(col) *= kSearchLegWeight;
+    }
   }
 
   // 5. Contact and swing tasks.

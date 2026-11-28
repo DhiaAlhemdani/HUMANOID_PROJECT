@@ -69,6 +69,7 @@ class WholeBodyFeedbackContract(unittest.TestCase):
         layer = (ROOT / "src/controller/whole_body_feedback.cpp").read_text()
         self.assertIn("touchdownSearch(settings_.search, in.time, in.inContact[c], in.inContact[1 - c], footVel[c].z()", layer)
         self.assertIn("inContact[c] = in.inContact[c] && !out.searching[c];", layer)
+        self.assertIn("p.accWeight(col) *= kSearchLegWeight;", layer)  # run 29 B: the searching leg is free of the posture PD
         src = (ROOT / "src/controller/controller.cpp").read_text()
         for needle in ("input.time = observation.time;",
                        "if ((feedforward_is_fallback && wb.holdOnTorqueWindowOverrun) || searching) {",

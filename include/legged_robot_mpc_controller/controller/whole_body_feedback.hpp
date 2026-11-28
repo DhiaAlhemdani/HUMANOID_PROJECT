@@ -15,6 +15,7 @@
 #include <array>
 #include <limits>
 #include <string>
+#include <vector>
 
 namespace legged_robot_mpc_controller::wbc
 {
@@ -86,6 +87,7 @@ private:
   std::array<double, kContacts> contactSince_{{std::numeric_limits<double>::quiet_NaN(),
                                                std::numeric_limits<double>::quiet_NaN()}};  //!< [s] when the plan switched the foot to contact
   std::array<bool, kContacts> searching_{{false, false}};
+  std::array<std::vector<Eigen::Index>, kContacts> legColumns_{};  //!< generalized-velocity columns of each leg's joints
 };
 
 }  // namespace legged_robot_mpc_controller::wbc
