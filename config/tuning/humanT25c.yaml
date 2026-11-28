@@ -756,6 +756,7 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           slopeSpeedKnots: [0.3, 0.2]
           slopeMinSeparation: 0.08
           slopeConsistency: 0.03
+          slopeHeightTolerance: 0.01   # run 25 E: a standing plane falls only to a sample off by more than this in height
 
         # Gait-phase-locked arm swing superimposed on the nominal arm posture (left arm forward while
         # the right leg swings). Off: the arms only hold the nominal posture, and whatever arm motion

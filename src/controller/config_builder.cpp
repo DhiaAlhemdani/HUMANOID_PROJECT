@@ -160,6 +160,7 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   config.terrainSpeedCap.slopeSpeedKnots = p.reference.terrainSpeedCap.slopeSpeedKnots;
   config.terrainSpeedCap.slopeMinSeparation = p.reference.terrainSpeedCap.slopeMinSeparation;
   config.terrainSpeedCap.slopeConsistency = p.reference.terrainSpeedCap.slopeConsistency;
+  config.terrainSpeedCap.slopeHeightTolerance = p.reference.terrainSpeedCap.slopeHeightTolerance;
   ocs2::humanoid::validateTerrainSpeedCapSettings(config.terrainSpeedCap);
 
   // --- swing trajectory ---

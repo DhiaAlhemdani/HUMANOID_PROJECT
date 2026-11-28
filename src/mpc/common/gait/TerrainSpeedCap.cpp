@@ -64,8 +64,8 @@ void validateTerrainSpeedCapSettings(const TerrainSpeedCapSettings& s) {
       throw std::invalid_argument("[TerrainSpeedCap] slopeKnots must increase and slopeSpeedKnots must not increase");
     }
   }
-  if (!(s.slopeMinSeparation > 0.0) || !(s.slopeConsistency > 0.0)) {
-    throw std::invalid_argument("[TerrainSpeedCap] slopeMinSeparation and slopeConsistency must be > 0");
+  if (!(s.slopeMinSeparation > 0.0) || !(s.slopeConsistency > 0.0) || !(s.slopeHeightTolerance > 0.0)) {
+    throw std::invalid_argument("[TerrainSpeedCap] slopeMinSeparation, slopeConsistency and slopeHeightTolerance must be > 0");
   }
 }
 
@@ -75,6 +75,13 @@ scalar_t medianOf3(std::array<scalar_t, 3> v) {
   return v[1];
 }
 }  // namespace
+
+bool TerrainSpeedCap::fitsPlane(scalar_t slope, scalar_t rise, scalar_t run) const {
+  // In height, not in rise / run: a short base amplifies millimetres of sole noise into a slope "disagreement"
+  // while a full stride on the wrong plane misses by centimetres.
+  const scalar_t tolerance = std::max(settings_.slopeConsistency * std::abs(run), settings_.slopeHeightTolerance);
+  return std::abs(rise - slope * run) <= tolerance;
+}
 
 TerrainSpeedCap::TerrainSpeedCap(TerrainSpeedCapSettings settings) : settings_(std::move(settings)) {
   validateTerrainSpeedCapSettings(settings_);
@@ -100,7 +107,6 @@ void TerrainSpeedCap::reset() {
   slopeSampleCount_ = 0;
   slope_ = 0.0;
   slopeConsistent_ = false;
-  planeFresh_ = false;
   slopeTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
 }
 
@@ -128,28 +134,31 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
     if (!inDoubleSupport_ && std::isfinite(dz) && std::isfinite(dd) && std::abs(dd) >= settings_.slopeMinSeparation) {
       slopeSamples_[slopeSampleCount_ % slopeSamples_.size()] = dz / dd;
       ++slopeSampleCount_;
+      // A standing plane falls only to a sample that contradicts it in height: the sole-height noise of a short
+      // double support (the stop's closing steps, 8 cm apart, +-4 mm = 0.05 of slope) stays within the tolerance
+      // and keeps the plane - zeroing it there flipped the references and the contact normal to flat mid-incline
+      // (run 25 C, slope_10 stops) - while the first full stride onto the plateau misses the plane by stride x
+      // slope (2-5 cm) and drops it at once (run 25 E: a plane kept for three more double supports planned the
+      // feet into the air over the crest of slope_5). The incline cap keeps the last slope for its hold; the
+      // references read slopeConsistent().
+      if (slopeConsistent_ && !fitsPlane(slope_, dz, dd)) {
+        slopeConsistent_ = false;
+      }
+      // A plane is built (or refreshed) by three samples that agree in rise / run: short bases scatter in slope
+      // and never fake one.
       if (slopeSampleCount_ >= slopeSamples_.size()) {
         const auto [lo, hi] = std::minmax_element(slopeSamples_.begin(), slopeSamples_.end());
-        planeFresh_ = *hi - *lo <= settings_.slopeConsistency;
-        if (planeFresh_) {
+        if (*hi - *lo <= settings_.slopeConsistency) {
           slopeConsistent_ = true;
           slope_ = medianOf3(slopeSamples_);
         }
-        // A triple that disagrees keeps the last plane the feet agreed on. One short or noisy double support
-        // (a sample on an 8 cm base carries +-0.05 of sole-height noise) is not evidence of flat ground - flat
-        // ground announces itself with three agreeing ~0 samples - and zeroing the plane mid-incline flipped
-        // the foot references and the contact normal to flat exactly at the stop's short closing steps
-        // (run 25 C, slope_10 stops).
       }
     }
     if (slopeConsistent_) {
       slopeTime_ = time;
     }
-    // Roughness: the step out of the plane the feet agree on; the raw step while no plane exists. While the
-    // current triple disagrees with a kept plane the ground may be either (the plateau after a ramp, a noisy
-    // stride on the ramp): a step counts only if neither level ground nor the plane explains it.
-    const scalar_t fromPlane = std::abs(dz - slope_ * dd);
-    const scalar_t step = !slopeConsistent_ ? std::abs(dz) : planeFresh_ ? fromPlane : std::min(fromPlane, std::abs(dz));
+    // Roughness: the step out of the plane the feet agree on; the raw step while no plane stands.
+    const scalar_t step = slopeConsistent_ ? std::abs(dz - slope_ * dd) : std::abs(dz);
     if (std::isfinite(step) && step >= settings_.stepKnots.front()) {
       if (!inDoubleSupport_ || !countedThisSupport_) {
         ++stepCount_;

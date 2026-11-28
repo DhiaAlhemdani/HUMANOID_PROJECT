@@ -1714,3 +1714,43 @@ not the plane.
 
 Status of `followSlope`: ready for the regressions (`slope_5` both ways, `suite_mild`, flat `speeds`),
 since the kept-plane change also touches the cap under humanT24e / T25a. Then ship as humanT25c.
+
+**Run 25 E: regressions of the kept plane (humanT25c3S5 / M / F; T25aS10X not run).** Flat and
+suite_mild are unchanged (humanT25c3F vs humanT24ef: steady 38.6 / 0.63 / 214 vs 38.4 / 0.66 / 219,
+0 falls, cap 0 %; humanT25c3M vs humanT24eM: 0 falls, steady 35.2 / 0.59 / 202 vs 36.7 / 0.68 / 206,
+"no gain" - the roughness path is untouched). **slope_5 regressed at the crest.** The course is
+6 m up, a 2 m plateau, 6 m down; at 5 deg the robot reaches the plateau inside the 0.2 return hold
+(z_m 1.27). Forward survived but the last three segments went 43 / 35 / 23 → **79 / 55 / 73** jerk with
+pitch_pp 8 / 5 / 10.5 deg, and the stop landed 6 cm down the far ramp (z 1.206 - the candidate is
+~0.5 m ahead of the baseline all the way up). Backward **fell at the stop** (39.4 s; ramp → −0.2 at
+the crest: jerk 28 → **80**, pitch_pp 15 deg; hold 0 roll_pp 170) where humanT25cS5 stood. The
+telemetry says why: `slope` reads +0.086 at 100 % of solves through the ramp → 0.2 transition (the
+crest), +0.002 / −0.052 only in the hold after it. That is the kept plane doing on the plateau what it
+was meant to prevent on the ramp: `12ed6f4` keeps the plane until three *new* samples agree, so for
+three more double supports past the crest the footfall rule plans the feet to keep rising
+(0.086 x 0.26 = 2.2 cm per step into the air over level ground, 5 cm per step would be the figure
+on slope_10) and the contact normal stays tilted. Before `12ed6f4` the first flat sample zeroed the
+plane and the crest was benign (the baseline crossed it at jerk 28-43 both ways) - the two failure
+modes are the same rule read from opposite sides: a disagreeing *slope* sample is noise on a short
+base and evidence on a long one.
+
+**Fix: agreement in height, not in rise / run.** A standing plane now falls only to a sample whose
+rise is off by more than `max(slopeConsistency x run, slopeHeightTolerance)` (new key, 0.01 m): the
+4 mm of sole noise on a stop's 8 cm closing step (0.05 of slope - what dropped the plane in run 25 C)
+stays inside it, the first full stride on the plateau (2.6 cm off at 0.3 m on 5 deg, 2.5 cm at the
+0.14 m strides of the slope_10 cap) contradicts it and drops the plane at once, as before `12ed6f4`.
+Building a plane still needs three samples that agree in rise / run (short bases scatter in slope and
+cannot fake one; a height-only triple test let three closing steps agree on a slope of 0.23, caught
+by the unit test). The roughness step is the plane residual while a plane stands and the raw step
+otherwise (`planeFresh_` and the `min(plane, level)` residual are gone). The incline cap keeps the
+last slope for its hold after a contradiction (the references read `slopeConsistent()`), as it did
+before. Unit test: the walk-off case asserts the drop at the first flat stride; the "plane stands /
+falls" block adds a 1.2 cm short-base contradiction, the rebuild, and the crest. Contract test
+renamed to `test_plane_falls_only_to_a_contradiction_in_height`; the key is in the schema, the
+builder, the G1 block and every tracked tuning config.
+
+Rebuild (no `SKIP_BUILD`) and re-run: `slope_5` both ways (the crest, baseline humanT25cS5),
+`slope_10` all four (`speeds backward slope_about_face slope_back_slow`, baseline humanT25c3S10 -
+the stops must still stand: this is the check that the closing steps' residuals are under 1 cm on
+10 deg), and the T25a control on `slope_about_face`. `terrain_strides` on the slope_5 runs shows the
+crest directly: `tdref` should go to ~0 within one landing of the plateau instead of +2 cm for three.

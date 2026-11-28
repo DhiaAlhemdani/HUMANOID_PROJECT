@@ -544,8 +544,12 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         slopeMinSeparation: {type: double, default_value: 0.08, description: "Feet closer than this along the heading
             [m] give no slope sample (standing, side steps)", validation: {gt: [0.0]}}
         slopeConsistency: {type: double, default_value: 0.03, description: "Spread of the last three slope samples
-            [rise / run] below which the ground counts as a plane (tile fields never agree, ramps do)",
-            validation: {gt: [0.0]}}
+            [rise / run] below which the ground counts as a plane (tile fields never agree, ramps do); also the
+            per-run tolerance of a later sample against the standing plane", validation: {gt: [0.0]}}
+        slopeHeightTolerance: {type: double, default_value: 0.01, description: "Height tolerance floor [m] of a
+            sample against the standing plane: a sample whose rise is off by more than max(slopeConsistency x run,
+            this) contradicts the plane and drops it (the first full stride onto a plateau); the sole noise of a
+            stop's short closing steps stays within it and keeps the plane", validation: {gt: [0.0]}}
       targetDisplacementVelocity: {type: double, default_value: 0.5, description: "Nominal displacement velocity
           used for target arrival time [m/s]"}
       targetRotationVelocity: {type: double, default_value: 0.5, description: "Nominal rotation velocity used for

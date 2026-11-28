@@ -26,7 +26,8 @@ CAP_CPP = (ROOT / "src/mpc/common/gait/TerrainSpeedCap.cpp").read_text()
 CONTROLLER_CPP = (ROOT / "src/controller/controller.cpp").read_text()
 CMAKE = (ROOT / "CMakeLists.txt").read_text()
 
-KEYS = ("enabled", "stepKnots", "speedKnots", "holdSeconds", "slopeKnots", "slopeSpeedKnots", "slopeMinSeparation", "slopeConsistency")
+KEYS = ("enabled", "stepKnots", "speedKnots", "holdSeconds", "slopeKnots", "slopeSpeedKnots", "slopeMinSeparation", "slopeConsistency",
+        "slopeHeightTolerance")
 
 
 class TerrainSpeedCapContractTest(unittest.TestCase):
@@ -36,7 +37,7 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         self.assertFalse(schema["enabled"]["default_value"])
         for key, value in (("stepKnots", [0.01, 0.02, 0.035]), ("speedKnots", [0.5, 0.2, 0.1]), ("holdSeconds", 3.0),
                            ("slopeKnots", [0.05, 0.12]), ("slopeSpeedKnots", [0.3, 0.2]), ("slopeMinSeparation", 0.08),
-                           ("slopeConsistency", 0.03)):
+                           ("slopeConsistency", 0.03), ("slopeHeightTolerance", 0.01)):
             self.assertEqual(schema[key]["default_value"], value, key)
             if isinstance(value, list):
                 self.assertIn(f"std::vector<scalar_t> {key}{{{', '.join(str(v) for v in value)}}};", CAP_H, key)
@@ -77,16 +78,19 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         scale = TARGET_CPP.index("WalkingVelocityCommand WalkingVelocityTarget::scaleCommand")
         self.assertIn("speedCap_.load()", TARGET_CPP[scale:TARGET_CPP.index("WalkingVelocityTarget::setMinimumWalkSpeed")])
 
-    def test_plane_is_kept_through_a_disagreeing_triple(self):
+    def test_plane_falls_only_to_a_contradiction_in_height(self):
         # Run 25 C: zeroing the plane whenever the latest three samples disagreed put the slope_10 stops into
-        # the flat branch (level foot references, level contact normal) and all three fell; the plane must
-        # only change when three new samples agree, and a kept plane must not read the plateau as roughness.
+        # the flat branch (level foot references, level contact normal) and all three fell. Run 25 E: keeping
+        # it until three new samples agreed planned the feet into the air over the crest of slope_5 (the first
+        # full stride on the plateau misses the plane by stride x slope). A standing plane must fall only to a
+        # sample that contradicts it in height, with a floor for the sole noise of a short base.
         update = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::update("):]
-        self.assertIn("planeFresh_ = *hi - *lo <= settings_.slopeConsistency;", update)
-        self.assertIn("if (planeFresh_) {\n          slopeConsistent_ = true;\n          slope_ = medianOf3(slopeSamples_);", update)
+        self.assertIn("if (slopeConsistent_ && !fitsPlane(slope_, dz, dd)) {\n        slopeConsistent_ = false;", update)
+        self.assertIn("if (*hi - *lo <= settings_.slopeConsistency) {\n          slopeConsistent_ = true;\n          slope_ = medianOf3(slopeSamples_);", update)
         self.assertNotIn("slopeConsistent_ = (*hi - *lo)", update)
-        self.assertIn("planeFresh_ ? fromPlane : std::min(fromPlane, std::abs(dz))", update)
-        self.assertIn("The plane sticks", (ROOT / "tests/terrain_speed_cap_test.cpp").read_text())
+        self.assertIn("std::max(settings_.slopeConsistency * std::abs(run), settings_.slopeHeightTolerance)", CAP_CPP)
+        self.assertIn("slopeConsistent_ ? std::abs(dz - slope_ * dd) : std::abs(dz)", update)
+        self.assertIn("The plane stands through noise and falls to a contradiction", (ROOT / "tests/terrain_speed_cap_test.cpp").read_text())
 
     def test_telemetry_and_unit_test(self):
         for name in ("terrain/cap", "terrain/steps", "terrain/last_step", "terrain/slope"):
