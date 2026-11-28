@@ -2198,3 +2198,22 @@ loaded in the air - the old pivot.
 joints (the chain between the base and the contact frame, found once from the model) track the plan's
 acceleration only, at 1 % of their weight, so the swing task's descent is unopposed. Expected: tiles
 `longest` ≤ 0.15 s and no fall at +0.8; slope_5 unchanged.
+
+**Run 29 B results (humanT29, code `d1f85b0`).** The hover is gone: tiles `longest` 0.062 / 0.088 s
+(was 0.232), slope_5 0.042 / 0.042 s. slope_5: 0 falls, crest-down 1.66 (`backward` ramp → −0.2),
+steady identical to T27S5; the end of `backward` (hold −0.2 on the far plateau edge and the stop on the
+down-ramp) pitched 11.9 (29 A: 1.4, T27: 22) and tau_rate 276 at the ramp → −0.2 transition - rougher
+landings than 29 A. Tiles `speeds`: +0.2 to +0.8 all better than T27M (hold +0.8: 51.6 / 0.827 /
+v_err 0.11 vs 75.9 / 1.393 / 0.34 - the first clean 0.5 m/s on tiles), then a fall at 28.8 s in the
+deceleration "ramp → +0.2" (cap 0.24), no long search near it; `backward` survived, the middle segments
+rougher than 29 A (hold −0.5: 60.5 / 0.978 / tau 331 vs 36.4 / 0.595 / 226).
+
+The rougher landings are 29 B's own doing: with the leg freed from the posture task, the three linear
+rows of the swing task leave the ankle (and the leg's sixth degree of freedom) unconstrained - the foot
+reaches the ground on whatever orientation it drifted to, an edge first. **Run 29 C:** while a foot
+searches, a sole-orientation task (the angular rows of the foot Jacobian, plan orientation and
+angular velocity, `swingKp` / `swingKd`, weight `swingWeight`) is added, so the searching leg has six
+task rows and the posture may be let go of without the foot rolling. `fall_anatomy.py` now shows
+`wbc/search` and the fade alpha in the timeline and lists the searches in the window (start, end,
+duration, foot, mode after, true pitch) - run it on `humanT29bM__speeds` to see whether the 28.8 s
+fall sits at a search end, a fade restart, or neither.

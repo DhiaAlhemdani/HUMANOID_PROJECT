@@ -215,12 +215,17 @@ for tt, label, detail in events[:14]:
     print(f"  {tt:8.2f} | {label:<46} | {detail}")
 
 # ---- 2. timeline --------------------------------------------------------------------------------------
-print(f"\n-- timeline (every {a.step:.2f} s): t | mode | est pitch roll [deg] | TRUE pitch roll [deg] | plan pitch [deg] | x, z obs-plan [cm] | "
+search, calpha = sig("wbc/search"), sig("wbc/contact_alpha")
+print(f"\n-- timeline (every {a.step:.2f} s): t | mode | wbc search (L/R) fade alpha | est pitch roll [deg] | TRUE pitch roll [deg] | plan pitch [deg] | x, z obs-plan [cm] | "
       f"planned cop_x per foot [cm] (-my/fz) | base ahead of feet [cm] | feet z [cm] (c=contact) | top |tau| [Nm] | top |q err| [rad]")
 times = np.arange(tw[0], tw[-1] + 1e-9, a.step)
 for tq in times:
     i = int(np.argmin(np.abs(tw - tq)))
     parts = [f"{tw[i]:7.2f}", MODE.get(int(mode[i]), "?") if mode is not None else "?"]
+    if search is not None:
+        sv = search[i] if np.isfinite(search[i]) else -1
+        parts.append(f"{'LR'[int(sv) - 1] if sv in (1, 2) else ('LR' if sv == 3 else '-'):>2} "
+                     f"{calpha[i]:4.2f}" if calpha is not None and np.isfinite(calpha[i]) else f"{'-':>2}   - ")
     parts.append(f"{math.degrees(pitch[i]):6.1f} {math.degrees(roll[i]):6.1f}" if pitch is not None and roll is not None else "   -   -")
     parts.append(f"{math.degrees(gtw['pitch'][i]):6.1f} {math.degrees(gtw['roll'][i]):6.1f}" if gtw is not None else "   -   -")
     parts.append(f"{math.degrees(pp[i]):6.1f}" if pp is not None else "   -")
@@ -239,6 +244,24 @@ for tq in times:
     top_err = sorted(((abs(e[i]), j) for j, e in err.items()), reverse=True)[:3]
     parts.append(" ".join(f"{j.replace('_joint', '')[:14]}={v:4.2f}" for v, j in top_err))
     print(" | ".join(parts))
+
+# ---- 2a. touchdown searches in the window (run 29: wbc/search 1 = left, 2 = right) ---------------------
+if search is not None and np.isfinite(search).any():
+    on = np.nan_to_num(search) > 0
+    edges = np.flatnonzero(np.diff(on.astype(int)))
+    starts = edges[on[edges + 1]] + 1
+    ends = edges[~on[edges + 1]] + 1
+    if on[0]:
+        starts = np.concatenate([[0], starts])
+    if on[-1]:
+        ends = np.concatenate([ends, [len(on) - 1]])
+    print(f"\n-- touchdown searches in the window: {len(starts)} (start -> end, duration, foot, plan mode at the end, "
+          f"TRUE pitch at start/end)")
+    for s0, s1 in zip(starts, ends):
+        foot = "L" if search[s0] == 1 else "R"
+        m_end = MODE.get(int(mode[min(s1 + 1, len(mode) - 1)]), "?") if mode is not None else "?"
+        pitches = (f"{math.degrees(gtw['pitch'][s0]):5.1f} -> {math.degrees(gtw['pitch'][s1]):5.1f}" if gtw is not None else "-")
+        print(f"  {tw[s0]:8.3f} -> {tw[s1]:8.3f}  {1000 * (tw[s1] - tw[s0]):5.0f} ms  {foot}  then {m_end:<6}  pitch {pitches}")
 
 # ---- 2b. reference and policy continuity ------------------------------------------------------------
 # A fall that starts as a 10 deg pitch step within 50-100 ms is either an impact or a reference jump the

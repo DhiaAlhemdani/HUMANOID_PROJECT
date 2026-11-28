@@ -70,6 +70,7 @@ class WholeBodyFeedbackContract(unittest.TestCase):
         self.assertIn("touchdownSearch(settings_.search, in.time, in.inContact[c], in.inContact[1 - c], footVel[c].z()", layer)
         self.assertIn("inContact[c] = in.inContact[c] && !out.searching[c];", layer)
         self.assertIn("p.accWeight(col) *= kSearchLegWeight;", layer)  # run 29 B: the searching leg is free of the posture PD
+        self.assertIn("LinearTask& sole = p.tasks[footOrientationTask_ + c];", layer)  # run 29 C: the sole keeps the plan's orientation
         src = (ROOT / "src/controller/controller.cpp").read_text()
         for needle in ("input.time = observation.time;",
                        "if ((feedforward_is_fallback && wb.holdOnTorqueWindowOverrun) || searching) {",

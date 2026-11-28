@@ -83,6 +83,7 @@ private:
   std::array<std::size_t, kContacts> frameIds_{};
   std::size_t orientationFrameId_{0};
   bool hasOrientationTask_{false};
+  std::size_t footOrientationTask_{0};  //!< index in Problem::tasks of the first per-foot sole-orientation task
   Problem problem_;  //!< reused allocation
   std::array<double, kContacts> contactSince_{{std::numeric_limits<double>::quiet_NaN(),
                                                std::numeric_limits<double>::quiet_NaN()}};  //!< [s] when the plan switched the foot to contact

@@ -47,7 +47,8 @@ WholeBodyFeedback::WholeBodyFeedback(Settings settings, const std::array<std::st
   if (settings_.jointWeights.size() != 0 && settings_.jointWeights.size() != model.nv - kBaseDof) {
     throw std::invalid_argument("[WholeBodyFeedback] jointWeights needs one entry per MPC joint (or none)");
   }
-  problem_.tasks.resize(hasOrientationTask_ ? 1 : 0);
+  footOrientationTask_ = hasOrientationTask_ ? 1 : 0;
+  problem_.tasks.resize(footOrientationTask_ + kContacts);  // + one sole-orientation task per foot (touchdown search)
   // The joints between the base and each contact frame (the leg): the touchdown search frees them from
   // the posture task.
   for (std::size_t c = 0; c < kContacts; ++c) {
@@ -75,12 +76,16 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
   }
 
   // 1. Swing-foot targets from the plan's configuration.
-  std::array<Eigen::Vector3d, kContacts> footPlan, footVelPlan;
+  std::array<Eigen::Vector3d, kContacts> footPlan, footVelPlan, footAngularVelPlan;
+  std::array<Eigen::Matrix3d, kContacts> footRotationPlan;
   pinocchio::forwardKinematics(model, data, in.qPlan, in.vPlan);
   pinocchio::updateFramePlacements(model, data);
   for (std::size_t c = 0; c < kContacts; ++c) {
     footPlan[c] = data.oMf[frameIds_[c]].translation();
-    footVelPlan[c] = pinocchio::getFrameVelocity(model, data, frameIds_[c], pinocchio::LOCAL_WORLD_ALIGNED).linear();
+    footRotationPlan[c] = data.oMf[frameIds_[c]].rotation();
+    const auto twist = pinocchio::getFrameVelocity(model, data, frameIds_[c], pinocchio::LOCAL_WORLD_ALIGNED);
+    footVelPlan[c] = twist.linear();
+    footAngularVelPlan[c] = twist.angular();
   }
   Eigen::Matrix3d orientationPlan = Eigen::Matrix3d::Identity();
   Eigen::Vector3d angularVelPlan = Eigen::Vector3d::Zero();
@@ -166,6 +171,21 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
 
     SwingTask& swing = p.swings[c];
     swing.active = !inContact[c] && settings_.swingWeight > 0.0;
+    // Searching: the sole keeps the plan's orientation (run 29 B let the leg go of the posture task;
+    // three linear rows leave the ankle free and the foot met the ground on an edge, pitch 12 deg).
+    LinearTask& sole = p.tasks[footOrientationTask_ + c];
+    sole.active = swing.active && out.searching[c];
+    if (sole.active) {
+      sole.jacobian = contact.jacobian.bottomRows(3);
+      sole.driftAcc = contact.driftAcc.tail(3);
+      const Eigen::Matrix3d rotation = data.oMf[frameIds_[c]].rotation();
+      const Eigen::Vector3d angularVel =
+        pinocchio::getFrameVelocity(model, data, frameIds_[c], pinocchio::LOCAL_WORLD_ALIGNED).angular();
+      const Eigen::Vector3d planAcc = sole.jacobian * in.accPlan + sole.driftAcc;
+      sole.desiredAcc = planAcc + settings_.swingKp.cwiseProduct(pinocchio::log3(footRotationPlan[c] * rotation.transpose())) +
+                        settings_.swingKd.cwiseProduct(footAngularVelPlan[c] - angularVel);
+      sole.weight = settings_.swingWeight;
+    }
     if (!swing.active) {
       continue;
     }
