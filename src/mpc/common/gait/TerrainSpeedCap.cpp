@@ -83,18 +83,24 @@ void TerrainSpeedCap::takeSlopeSample(scalar_t dz, scalar_t dd) {
   // double support (the stop's closing steps, 8 cm apart, +-4 mm = 0.05 of slope) stays within the tolerance
   // and keeps the plane - zeroing it there flipped the references and the contact normal to flat mid-incline
   // (run 25 C, slope_10 stops) - while the first full stride onto the plateau misses the plane by stride x
-  // slope (2-5 cm) and drops it at once (run 25 E: a plane kept for three more double supports planned the
-  // feet into the air over the crest of slope_5). The incline cap keeps the last slope for its hold; the
-  // references read slopeConsistent().
-  if (slopeConsistent_ && !fitsPlane(slope_, dz, dd)) {
-    slopeConsistent_ = false;
+  // slope (2-5 cm) and contradicts it at once (run 25 E: a plane kept for three more double supports planned
+  // the feet into the air over the crest of slope_5). What replaces it is the contradicting sample itself, a
+  // provisional plane: the references follow the ground from the first stride on it, not three strides later
+  // (run 25 F': both slope_5 stops fell standing on the first 0.3 m of the down-ramp with level references,
+  // the plane one agreeing sample short). The incline cap waits for a confirmed plane (three agreeing
+  // samples), so a tile step does not become an incline.
+  if (!slopeConsistent_ || !fitsPlane(slope_, dz, dd)) {
+    slopeConsistent_ = true;
+    slopeConfirmed_ = false;
+    slope_ = dz / dd;
   }
-  // A plane is built (or refreshed) by three samples that agree in rise / run: short bases scatter in slope
-  // and never fake one.
+  // A plane is confirmed (or refreshed) by three samples that agree in rise / run: short bases scatter in
+  // slope and never fake one.
   if (slopeSampleCount_ >= slopeSamples_.size()) {
     const auto [lo, hi] = std::minmax_element(slopeSamples_.begin(), slopeSamples_.end());
     if (*hi - *lo <= settings_.slopeConsistency) {
       slopeConsistent_ = true;
+      slopeConfirmed_ = true;
       slope_ = medianOf3(slopeSamples_);
     }
   }
@@ -131,8 +137,10 @@ void TerrainSpeedCap::reset() {
   slopeSampleCount_ = 0;
   lastDsDz_ = std::numeric_limits<scalar_t>::quiet_NaN();
   lastDsDd_ = std::numeric_limits<scalar_t>::quiet_NaN();
+  sampledThisSupport_ = false;
   slope_ = 0.0;
   slopeConsistent_ = false;
+  slopeConfirmed_ = false;
   slopeTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
 }
 
@@ -153,26 +161,44 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
   previousTime_ = time;
 
   const bool doubleSupport = contacts[0] && contacts[1];
-  // One slope sample per double support, taken when it ends: from the last solve inside it. At its first
-  // solve the landing foot can still be in the air (the schedule says double support from the planned
-  // touchdown; a foot planned above the ground - the plane kept over a crest - gets there late), and a sample
-  // read there confirms the plane that put the foot in the air: the plane decayed over six landings instead of
-  // dropping at the first flat stride (run 25 F, slope_5 crest, tdref +1.2..+2.7 cm). By the end of the double
-  // support the foot carries load and is down.
-  if (!doubleSupport && inDoubleSupport_ && std::isfinite(lastDsDz_) && std::isfinite(lastDsDd_) &&
+  // One slope sample per double support, read from the first *settled* solve in it (the feet's height
+  // difference unchanged, within kSettled, from the previous solve), else from its last. At the first solve
+  // the landing foot can still be in the air (the schedule says double support from the planned touchdown;
+  // a foot planned above the ground - a plane kept over a crest - gets there late), and a sample read there
+  // confirms the plane that put the foot in the air: on the slope_5 plateau the plane decayed over six
+  // landings instead of dropping at the first flat stride (run 25 F, tdref +1.2..+2.7 cm). A foot that landed
+  // early is down and loaded at the first solve, and that is the cleanest reading: by the end of the double
+  // support the trailing foot is unloading: on 10 deg at 0.10 m strides the end-of-support readings built no
+  // plane for 15 s (run 25 F', slope_10: speeds formed it only at the last 0.2 rung, backward never).
+  if (!doubleSupport && inDoubleSupport_ && !sampledThisSupport_ && std::isfinite(lastDsDz_) && std::isfinite(lastDsDd_) &&
       std::abs(lastDsDd_) >= settings_.slopeMinSeparation) {
     takeSlopeSample(lastDsDz_, lastDsDd_);
+  }
+  if (!doubleSupport) {
+    sampledThisSupport_ = false;
+    lastDsDz_ = std::numeric_limits<scalar_t>::quiet_NaN();
+    lastDsDd_ = std::numeric_limits<scalar_t>::quiet_NaN();
   }
   if (doubleSupport) {
     const scalar_t dz = soleHeights[0] - soleHeights[1];
     const scalar_t dd = soleAlong[0] - soleAlong[1];
+    constexpr scalar_t kSettled = 0.0005;  // [m] per solve: a foot descending at the contactSync landing speed (0.05 m/s, ~1.2 mm at 42 Hz) moves more
+    if (!sampledThisSupport_ && std::isfinite(dz) && std::isfinite(lastDsDz_) && std::abs(dz - lastDsDz_) <= kSettled) {
+      sampledThisSupport_ = true;
+      if (std::isfinite(dd) && std::abs(dd) >= settings_.slopeMinSeparation) {
+        takeSlopeSample(dz, dd);
+      }
+    }
     lastDsDz_ = dz;
     lastDsDd_ = dd;
-    if (slopeConsistent_) {
+    if (slopeConfirmed_) {
       slopeTime_ = time;
     }
-    // Roughness: the step out of the plane the feet agree on; the raw step while no plane stands.
-    const scalar_t step = slopeConsistent_ ? std::abs(dz - slope_ * dd) : std::abs(dz);
+    // Roughness: the step out of the plane the feet agree on; the raw step while no plane stands. Against a
+    // provisional plane (one sample) a step counts only if neither level ground nor the plane explains it -
+    // a tile step must not become a plane that doubles the next tile step's residual.
+    const scalar_t fromPlane = std::abs(dz - slope_ * dd);
+    const scalar_t step = !slopeConsistent_ ? std::abs(dz) : slopeConfirmed_ ? fromPlane : std::min(fromPlane, std::abs(dz));
     if (std::isfinite(step) && step >= settings_.stepKnots.front()) {
       if (!inDoubleSupport_ || !countedThisSupport_) {
         ++stepCount_;

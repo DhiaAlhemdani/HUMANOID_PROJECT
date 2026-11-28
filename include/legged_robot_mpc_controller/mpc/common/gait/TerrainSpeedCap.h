@@ -65,10 +65,12 @@ namespace ocs2::humanoid {
  * that contradicts it in height - its rise off by more than max(slopeConsistency x run,
  * slopeHeightTolerance) - so the millimetres of sole noise on a short double support (a stop's
  * closing steps) keep the plane, while a full stride that misses it by centimetres (the plateau
- * after a ramp) drops it at once (run 25 C / 25 E); three agreeing samples build the next one. The
- * sample is read at the end of the double support, when the landed foot carries load: at its first
- * solve a foot planned above the ground is still in the air and would confirm the plane that put it
- * there (run 25 F).
+ * after a ramp) replaces it at once with a provisional plane from that sample, so the references
+ * follow the ground from the first stride on it; three agreeing samples confirm a plane, and only a
+ * confirmed plane drives the incline cap (run 25 C / E / F'). The sample is read at the first settled
+ * solve of the double support (a landed foot's reading does not change solve to solve), else at its
+ * last: at the first solve a foot planned above the ground is still in the air and would confirm the
+ * plane that put it there (run 25 F).
  */
 struct TerrainSpeedCapSettings {
   bool enabled = false;
@@ -109,8 +111,9 @@ class TerrainSpeedCap {
   scalar_t lastStep() const { return lastStep_; }          //!< [m] largest step of the last double support that tripped the cap
   scalar_t lastStepTime() const { return lastStepTime_; }  //!< [s] when a step was last seen (NaN = never)
   scalar_t capValue() const { return capValue_; }          //!< [m/s] the cap in force (+inf = none)
-  scalar_t slope() const { return slope_; }                //!< [-] slope of the last plane three samples agreed on (0 until some did; kept for the incline cap's hold after a contradiction)
-  bool slopeConsistent() const { return slopeConsistent_; }  //!< a plane stands: three samples agreed and no later sample contradicted it in height
+  scalar_t slope() const { return slope_; }                //!< [-] slope of the standing plane (0 until a sample exists); the incline cap keeps the last confirmed slope for its hold
+  bool slopeConsistent() const { return slopeConsistent_; }  //!< a plane stands (confirmed, or provisional from the latest sample that contradicted the previous one): the references follow it
+  bool slopeConfirmed() const { return slopeConfirmed_; }    //!< three samples agreed on the standing plane and none since contradicted it: the incline cap applies
   size_t stepCount() const { return stepCount_; }          //!< double supports that tripped the cap so far
   void reset();
 
@@ -128,6 +131,8 @@ class TerrainSpeedCap {
   std::array<scalar_t, 3> slopeSamples_{};  //!< [-] rise / run of the last three double supports
   scalar_t lastDsDz_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [m] signed sole-height step at the last solve of the current double support
   scalar_t lastDsDd_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [m] the feet's separation along the heading there
+  bool sampledThisSupport_ = false;  //!< the current double support has given its slope sample (a settled reading)
+  bool slopeConfirmed_ = false;
   size_t slopeSampleCount_ = 0;
   scalar_t slope_ = 0.0;
   bool slopeConsistent_ = false;

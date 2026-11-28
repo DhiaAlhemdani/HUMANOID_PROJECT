@@ -1794,3 +1794,56 @@ Rebuild and re-run: `slope_5` both ways (baseline humanT25c4S5: the crest, `tdre
 humanT25c4S10: the plane must form in `slope_about_face` and the stops stand), and `terrain_strides`
 on all of them (the `air0`/`air1` columns are the direct check of the mechanism). `suite_mild` is not
 touched by the sample timing (no plane forms on tiles) but a flat `speeds` is cheap.
+
+**Run 25 F′ results (`15ebee7`, humanT25c5 vs humanT25c4).** The sample timing did what it was meant
+to on slope_5 - and uncovered the next two problems. (1) **The crest is fixed.** Forward ramp → 0.2 /
+hold 0.2 jerk 36.8 / 31.4 (was 73.0 / 75.5), pitch_pp 4.3 / 1.0 (was 6-9); backward hold −0.5 / → −0.2 /
+hold −0.2 at 29.2 / 36.0 / 27.6 (was 67.3 / 50.0 / 72.8), pitch_pp 1.2 / 4.0 / 1.3 (was up to 24.5).
+`terrain_strides`: `tdref` is −0.1 from the second plateau landing on (was +1.2 … +2.7 over six to ten),
+and the crest landing itself reads `air0` +0.8 / +0.5 against `air1` 0.1 / −0.0 - the in-air first-solve
+reading the sample used to see, and the landed last-solve reading it sees now. Steady means 25.3 /
+0.43 / 141 vs 34.7 / 0.52 / 163. (2) **Both slope_5 runs then fell standing**, 41 / 42 s after the
+command, six seconds after the last landing. With the crest no longer capped, the 0.2 m/s leg carries
+the stop 0.3 m further than c4's and the feet come to rest on the first 0.3 m of the down-ramp (base x
+9.99 / −10.10, the last landings at step −1.0 / −1.9 cm forward with pitch 8.4 deg, −2.4 cm backward
+with pitch 14.8 deg, `air0` +1.5 / +1.9). The stop-hold reports `slope +0.000`: the plane was dropped by
+the first down-ramp stride (correct - it contradicts the level plateau plane by 2.6 cm) and *rebuilding*
+it needs three agreeing samples, which a stop two strides later never supplies; the robot stands on a
+5 deg descent with level references and a level contact normal and pitches over in six seconds. c4
+stood only because its capped crest left the stop on the plateau. (3) **slope_10 lost its plane.** Read
+at the end of the double support, the 0.10 m strides under the 0.20 cap did not build one: speeds ran
+`slope +0.000` through the 0.5 and 0.8 rungs (c4's first-solve sample had it by the 0.5 rung), formed
+it (+0.209) only at the last 0.2 rung and the stop, and survived with 21 roughness steps and steady
+32.3 (c4 29.1); backward never formed it and fell at ramp → −0.8 (19.3 s, cap released to 0.44 with
+nothing to hold it, v_err 0.40). By the end of a short double support the trailing foot is already
+unloading (heel rising at 0.10 m separation the reading is a few millimetres off per solve, which on
+a 0.10 m base is 0.03-0.05 of slope - exactly `slopeConsistency`). slope_about_face is the bright
+spot: the plane formed (+0.205), **the stop stood for the first time** (ramp → 0 jerk 28.4, hold 0.67),
+and the run fell 26.8 s in, in the w 0.5 turn in place (ramp → w jerk 93.9, pitch_pp 22.2; strides at
+t 41.78 tilt −7.5 deg, t 42.5 step −4.1 cm with `tdref` +5.5) - the heading-frame gradient turning
+with the robot, the known design limit, now actually reached → run 26. slope_back_slow was the best
+yet (stop hold 0.58, slope −0.116 → −0.212).
+
+**Run 25 G: a provisional plane, and the sample at the first settled solve.** Two changes in
+`TerrainSpeedCap`, both tested in `terrain_speed_cap_test.cpp` and pinned by the contract test. (a) A
+sample that contradicts the standing plane does not leave *nothing* behind - it becomes the plane,
+provisionally (`slopeConsistent()` true, new `slopeConfirmed()` false): the references and the
+contact normal follow the ground from the first stride onto it, not from the third. Three agreeing
+samples confirm a plane as before, and only a confirmed plane drives the incline cap (`slopeTime_` is
+refreshed only while confirmed), so a tile step - a provisional plane of 0.05 for one stride - is not
+an incline; against a provisional plane the roughness step is the smaller of the raw step and the
+plane residual, so the next tile step still reads as 1.5 cm, not 3. On slope_5 the first down-ramp
+stride now plants a ~−0.08 plane and the stop stands on it; on slope_10 a plane exists from the first
+double support with both feet on the ramp. (b) The sample is read at the first *settled* solve of the double support
+- the feet's height difference unchanged within 0.5 mm from the previous solve (a foot descending at
+the contactSync landing speed moves 1.2 mm per solve) - and only if none settles, at its end as in
+`15ebee7`. A foot that landed is down and loaded at the first solves, which is the cleanest reading
+and the one c4 had; a foot planned into the air is still descending there and is read only once it
+has landed. One sample per double support; a standing double support still gives none.
+
+Rebuild and re-run: `slope_5` both ways (baseline humanT25c5S5: the stops must stand - stop-hold
+`slope` −0.08, not 0.000 - with the crest numbers of c5 kept), the four `slope_10` cases (baseline
+humanT25c5S10: `slope` must be nonzero from the 0.5 rung in `speeds` and `backward` as in c4, the
+stops stand, about_face reaches the turn), `terrain_strides` on all of them, and a flat `speeds` plus
+`suite_mild` once (the provisional plane is new ground for tiles: the roughness trips should be
+unchanged, and `plane active %` on tiles should be small).
