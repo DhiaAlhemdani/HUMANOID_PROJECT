@@ -133,6 +133,14 @@ def sig(name):
 pitch, roll = sig("obs_base/pitch"), sig("obs_base/roll")
 zo, zp = sig("obs_base/z"), sig("plan_base/z")
 xo, xp, pp = sig("obs_base/x"), sig("plan_base/x"), sig("plan_base/pitch")
+# Base ahead of the feet's midpoint along the heading [m] (+ = body in front of the feet in body terms).
+base_ahead = None
+if xo is not None and sig("obs_base/y") is not None and sig("obs_base/yaw") is not None and feet and \
+        all(sig(f"obs_foot/{f}/x") is not None for f in feet):
+    yaw_ = sig("obs_base/yaw")
+    mx = np.mean([sig(f"obs_foot/{f}/x") for f in feet], axis=0)
+    my = np.mean([sig(f"obs_foot/{f}/y") for f in feet], axis=0)
+    base_ahead = (xo - mx) * np.cos(yaw_) + (sig("obs_base/y") - my) * np.sin(yaw_)
 # Planned centre of pressure along the sole from the planned wrench (-my / fz, the moment about the
 # contact frame's origin); nan while the foot carries < 20 N.
 cop = {}
@@ -208,7 +216,7 @@ for tt, label, detail in events[:14]:
 
 # ---- 2. timeline --------------------------------------------------------------------------------------
 print(f"\n-- timeline (every {a.step:.2f} s): t | mode | est pitch roll [deg] | TRUE pitch roll [deg] | plan pitch [deg] | x, z obs-plan [cm] | "
-      f"planned cop_x per foot [cm] (-my/fz) | feet z [cm] (c=contact) | top |tau| [Nm] | top |q err| [rad]")
+      f"planned cop_x per foot [cm] (-my/fz) | base ahead of feet [cm] | feet z [cm] (c=contact) | top |tau| [Nm] | top |q err| [rad]")
 times = np.arange(tw[0], tw[-1] + 1e-9, a.step)
 for tq in times:
     i = int(np.argmin(np.abs(tw - tq)))
@@ -219,6 +227,7 @@ for tq in times:
     parts.append((f"{100 * (xo[i] - xp[i]):6.1f}" if xo is not None and xp is not None else "   -") +
                  (f"{100 * (zo[i] - zp[i]):6.1f}" if zo is not None and zp is not None else "   -"))
     parts.append(" ".join(f"{100 * cop[f][i]:5.1f}" if cop[f] is not None and np.isfinite(cop[f][i]) else "   - " for f in feet))
+    parts.append(f"{100 * base_ahead[i]:5.1f}" if base_ahead is not None and np.isfinite(base_ahead[i]) else "   - ")
     fz = []
     for f in feet:
         zz = foot_z[f][0]

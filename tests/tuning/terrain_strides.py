@@ -13,6 +13,14 @@ ray-cast at the four sole corners, so every touchdown gets:
   edge_cm   max - min of the ground height at the four sole corners: > --edge-mm means the foot straddles an
             edge and rests on heel or toe only (the partial-contact landing). On a ramp this is the ramp's own
             rise under the sole (0.17 m x tan 10 deg = 3.0 cm) whatever the foot does: read `tilt` there.
+  v         measured base velocity along the heading at the switch [m/s] (the slope foot reference's
+            `velocityAlong`: below `standingSpeed` 0.05 it plans every footfall at the feet's midpoint height)
+  base      base x ahead of the feet's midpoint along the heading at the switch [cm] (+ = body in front of
+            the feet in body terms; on an incline the stance can only hold this inside the sole)
+  tdref     planned touchdown height (solver `terrain/next_touchdown`, last solve before the switch) minus the
+            foot's settled height 0.2 s after it [cm], both in the estimator frame: negative = the reference
+            was below where the foot landed (it met the ground early), positive = above (it landed late);
+            blank without `followSlope` telemetry
   tilt_deg  sole pitch relative to the ground under it, 0.2 s after the switch (the foot settled): the true
             base pose (ground truth) and the measured joint angles posed in the scene, the ankle-roll link's x
             axis against the ground's rise from heel to toe corners; positive = toe up (resting on the heel),
@@ -138,6 +146,15 @@ for case in a.cases:
     meas_q = [(n.split("/", 1)[1], col[n]) for n in TN if n.startswith("meas_q/")]
     ankle_body = {s: f"{'left' if s == 'l' else 'right'}_ankle_roll_link" for s in ("l", "r")}
     n_settle = int(round(0.2 / float(np.median(np.diff(t)))))
+    ov = {ax: sig(f"obs_base/{ax}") for ax in ("vx", "vy")}
+    SN = [str(n) for n in d["solver_names"]] if "solver_names" in d.files else []
+    SV = d["solver"] if SN and "solver" in d.files and d["solver"].size else None
+    sc = lambda n: SV[:, SN.index(n)] if SV is not None and n in SN else None
+    st, td_next = sc("t"), sc("terrain/next_touchdown")
+    if st is not None:
+        so = np.argsort(st)
+        st = st[so]
+        td_next = td_next[so] if td_next is not None else None
 
     def foot_world(f, k):
         fx, fy = sig(f"obs_foot/{f}/x")[k], sig(f"obs_foot/{f}/y")[k]
@@ -183,10 +200,23 @@ for case in a.cases:
             tilt = math.degrees(sole - ground_pitch) if np.isfinite(sole) and np.isfinite(ground_pitch) else math.nan
         pitch_pp = math.degrees(np.ptp(g["pitch"][k:k1 + 1]))
         dz_pp = 100 * np.ptp(g["z"][k:k1 + 1])
+        hx, hy = math.cos(g["yaw"][k]), math.sin(g["yaw"][k])
+        v_along = ov["vx"][k] * hx + ov["vy"][k] * hy if ov["vx"] is not None and ov["vy"] is not None else math.nan
+        base_ahead = math.nan
+        if ob["x"] is not None and ob["y"] is not None:
+            mx = 0.5 * (sig(f"obs_foot/{f}/x")[k] + sig(f"obs_foot/{other}/x")[k])
+            my = 0.5 * (sig(f"obs_foot/{f}/y")[k] + sig(f"obs_foot/{other}/y")[k])
+            base_ahead = 100 * ((ob["x"][k] - mx) * hx + (ob["y"][k] - my) * hy)
+        td_err = math.nan
+        fz = sig(f"obs_foot/{f}/z")
+        if td_next is not None and fz is not None:
+            j = int(np.searchsorted(st, t[k])) - 1
+            if j >= 0 and np.isfinite(td_next[j]) and t[k] - st[j] < 0.2:
+                td_err = 100 * (td_next[j] - fz[ks])
         fell_here = fell_sim is not None and 0 <= fell_sim - t[k] <= 1.5
         rows.append(dict(case=tag, t=t[k], vx=vx_cmd[k], foot=s, x=x, y=y, gnd_cm=100 * gz, step_cm=100 * (gz - oz),
-                         edge_cm=100 * (np.nanmax(cz) - np.nanmin(cz)), tilt_deg=tilt, pitch_pp=pitch_pp, dz_pp=dz_pp,
-                         FELL=fell_here))
+                         edge_cm=100 * (np.nanmax(cz) - np.nanmin(cz)), v=v_along, base_cm=base_ahead, tdref_cm=td_err,
+                         tilt_deg=tilt, pitch_pp=pitch_pp, dz_pp=dz_pp, FELL=fell_here))
     if not rows:
         print(f"{tag}: no touchdowns", file=sys.stderr)
         continue
@@ -197,11 +227,13 @@ for case in a.cases:
         kf = int(np.searchsorted(t, fell_sim))
         kf = min(kf, len(t) - 1)
         print(f"  FELL at sim {fell_sim:.2f} s, base at x {g['x'][kf]:.2f} y {g['y'][kf]:.2f} (vx cmd {vx_cmd[kf]:.1f})")
-    hdr = f"{'t':>7} {'vx':>4} {'ft':>2} {'x':>6} {'y':>6} {'gnd':>5} {'step':>5} {'edge':>5} {'tilt':>5} {'pitch':>6} {'dz':>5}  "
+    hdr = (f"{'t':>7} {'vx':>4} {'ft':>2} {'x':>6} {'y':>6} {'gnd':>5} {'step':>5} {'edge':>5} {'v':>5} {'base':>5} {'tdref':>5} "
+           f"{'tilt':>5} {'pitch':>6} {'dz':>5}  ")
     print("  " + hdr)
     for r in rows:
         print(f"  {r['t']:7.2f} {r['vx']:4.1f} {r['foot']:>2} {r['x']:6.2f} {r['y']:6.2f} {r['gnd_cm']:5.1f} {r['step_cm']:+5.1f} "
-              f"{r['edge_cm']:5.1f} {r['tilt_deg']:5.1f} {r['pitch_pp']:6.2f} {r['dz_pp']:5.1f}  {'FELL' if r['FELL'] else ''}")
+              f"{r['edge_cm']:5.1f} {r['v']:5.2f} {r['base_cm']:5.1f} {r['tdref_cm']:5.1f} {r['tilt_deg']:5.1f} "
+              f"{r['pitch_pp']:6.2f} {r['dz_pp']:5.1f}  {'FELL' if r['FELL'] else ''}")
 
     R = np.array([(r["step_cm"], r["edge_cm"], r["pitch_pp"], r["dz_pp"], r["FELL"]) for r in rows], dtype=float)
     edge = R[:, 1] > a.edge_mm / 10
@@ -218,6 +250,15 @@ for case in a.cases:
           f"up {mean(up, 2)} | down {mean(down, 2)} | flat {mean(~up & ~down, 2)}")
     print(f"  height excursion after landing [cm]:  edge {mean(edge, 3)} | no edge {mean(~edge, 3)} | "
           f"up {mean(up, 3)} | down {mean(down, 3)} | flat {mean(~up & ~down, 3)}")
+    tdr = np.array([r["tdref_cm"] for r in rows], dtype=float)
+    if np.isfinite(tdr).any():
+        ok = np.isfinite(tdr)
+        slow = ok & (np.abs(np.array([r["v"] for r in rows], dtype=float)) < 0.05)
+        print(f"  planned touchdown minus landed height [cm]: mean {np.mean(tdr[ok]):+5.2f} | mean |err| {np.mean(np.abs(tdr[ok])):5.2f} | "
+              f"worst {tdr[ok][np.argmax(np.abs(tdr[ok]))]:+5.2f} | at |v| < 0.05 m/s (n={slow.sum()}): "
+              f"{np.mean(tdr[slow]):+5.2f}" if slow.any() else
+              f"  planned touchdown minus landed height [cm]: mean {np.mean(tdr[ok]):+5.2f} | mean |err| {np.mean(np.abs(tdr[ok])):5.2f} | "
+              f"worst {tdr[ok][np.argmax(np.abs(tdr[ok]))]:+5.2f} | no landing at |v| < 0.05 m/s")
     tilts = np.array([r["tilt_deg"] for r in rows], dtype=float)
     if np.isfinite(tilts).any():
         ok = np.isfinite(tilts)

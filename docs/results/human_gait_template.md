@@ -1586,3 +1586,53 @@ walks forward onto the ramp, stops, turns ~180 deg in place, stands 6 s facing d
 downhill is the problem (the reference); if it survives, the slow backward gait leaves the robot in a
 state the stop cannot hold. `slope_back_slow` is −0.2 m/s for 20 s and a stop - whether the slow
 backward climb stalls on its own at this height or only after the faster rungs.
+
+### Run 25 C‴ — the two scripts and the anatomy with the plan columns: the 10 deg stop fails *both ways*; the plan saturates the CoP from the first stance instant
+
+- **`slope_about_face` fell at the forward stop, before the turn** (19.4 s of script, 0.4 → 0 m/s at
+  x 2.9, 25 cm up the ramp). The walk under the cap was fine (jerk 35.5, cap 77 % @ 0.21, robot at
+  ~0.17 m/s); the last landing of the stop step (l at 35.59 s) went 16 cm *downhill* of the other
+  foot (step −2.7 cm) with a 10 deg pitch excursion, then the stop hold tipped (pitch_pp 83,
+  roll_pp 154). The turn and the stand facing downhill were never reached, so the script's question
+  is still open - but the premise changed: **the forward stop on 10 deg is not solved either**; the
+  `speeds` run's forward stop (0.2 → 0 at 63 cm up, robot at 0.14 m/s) is the one that happened to
+  hold (its planned CoP sat at −0.5 … +0.8 cm, dead centre, the whole stance).
+- **`slope_back_slow` fell at the stop too** (23.4 s), after a *clean* −0.2 m/s climb: 0.15 m/s over
+  2.2 m, v_err 0.13, jerk 38.6, no stall - so the stall of the `backward` script's return hold is not
+  required for the backward stop to fail. Stop transition jerk 467 / tau 446, roll_pp 148.
+- **Anatomy of the backward stop (humanT25c2S10__backward) with the plan columns.** From the first
+  stance sample (51.96 s, pitch −0.2 deg, feet flat, obs−plan x and z = 0) the **planned CoP of both
+  feet is at +5.6 / +6.4 cm and climbs to +8.5 / +9.0 cm by 52.4 s - the toe edge of the modelled
+  rectangle (±9 cm)** - while the robot is still upright and quiet; during the preceding single
+  support the stance foot's planned CoP was already +7.4 cm. The plan's own pitch then *follows* the
+  real one (1.9 / 2.0 at 52.46, 4.4 / 5.3 at 52.71, 10.6 / 17.8, 19.2 / 27.0, 25.4 / 30.9): the MPC's
+  optimal trajectory *is* the tip-over - with the CoP constraint saturated downhill it has no input
+  that keeps the body up, and the hip-pitch / waist / shoulder saturation at 52.68 s is its hip
+  strategy, not a tracking failure. The forward stop that survived never asked for more than 0.8 cm.
+  So at the backward stop the body is left further downhill of the feet than the sole can hold, and
+  nothing in the stance phase brings it back: the base x reference is re-anchored at the *current*
+  base pose every solve (`commandedVelocityToTargetTrajectories`), so once the command is 0 the plan
+  has no pull toward the support centre - benign on flat ground, fatal on an incline where the last
+  steps were placed for a speed the body did not have.
+
+Two places this is made, both in the stop's last steps rather than in the stance itself:
+1. `planSlopeFootReference` takes `velocityAlong` from the *measured* base velocity. When the body is
+   slower than the command (the stall at −0.2: 0 vs −0.2; the about_face stop: 0.17 under a 0.4
+   command ramping down) the feet are still placed per the command while the footfall rule plans them
+   at the measured speed - below `standingSpeed` 0.05 every footfall is at the midpoint height, so a
+   foot stepping 14 cm uphill is told to land 2.5 cm low and meets the ground early (`descending` 45
+   vs 14, the stall sustaining itself). The commanded (conditioned) velocity is the right input: it is
+   what places the feet.
+2. The stance phase needs the base pulled over the feet on an incline (a base x reference at the
+   feet's midpoint, or the capture-point logic that already exists for footholds), since the
+   re-anchored reference will hold whatever offset the last step left.
+
+Before touching either, two columns were added to measure them on the existing bags:
+`terrain_strides.py` now prints per landing `v` (measured velocity along the heading - the value the
+footfall rule used), `base` (base ahead of the feet's midpoint along the heading, cm) and `tdref`
+(planned `terrain/next_touchdown` minus the foot's settled height - negative = reference below the
+landing, early contact), with a summary line for landings at |v| < 0.05; `fall_anatomy.py`'s timeline
+carries `base ahead of feet`. If `tdref` is ≈ −2.5 cm on the stalled landings and ≈ 0 on the clean
+ones, (1) is confirmed; if `base` at the last landing before each failed stop is beyond ~+8 cm
+(downhill of the feet) and inside ±3 cm for the forward `speeds` stop, (2) is what the stop has to
+undo.
