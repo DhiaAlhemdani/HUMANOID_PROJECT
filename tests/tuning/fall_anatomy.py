@@ -169,7 +169,7 @@ gtw = None
 if gt is not None and gt.shape[1] >= 10:
     g = gt[np.argsort(gt[:, 0])]
     g = g[np.concatenate([[True], np.diff(g[:, 0]) > 1e-6])]
-    gtw = {k: np.interp(tw, g[:, 0], g[:, c]) for k, c in (("z", 4), ("roll", 8), ("pitch", 9))}
+    gtw = {k: np.interp(tw, g[:, 0], g[:, c]) for k, c in (("z", 4), ("vz", 7), ("roll", 8), ("pitch", 9))}
 
 # ---- 1. first anomaly -------------------------------------------------------------------------------
 def first(cond, label, detail=""):
@@ -256,12 +256,27 @@ if search is not None and np.isfinite(search).any():
     if on[-1]:
         ends = np.concatenate([ends, [len(on) - 1]])
     print(f"\n-- touchdown searches in the window: {len(starts)} (start -> end, duration, foot, plan mode at the end, "
-          f"TRUE pitch at start/end)")
+          f"TRUE pitch at start/end | the searching foot: obs z - plan z [cm] and obs vz [m/s] at start -> end | "
+          f"base vz at the end: estimated / TRUE [m/s] - a foot the search drives 'down' for long with the base vz "
+          f"estimate off is on the ground with the kinematics lying, not in the air)")
+    g_vz = gtw["vz"] if gtw is not None else None
     for s0, s1 in zip(starts, ends):
         foot = "L" if search[s0] == 1 else "R"
         m_end = MODE.get(int(mode[min(s1 + 1, len(mode) - 1)]), "?") if mode is not None else "?"
         pitches = (f"{math.degrees(gtw['pitch'][s0]):5.1f} -> {math.degrees(gtw['pitch'][s1]):5.1f}" if gtw is not None else "-")
-        print(f"  {tw[s0]:8.3f} -> {tw[s1]:8.3f}  {1000 * (tw[s1] - tw[s0]):5.0f} ms  {foot}  then {m_end:<6}  pitch {pitches}")
+        fz_txt = "-"
+        names = [f for f in feet if side(f) == foot.lower()]
+        if names:
+            zz, zp = foot_z[names[0]]
+            vz = sig(f"obs_foot/{names[0]}/vz")
+            if zz is not None and zp is not None:
+                fz_txt = f"dz {100 * (zz[s0] - zp[s0]):5.1f} -> {100 * (zz[s1] - zp[s1]):5.1f}"
+            if vz is not None:
+                fz_txt += f"  vz {vz[s0]:5.2f} -> {vz[s1]:5.2f}"
+        bvz = sig("obs_base/vz")
+        b_txt = (f"{bvz[s1]:5.2f}" if bvz is not None else "  -  ") + " / " + (f"{g_vz[s1]:5.2f}" if g_vz is not None else "  -  ")
+        print(f"  {tw[s0]:8.3f} -> {tw[s1]:8.3f}  {1000 * (tw[s1] - tw[s0]):5.0f} ms  {foot}  then {m_end:<6}  pitch {pitches} | "
+              f"{fz_txt} | base vz {b_txt}")
 
 # ---- 2b. reference and policy continuity ------------------------------------------------------------
 # A fall that starts as a 10 deg pitch step within 50-100 ms is either an impact or a reference jump the

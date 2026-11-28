@@ -2249,3 +2249,32 @@ gentle 0.15 m/s (found in < 0.13 s). Expected: tiles no longer fall on the slow-
 well under the double support; slope_5 unchanged (its searches are 0.04–0.05 s). If a 0.23 s search
 remains, the foot is not where the kinematics think it is - then `fall_anatomy.py` on the bag (search
 list + the timeline's feet z) decides, not another parameter.
+
+**Run 29 D results (humanT29, code `57cf035`).** Tiles `speeds` SURVIVED - the first full tiles ladder
+with the search on: `longest` 0.024 s (18 searches), hold +0.8 62.1 / 1.236 / 338 vs T27M's 75.9 /
+1.393 / 347, the slow-downs walked (ramp → +0.5 30.0 / 0.618 / 168 vs 36.5 / 0.595 / 208). slope_5
+`speeds` is the cleanest run of the series (steady 24.6 / 0.422 / 149, one search of 0.03 s, stop 1.5°).
+Two new falls: tiles `backward` at 34.5 s in `hold −0.2` after the −0.5 → −0.2 slow-down (`longest`
+0.148 s), and slope_5 `backward` at 35.9 s in the final stop `ramp → 0.0` with a **0.25 s search**.
+Tiles `speeds` also opened with a 39° pitch swing in the first `ramp → +0.2` (jerk 106, arm_acc 8.6)
+that 29 C did not have (11.8°).
+
+The 0.25 s search on slope_5 cannot be a foot looking for the ground: with the 1.5 m/s² ramp its target
+reached 0.52 m/s and the "descent" integrates to 8 cm on a smooth 5° ramp whose plane the plan knew to a
+centimetre. A sole that the kinematics report descending for a quarter second while it is on the ground
+means the measured sole velocity is wrong - and the only thing in it that is not a joint encoder is the
+estimator's base velocity, which during a search is anchored on the OTHER foot alone (the searching foot's
+contact flag is cleared). The search then drives the "descending" leg into the ground at a growing
+velocity target: the leg extends, levers the body up on that side, the anchor foot unloads, the estimate
+drifts further, the "descent" continues - positive feedback that 29 D's acceleration made fatal where
+29 C's constant 0.15 m/s had merely been rough (the 29 B/C stop pitches of 12°). The same loop is the
+likely 29 D tiles `backward` fall (0.148 s) and the first-step 39° pitch.
+
+So the search decision is unsafe whenever its own action can corrupt the measurement it is decided on.
+The next change is not a parameter. Before choosing between (a) deciding "descending" on the foot's
+velocity relative to the base plus the estimated base velocity only while the estimator's anchor foot
+carries load, (b) a hard depth bound - the search ends, loaded where it is, once the measured sole is
+more than N cm below the plan foothold, so the loop cannot run away - and (c) ending the search when the
+estimator's base velocity disagrees with the plan's by more than the search velocity, the bags decide:
+`fall_anatomy.py` now prints, per search, the foot's obs z − plan z and vz at start and end and the
+estimated vs TRUE base vz at the end. Run it on `humanT29dS5__backward` and `humanT29dM__backward`.
