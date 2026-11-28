@@ -2357,3 +2357,19 @@ the tiles than the recipe without it. To ship it in the G1 config the ladder has
 (humanT27F) and slope_10 (humanT27S10, `speeds backward slope_about_face slope_back_slow`) with
 humanT29.yaml, 0 falls and inside the guards. Then `searchWindow 0.3` / `searchDescentAcceleration 1.5`
 go into `config/g1/ros2_controllers.yaml` and humanT25c.yaml, and the tiles residuals are the next item.
+
+**Ladder: slope_10 and flat with humanT29.yaml (29 E code).** slope_10 (humanT29eS10 vs humanT27S10):
+0 falls in all four scripts, all guards pass, steady 24.0 / 0.365 / 128 vs 23.6 / 0.376 / 125, about-face
+and slow back-down stand; one transition flagged (`about_face` ramp → w +0.5 acc_hf 0.57 → 0.73).
+Searches are rare on the 10° ramp (1–3 per script, 11 in the about-face, longest 0.042 s). Closed.
+Flat (humanT29eF vs humanT27F): 0 falls in six scripts, but the baseline has only `speeds` (speeds-only
+since run 26), so the aggregate compare mixes the candidate's `stops` into a speeds-only limit. On
+`speeds`: steady unchanged (33.6 / 46.7 / 62.7 vs 37.2 / 46.2 / 59.2 at +0.2 / +0.5 / +0.8); the
+0.8 → 0.5 deceleration ramp worse, 76.2 / 1.152 / tau_rate 394 vs 57.0 / 0.852 / 271 with pitch_pp
+22.6° - the `transition_tau_rate_max` guard (394 > 380) - one 16 ms search in the whole run. In the
+scripts without a baseline and with ZERO searches: `stops`' second start from standing pitched 32.9°
+(jerk 110, tau_rate 360), `omni` 16–22° on four transitions. The search is inert when not searching, so
+those are either the T27 recipe's own behaviour on scripts not run since the terrain work or something
+unseen; a like-for-like flat baseline (humanT25c.yaml, all six scripts) decides, plus `fall_anatomy`
+on the 29eF `speeds` deceleration ramp to see whether the one search sat in it. Not closed; the
+shipped default stays off until it is.
