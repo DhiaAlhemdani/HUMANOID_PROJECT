@@ -1531,8 +1531,9 @@ counters plausible), so the numbers below are the first valid read of `followSlo
 So `followSlope` fixed what it was built for - the references on the incline - and forward 10 deg is a
 pass. What it did not fix is **stopping on the incline while facing downhill**, which fails identically
 with or without the slope references. Two things differ between the two stops: (1) the trailing foot
-at the stop is the *uphill* one going backward (the robot faces −x, walks +x: the rear foot in travel
-terms is the front foot in body terms); below `standingSpeed` the plan anchors at the feet's midpoint
+at the stop is the *uphill* one going backward (the robot keeps facing +x and walks −x onto the ramp
+mirrored at −x: the rear foot in travel terms is the front foot in body terms); below `standingSpeed`
+the plan anchors at the feet's midpoint
 with v = 0, so both stance references move to the plane at the midpoint - fine for the sole heights,
 but the plane *normal* keeps the heading's sign, and the swing-free stance has nothing to correct a
 reference that is tilted the wrong way about the body's y; (2) the backward `descending` count is
@@ -1554,3 +1555,34 @@ non-zero `tilt` where forward ones do not, the stop fails because the feet never
 last step, it is the standing reference (the midpoint anchor and the normal's sign) and the fix is in
 `planSlopeFootReference`'s standing branch and `getContactNormal`. `followSlope` stays off in the
 shipped config until this is settled; humanT25cM (`suite_mild`) is still outstanding.
+
+**Strides and anatomy of the backward stop (humanT25c2S10__backward).** The `tilt` column answers the
+question: **the feet sit flat on the ramp both ways** — mean |tilt| 0.15 deg backward (max 0.87) and
+0.09 deg forward (max 2.2), 0 % of landings over 3 deg, 44 landings each. Cause 2 (toe landings that
+never settle) is out; `descending` 45 vs 14 is not a landing-quality signal here. What the table shows
+instead is that **the slow backward climb had already stopped before the stop**: in the −0.2 m/s
+return hold (t 44-51 s, 2.7 m up the ramp at ground 47 cm) the feet alternate at x −4.3 … −4.1 without
+progressing and the pair drifts *downhill* (r landings −1.0 / −1.2 / −1.3 / −2.3 cm below the
+previous l, x of r −4.25 → −4.05), with a 9.1 deg pitch excursion and 6.4 cm dz at 49.8 s; that is the
+`v_err 0.24` and `leg_jerk 541` of the hold (commanded −0.2 uphill, moving ~+0.02 downhill). Forward
+at +0.2 on the same ground climbs at 0.14 m/s with 0.5 deg excursions. The faster rungs were fine
+backward: −0.5 at 0.115 m/s vs forward 0.13, −0.8 at 0.16 vs 0.16, the −0.5 return at 0.2.
+
+The fall itself is a clean tip-over from a quiet stance, not an impact: last touchdown 51.93 s, then
+STANCE with pitch −0.3 deg; from 52.1 s the true pitch climbs monotonically 0.1 → 0.6 → 1.5 → 3.5 →
+8 → 18 → 34 deg (nose-down, i.e. downhill), *while the ankle-pitch torques fall* (right 13 → 9 Nm,
+left 11 → 6 Nm up to 52.41 s) - the controller is not pushing the CoP toward the toes to arrest it.
+Hip pitch / waist / shoulders saturate at 52.68 s, the estimator matches ground truth throughout
+(pitch error 0.4 deg, obs-plan z 0). An inverted pendulum that the whole-body controller is tracking,
+not fighting, points at the *reference* (base pitch / position, or the contact wrench the plan asks
+for), which the anatomy did not print: its `plan_base/pitch` line was nan-poisoned by the post-fall
+samples (fixed: nan-aware), and the timeline now carries the planned base pitch, the x and z obs-plan
+gaps and the planned centre of pressure per foot (−my/fz) so the next read shows whether the plan
+asked for the tip.
+
+Two scripts to separate the hypotheses without guessing (`tests/tuning/suite/`): `slope_about_face`
+walks forward onto the ramp, stops, turns ~180 deg in place, stands 6 s facing downhill, then walks
+0.2 m/s downhill and stops - if the stand after the turn falls, standing on the incline facing
+downhill is the problem (the reference); if it survives, the slow backward gait leaves the robot in a
+state the stop cannot hold. `slope_back_slow` is −0.2 m/s for 20 s and a stop - whether the slow
+backward climb stalls on its own at this height or only after the faster rungs.

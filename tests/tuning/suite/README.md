@@ -19,6 +19,8 @@ the test, not controlled.
 | height_back | the `height` script at -0.5 m/s (slider moves while walking backward) | 32 s |
 | crouch | a 10 cm crouch on command while walking: 0.3 m/s and 0.5 m/s, height 0.72 -> 0.62 -> 0.72 at each (the crouch-gait target; z_m says how much of it the walk delivers) | 40 s |
 | backward | the speeds ladder in reverse: -0.2 -> -0.5 -> -0.8 -> -0.5 -> -0.2 -> 0 m/s (the human-gait arm / waist templates run in reverse, see Run 19) | 40 s |
+| slope_about_face | for `TERRAIN=slope_10`: 0.4 m/s forward onto the ramp (the cap holds it to ~0.2 there), stop, turn in place by ~180 deg, stand 6 s facing downhill, then 0.2 m/s forward (downhill) and stop. Separates "standing on the incline facing downhill" from "the backward gait left it in a bad state" (Run 25 C'') | 48 s |
+| slope_back_slow | for `TERRAIN=slope_10`: -0.2 m/s backward for 20 s (onto the mirrored ramp at -x, ~2.5 m up it) and stop. The slow backward climb and the stop without the faster rungs before them (Run 25 C'') | 27 s |
 
 Scripts without a 5th column command the pelvis height `HEIGHT` (default 0.785 m, the shipped `defaultBaseHeight`).
 `TERRAIN=<module>` (default `none`, flat) runs the same scripts on a terrain, one rung of the ladder at a time:

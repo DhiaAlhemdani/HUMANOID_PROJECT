@@ -132,6 +132,13 @@ def sig(name):
 
 pitch, roll = sig("obs_base/pitch"), sig("obs_base/roll")
 zo, zp = sig("obs_base/z"), sig("plan_base/z")
+xo, xp, pp = sig("obs_base/x"), sig("plan_base/x"), sig("plan_base/pitch")
+# Planned centre of pressure along the sole from the planned wrench (-my / fz, the moment about the
+# contact frame's origin); nan while the foot carries < 20 N.
+cop = {}
+for f in feet:
+    fz_, my_ = sig(f"plan_wrench/{f}/fz"), sig(f"plan_wrench/{f}/my")
+    cop[f] = np.where(np.abs(fz_) > 20.0, -my_ / np.where(np.abs(fz_) > 20.0, fz_, 1.0), np.nan) if fz_ is not None and my_ is not None else None
 mode = sig("plan_mode")
 if mode is not None:
     mode = np.where(np.isfinite(mode), mode, -1.0)  # NaN before the first policy / after a fall
@@ -200,14 +207,18 @@ for tt, label, detail in events[:14]:
     print(f"  {tt:8.2f} | {label:<46} | {detail}")
 
 # ---- 2. timeline --------------------------------------------------------------------------------------
-print(f"\n-- timeline (every {a.step:.2f} s): t | mode | est pitch roll [deg] | TRUE pitch roll [deg] | z obs-plan [cm] | feet z [cm] (c=contact) | top |tau| [Nm] | top |q err| [rad]")
+print(f"\n-- timeline (every {a.step:.2f} s): t | mode | est pitch roll [deg] | TRUE pitch roll [deg] | plan pitch [deg] | x, z obs-plan [cm] | "
+      f"planned cop_x per foot [cm] (-my/fz) | feet z [cm] (c=contact) | top |tau| [Nm] | top |q err| [rad]")
 times = np.arange(tw[0], tw[-1] + 1e-9, a.step)
 for tq in times:
     i = int(np.argmin(np.abs(tw - tq)))
     parts = [f"{tw[i]:7.2f}", MODE.get(int(mode[i]), "?") if mode is not None else "?"]
     parts.append(f"{math.degrees(pitch[i]):6.1f} {math.degrees(roll[i]):6.1f}" if pitch is not None and roll is not None else "   -   -")
     parts.append(f"{math.degrees(gtw['pitch'][i]):6.1f} {math.degrees(gtw['roll'][i]):6.1f}" if gtw is not None else "   -   -")
-    parts.append(f"{100 * (zo[i] - zp[i]):6.1f}" if zo is not None and zp is not None else "   -")
+    parts.append(f"{math.degrees(pp[i]):6.1f}" if pp is not None else "   -")
+    parts.append((f"{100 * (xo[i] - xp[i]):6.1f}" if xo is not None and xp is not None else "   -") +
+                 (f"{100 * (zo[i] - zp[i]):6.1f}" if zo is not None and zp is not None else "   -"))
+    parts.append(" ".join(f"{100 * cop[f][i]:5.1f}" if cop[f] is not None and np.isfinite(cop[f][i]) else "   - " for f in feet))
     fz = []
     for f in feet:
         zz = foot_z[f][0]
@@ -247,9 +258,11 @@ if pt0 is not None:
         print(f"  policy_valid == 0 for {100 * np.mean(pv < 0.5):.0f} % of the window, first at {tw[np.flatnonzero(pv < 0.5)[0]]:.3f}")
 pbp = sig("plan_base/pitch")
 if pbp is not None and pitch is not None:
-    k = int(np.argmax(np.abs(pbp - pitch)))
-    print(f"  plan_base/pitch: range {math.degrees(pbp.min()):.1f} .. {math.degrees(pbp.max()):.1f} deg; "
-          f"largest obs-plan gap {math.degrees(np.abs(pbp - pitch)[k]):.1f} deg at {tw[k]:.3f}")
+    gap = np.abs(pbp - pitch)
+    if np.isfinite(gap).any():  # the plan is nan after a fall (policy invalid): ignore those samples
+        k = int(np.nanargmax(gap))
+        print(f"  plan_base/pitch: range {math.degrees(np.nanmin(pbp)):.1f} .. {math.degrees(np.nanmax(pbp)):.1f} deg; "
+              f"largest obs-plan gap {math.degrees(gap[k]):.1f} deg at {tw[k]:.3f}")
 
 if gtw is not None and pitch is not None:
     e_p, e_r = np.abs(pitch - gtw["pitch"]), np.abs(roll - gtw["roll"]) if roll is not None else None
