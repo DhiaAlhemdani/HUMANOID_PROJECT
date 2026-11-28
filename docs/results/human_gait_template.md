@@ -1905,3 +1905,30 @@ the turn**: strides during w 0.5 with `tdref` ~0, `tilt` < 3 deg, and `slope` tu
 through 0 to −0.18 across the about-face while `plane active` stays on), `slope_5` both ways against
 humanT25c6S5 (unchanged numbers expected: straight walking is the same fit), and a flat `speeds`
 against humanT25c4 or c5 (the first transition out of the stand; `terrain/slope` must stay 0.000).
+
+**Run 26 results (`19847b5`, humanT26 vs humanT25c6).** **slope_about_face survived the whole script** -
+the first time anything has turned in place on 10 deg: ramp → w 0.5 at jerk 29.8 (c6 123), the turn
+hold 40.9 with pitch_pp 2.5 / roll_pp 2.1 (c6 fell at 572), `terrain/slope` sweeping +0.183 → +0.158
+→ −0.009 → −0.164 → −0.168 as the heading turns through the fixed plane, the incline cap 100 % on
+through the turn and only 2 roughness steps in the run; then back down at 0.2 (hold 38.2) and a
+clean stop (0.10). Strides during the turn: `tdref` −1.0 … +0.9 against steps of −0.8 … −4.6 cm (the
+feet moving across the slope as they turn), `tilt` ≤ 2.6 deg, pitch ≤ 2 deg - the yaw-rate footfall
+is right to a centimetre. S10 overall: 0 falls, WINNER (steady 22.4 / 0.36 / 121 vs 57.2 / 0.97 /
+178); speeds 26.0 (c6 27.5), backward 24.7 (27.0), back_slow 15.6. S5: 0 falls, steady 25.3 / 25.4 (c6
+26.3 / 28.0), and the transitions out of the stand are back where they were (ramp → ±0.2 at 23.7 /
+25.4 vs c6's 42.4 / 41.2) - the |gradient| < 0.01 gate was the right call; `plane active` on the
+plateau is now blank (flat branch), as intended. slope_5 flat approach and the flat `speeds`
+(humanT26F) run with `slope 0.000` and 0 terrain steps throughout (no flat baseline tag was found for
+`compare_suite`; compare against an existing flat humanT24e / T25c tag).
+
+Residuals, in order: (1) **the first stride down off a crest** - still the one event on slope_5:
+forward t 51.43 step −1.4 pitch 3.2 (fine this time), backward t 51.43 step −2.6 with pitch 22.3
+(stop transition 56.7 / 1.07, the `guards-fail` on S5). It cannot be planned blind, and with
+`lateWindow 0` the foot goes into planned stance 2.5 cm above the ground and the body pivots onto it
+(the run 23 B decision; the late half is destructive on tiles). A fix would have to be specific to
+this case - a foot still > 1 cm in the air at its planned touchdown while the plane has just been
+contradicted downwards - not a general late hold. (2) S10 `speeds` ramp entry took 4 roughness
+trips at jerk 54 / roll_pp 5.5 (c6 1 trip, 34); the about_face entry took 2 at 32. Run-to-run so far;
+watch. (3) The backward slope_10 stand has a slow lateral sway (stop hold jerk 5.4 / 6.8, lat_hf
+0.12-0.14, both c6 and here). (4) The provisional plane and the 2-D fit have not been run on tiles
+since `186a2a5`: `suite_mild` both ways against the humanT24e / T25c tile tags before anything ships.
