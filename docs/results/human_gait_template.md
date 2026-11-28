@@ -1681,3 +1681,36 @@ Rebuild (no `SKIP_BUILD`) and re-run the four `slope_10` cases with humanT25c (`
 slope_about_face slope_back_slow`); then `slope_5` both ways and `suite_mild` as regression. Expect: plane
 active ~100 % on the ramps, all four stops standing. Still open after that: `tdref` on the ramp (the
 footfall rule uses the instantaneous base velocity), humanT25cM.
+
+**Run 25 D results (humanT25c3S10, rebuilt with the kept plane; baseline humanT25c2S10).** The plane is
+active on 93-96 % of landings (the rest are the flat approach before the ramp), and the footfall rule
+is accurate once it is: planned minus true rise mean −0.12 / +0.26 / +0.29 cm, mean |err| 0.4-0.6 cm
+(the +1.5-3 cm of run 25 C‴ was the estimator-frame artefact).
+
+| case | before | now |
+|---|---|---|
+| speeds (fwd ladder + stop) | survived, stop hold jerk 3.39, top z 1.374 | **survived**, stop hold **0.57**, top z 1.464 (climbs further), steady 30.0 / 0.49 / 161 |
+| backward (bwd ladder + stop) | **fell** in the stop (424 / 509), −0.2 return hold stalled (v_err 0.24, leg_jerk 541) | **survived**, stop hold **1.10**, z 1.693 (vs 1.221 - no stall), steady **26.4** / 0.37 / 132, v_err 0.09 on every rung, contactSync advanced 2 / blocked 2 (vs 26 / 20), terrain steps 3 (vs 24) |
+| slope_back_slow (−0.2 x 20 s + stop) | **fell** in the stop (467 / 446) | **survived**, stop hold 6.5, steady 21.4 / 0.27 / 103 |
+| slope_about_face | **fell** at the forward 0.4 → 0 stop | the stop **stands** (hold 0.87) - then **fell in the turn in place** on the ramp (hold w 0.5: jerk 406, roll_pp 145, 44.25 s sim) |
+
+Four stops on 10 deg, four standing, both directions; the backward ladder is now the *smoother* of
+the two. The incline cap settles at 0.20 and the roughness tiers stop firing on the ramp (steps 3 vs
+24), which is also why the −0.2 return hold no longer stalls: the cap had been pushed to 0.12 by false
+roughness steps and the gait was placing feet for a command the body was not given.
+
+**The turn in place is the next limit, and it is by construction.** The plane is a scalar slope *along
+the heading* and its gradient is re-oriented with the current heading every solve
+(`slopeGradient = slope x heading`); a turn in place takes no samples (the feet are side by side
+along the heading, `dd` ~ 0), so the kept +0.19 is swung round with the body - after 90 deg the plane
+tilts sideways across the real ramp, after 180 deg it is upside down. The estimate has to become a
+world-frame gradient: each double support gives one component, `dz = g . dp` along the feet's
+separation vector `dp`, and the separation vector rotates with the robot during a turn, so a small
+least-squares window over recent double supports observes both components (walking straight leaves
+the across-track component unobserved: regularise it towards its previous value). That is a design
+step (run 26), not a tweak. Whether the turn itself is survivable on 10 deg with level references is
+the control: run T25a on `slope_about_face` - if it falls in the turn too, the gait is the limit there,
+not the plane.
+
+Status of `followSlope`: ready for the regressions (`slope_5` both ways, `suite_mild`, flat `speeds`),
+since the kept-plane change also touches the cap under humanT24e / T25a. Then ship as humanT25c.
