@@ -22,6 +22,12 @@ ray-cast at the four sole corners, so every touchdown gets:
             (`step`, ground truth) [cm]: negative = the reference was below where the foot landed (it met the
             ground early), positive = above (it landed late). Blank when that solve ran the flat branch (no
             plane: `terrain/next_touchdown` is nan there) - on an incline a blank IS the finding (Run 25 C)
+  air0/air1 what the terrain cap's slope sample sees: the measured height of the landing foot over the stance
+            foot (estimator frame, same instant) minus the true step, at the first solve of the planned double
+            support (air0) and at its last (air1) [cm]. Positive = the landing foot reads higher than the ground
+            it stands on, i.e. it has not landed yet: a foot planned above the ground (the plane kept over a
+            crest) is still in the air when the schedule says double support, and a sample taken there
+            confirms the plane that put it there (Run 25 F)
   tilt_deg  sole pitch relative to the ground under it, 0.2 s after the switch (the foot settled): the true
             base pose (ground truth) and the measured joint angles posed in the scene, the ankle-roll link's x
             axis against the ground's rise from heel to toe corners; positive = toe up (resting on the heel),
@@ -210,6 +216,13 @@ for case in a.cases:
             base_ahead = 100 * ((ob["x"][k] - mx) * hx + (ob["y"][k] - my) * hy)
         td_err = math.nan
         oz_est = sig(f"obs_foot/{other}/z")
+        fz_est = sig(f"obs_foot/{f}/z")
+        air0 = air1 = math.nan
+        if oz_est is not None and fz_est is not None and np.isfinite(gz) and np.isfinite(oz):
+            nxt = sw[sw > k]
+            k_end = int(nxt[0]) - 1 if nxt.size else len(t) - 1
+            air0 = 100 * ((fz_est[k] - oz_est[k]) - (gz - oz))
+            air1 = 100 * ((fz_est[k_end] - oz_est[k_end]) - (gz - oz))
         if td_next is not None and oz_est is not None:
             j = int(np.searchsorted(st, t[k])) - 1
             if j >= 0 and np.isfinite(td_next[j]) and t[k] - st[j] < 0.2:
@@ -220,7 +233,7 @@ for case in a.cases:
         fell_here = fell_sim is not None and 0 <= fell_sim - t[k] <= 1.5
         rows.append(dict(case=tag, t=t[k], vx=vx_cmd[k], foot=s, x=x, y=y, gnd_cm=100 * gz, step_cm=100 * (gz - oz),
                          edge_cm=100 * (np.nanmax(cz) - np.nanmin(cz)), v=v_along, base_cm=base_ahead, tdref_cm=td_err,
-                         tilt_deg=tilt, pitch_pp=pitch_pp, dz_pp=dz_pp, FELL=fell_here))
+                         air0_cm=air0, air1_cm=air1, tilt_deg=tilt, pitch_pp=pitch_pp, dz_pp=dz_pp, FELL=fell_here))
     if not rows:
         print(f"{tag}: no touchdowns", file=sys.stderr)
         continue
@@ -232,11 +245,12 @@ for case in a.cases:
         kf = min(kf, len(t) - 1)
         print(f"  FELL at sim {fell_sim:.2f} s, base at x {g['x'][kf]:.2f} y {g['y'][kf]:.2f} (vx cmd {vx_cmd[kf]:.1f})")
     hdr = (f"{'t':>7} {'vx':>4} {'ft':>2} {'x':>6} {'y':>6} {'gnd':>5} {'step':>5} {'edge':>5} {'v':>5} {'base':>5} {'tdref':>5} "
-           f"{'tilt':>5} {'pitch':>6} {'dz':>5}  ")
+           f"{'air0':>5} {'air1':>5} {'tilt':>5} {'pitch':>6} {'dz':>5}  ")
     print("  " + hdr)
     for r in rows:
         print(f"  {r['t']:7.2f} {r['vx']:4.1f} {r['foot']:>2} {r['x']:6.2f} {r['y']:6.2f} {r['gnd_cm']:5.1f} {r['step_cm']:+5.1f} "
-              f"{r['edge_cm']:5.1f} {r['v']:5.2f} {r['base_cm']:5.1f} {r['tdref_cm']:5.1f} {r['tilt_deg']:5.1f} "
+              f"{r['edge_cm']:5.1f} {r['v']:5.2f} {r['base_cm']:5.1f} {r['tdref_cm']:5.1f} {r['air0_cm']:5.1f} "
+              f"{r['air1_cm']:5.1f} {r['tilt_deg']:5.1f} "
               f"{r['pitch_pp']:6.2f} {r['dz_pp']:5.1f}  {'FELL' if r['FELL'] else ''}")
 
     R = np.array([(r["step_cm"], r["edge_cm"], r["pitch_pp"], r["dz_pp"], r["FELL"]) for r in rows], dtype=float)
@@ -264,6 +278,12 @@ for case in a.cases:
               + f" | plane active (tdref present) on {100 * ok.mean():.0f} % of landings")
     elif td_next is not None:
         print("  plane active (tdref present) on 0 % of landings: the flat branch ran at every touchdown")
+    air = np.array([(r["air0_cm"], r["air1_cm"]) for r in rows], dtype=float)
+    ok = np.all(np.isfinite(air), axis=1) & walking
+    if ok.any():
+        print(f"  landing foot above its ground at the planned double support [cm]: first solve mean {np.mean(air[ok, 0]):+5.2f} "
+              f"(> 1 cm on {100 * np.mean(air[ok, 0] > 1.0):.0f} % of landings) | last solve mean {np.mean(air[ok, 1]):+5.2f} "
+              f"(> 1 cm on {100 * np.mean(air[ok, 1] > 1.0):.0f} %)")
     tilts = np.array([r["tilt_deg"] for r in rows], dtype=float)
     if np.isfinite(tilts).any():
         ok = np.isfinite(tilts)

@@ -1754,3 +1754,43 @@ Rebuild (no `SKIP_BUILD`) and re-run: `slope_5` both ways (the crest, baseline h
 the stops must still stand: this is the check that the closing steps' residuals are under 1 cm on
 10 deg), and the T25a control on `slope_about_face`. `terrain_strides` on the slope_5 runs shows the
 crest directly: `tdref` should go to ~0 within one landing of the plateau instead of +2 cm for three.
+
+**Run 25 F: height-tolerance plane (humanT25c4, `bf757e2`).** slope_5 now stands both ways (backward
+fell in 25 E) and the slope_10 ladder stands both ways with the stops (speeds 29.1 / 0.48 / 153, backward
+26.7 / 0.39 / 136 - the best slope_10 numbers so far; slope_back_slow stop hold 1.2), but two things are
+wrong. (1) **The crest is still rough**: slope_5 forward ramp → 0.2 / hold 0.2 at jerk 73 / 75 with
+pitch_pp 6-9 deg, backward hold −0.2 at 73 with pitch_pp **24.5** deg and a 2.7 cm step down the far ramp
+at 24 deg of pitch. `terrain_strides` shows the plane did not drop at the first flat stride: `tdref`
+(planned minus true rise) on the plateau runs +1.9, +2.7, +1.2, +1.2, +1.2, +0.8, +0.6, +0.2 over eight
+landings forward, +1.4 … +2.9 over ten backward, every one of them with the plane active and a
+4-5 deg pitch excursion after the landing. The plane decayed geometrically (0.087 → ~0.05 → ~0.03 →
+~0.01) instead of being contradicted. The mechanism is a feedback loop in the sample itself: the
+sample is read at the *first* solve of the planned double support, and a foot planned 2 cm above the
+ground is still 1-2 cm in the air at the planned touchdown (the schedule says double support from the
+plan; contactSync advances early feet, late ones hang) - so the sample reads the foot where the plane
+put it, within the height tolerance, and confirms the plane. Going *up* a ramp the loop does not
+exist (a foot planned low meets the ground early and is down when sampled), which is why the plane
+forms promptly on the way up and dies slowly on the way off. (2) **slope_about_face fell at the stop
+again** (19.4 s) - but with `slope −0.000` through the whole 0.4 hold and 10 roughness steps: the plane
+never formed on that run (humanT25c3 formed it and stood the stop), so the references were flat at
+the stop, the 25 C failure. The same sample timing is the likely cause: with the plane dropped by one
+in-air reading, rebuilding needs three *agreeing* 0.13 m samples, and in-air readings do not agree.
+The T25a control (`humanT25aS10X`) also fell at the stop (19.0 s), as T25a always has on slope_10, so
+it says nothing about the turn; the turn is still unreached with a standing plane.
+
+**Fix: read the sample when the double support ends.** `TerrainSpeedCap` keeps the last (dz, dd) of the
+current double support and takes the slope sample at the solve that leaves it - by then the landing
+foot carries load and is down (`takeSlopeSample`; unit test with a foot that hangs 2.6 cm up at the
+first solve and is down at the last; the other blocks re-timed to lift-off). Known cost: during the
+first flat double support the standing plane still reads the landed foot as a 2.6 cm residual, one
+tier-2 roughness trip (0.2 m/s for 3 s) at every crest; the roughness path is otherwise untouched
+(per solve, max over the double support, as tuned in run 24). `terrain_strides` gains `air0` / `air1`:
+the landing foot's measured height over the stance foot minus the true step at the first and the last
+solve of the planned double support - what the sample sees at either timing. On the humanT25c4S5 bags
+`air0` should be +1..+2 cm on the plateau landings and `air1` ~0; on the ramp both ~0.
+
+Rebuild and re-run: `slope_5` both ways (baseline humanT25c4S5: the crest, `tdref` should be blank or
+~0 from the second plateau landing, pitch_pp back to 1-2 deg), the four `slope_10` cases (baseline
+humanT25c4S10: the plane must form in `slope_about_face` and the stops stand), and `terrain_strides`
+on all of them (the `air0`/`air1` columns are the direct check of the mechanism). `suite_mild` is not
+touched by the sample timing (no plane forms on tiles) but a flat `speeds` is cheap.

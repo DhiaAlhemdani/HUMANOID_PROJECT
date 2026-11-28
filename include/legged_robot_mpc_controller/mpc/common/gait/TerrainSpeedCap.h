@@ -65,7 +65,10 @@ namespace ocs2::humanoid {
  * that contradicts it in height - its rise off by more than max(slopeConsistency x run,
  * slopeHeightTolerance) - so the millimetres of sole noise on a short double support (a stop's
  * closing steps) keep the plane, while a full stride that misses it by centimetres (the plateau
- * after a ramp) drops it at once (run 25 C / 25 E); three agreeing samples build the next one.
+ * after a ramp) drops it at once (run 25 C / 25 E); three agreeing samples build the next one. The
+ * sample is read at the end of the double support, when the landed foot carries load: at its first
+ * solve a foot planned above the ground is still in the air and would confirm the plane that put it
+ * there (run 25 F).
  */
 struct TerrainSpeedCapSettings {
   bool enabled = false;
@@ -121,7 +124,10 @@ class TerrainSpeedCap {
   scalar_t capValue_ = std::numeric_limits<scalar_t>::infinity();
   std::vector<scalar_t> tierTime_;  //!< [s] per tier: when a step of that size was last seen (NaN = never)
   bool fitsPlane(scalar_t slope, scalar_t rise, scalar_t run) const;
+  void takeSlopeSample(scalar_t dz, scalar_t dd);
   std::array<scalar_t, 3> slopeSamples_{};  //!< [-] rise / run of the last three double supports
+  scalar_t lastDsDz_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [m] signed sole-height step at the last solve of the current double support
+  scalar_t lastDsDd_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [m] the feet's separation along the heading there
   size_t slopeSampleCount_ = 0;
   scalar_t slope_ = 0.0;
   bool slopeConsistent_ = false;

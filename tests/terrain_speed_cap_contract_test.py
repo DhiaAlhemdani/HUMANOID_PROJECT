@@ -84,13 +84,27 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         # it until three new samples agreed planned the feet into the air over the crest of slope_5 (the first
         # full stride on the plateau misses the plane by stride x slope). A standing plane must fall only to a
         # sample that contradicts it in height, with a floor for the sole noise of a short base.
+        sample = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::takeSlopeSample("):CAP_CPP.index("TerrainSpeedCap::fitsPlane(")]
         update = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::update("):]
-        self.assertIn("if (slopeConsistent_ && !fitsPlane(slope_, dz, dd)) {\n        slopeConsistent_ = false;", update)
-        self.assertIn("if (*hi - *lo <= settings_.slopeConsistency) {\n          slopeConsistent_ = true;\n          slope_ = medianOf3(slopeSamples_);", update)
-        self.assertNotIn("slopeConsistent_ = (*hi - *lo)", update)
+        self.assertIn("if (slopeConsistent_ && !fitsPlane(slope_, dz, dd)) {\n    slopeConsistent_ = false;", sample)
+        self.assertIn("if (*hi - *lo <= settings_.slopeConsistency) {\n      slopeConsistent_ = true;\n      slope_ = medianOf3(slopeSamples_);", sample)
+        self.assertNotIn("slopeConsistent_ = (*hi - *lo)", CAP_CPP)
         self.assertIn("std::max(settings_.slopeConsistency * std::abs(run), settings_.slopeHeightTolerance)", CAP_CPP)
         self.assertIn("slopeConsistent_ ? std::abs(dz - slope_ * dd) : std::abs(dz)", update)
         self.assertIn("The plane stands through noise and falls to a contradiction", (ROOT / "tests/terrain_speed_cap_test.cpp").read_text())
+
+    def test_sample_is_read_when_the_double_support_ends(self):
+        # Run 25 F: at the first solve of the planned double support the landing foot can still be in the air
+        # (planned above the ground by a kept plane), and a sample read there confirms the plane that put it
+        # there - the plane decayed over six landings on the slope_5 plateau instead of dropping at the first
+        # flat stride. The sample is the last reading inside the double support, taken as it ends.
+        update = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::update("):]
+        self.assertIn("if (!doubleSupport && inDoubleSupport_ && std::isfinite(lastDsDz_) && std::isfinite(lastDsDd_) &&\n"
+                      "      std::abs(lastDsDd_) >= settings_.slopeMinSeparation) {\n    takeSlopeSample(lastDsDz_, lastDsDd_);", update)
+        self.assertIn("lastDsDz_ = dz;\n    lastDsDd_ = dd;", update)
+        self.assertNotIn("slopeSamples_[slopeSampleCount_ % slopeSamples_.size()] = dz / dd;", update)
+        self.assertIn("The sample is read when the double support ends, not when it begins",
+                      (ROOT / "tests/terrain_speed_cap_test.cpp").read_text())
 
     def test_telemetry_and_unit_test(self):
         for name in ("terrain/cap", "terrain/steps", "terrain/last_step", "terrain/slope"):

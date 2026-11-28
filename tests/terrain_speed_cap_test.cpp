@@ -95,39 +95,48 @@ int main() {
       lastTouchdown = t;
       const scalar_t c = cap.update(t, both, z, dd);  // touchdown: double support
       t += 0.2;
-      if (stride < 2) {
-        assert(near(c, 0.2) && !cap.slopeConsistent());  // not yet three samples: the raw 2.6 cm step reads as tier 2 roughness
+      if (stride < 3) {
+        // The sample of a double support is read when it ends, so the third one lands at the fourth stride's
+        // lift-off: until then the raw 2.6 cm step reads as tier 2 roughness.
+        assert(near(c, 0.2) && !cap.slopeConsistent());
       } else {
         assert(cap.slopeConsistent() && near(cap.slope(), rise / 0.3) && near(cap.lastStep(), rise));
       }
       zBack = zFront; dBack = dFront; lead = back;
     }
-    // Roughness tiers released (last raw step at the second touchdown, > 3 s ago); the incline cap holds at 0.3.
-    assert(near(cap.capValue(), 0.3) && cap.active() && cap.stepCount() == 2);
+    // Roughness tiers released (last raw step at the third touchdown, > 3 s ago); the incline cap holds at 0.3.
+    assert(near(cap.capValue(), 0.3) && cap.active() && cap.stepCount() == 3);
     // Standing still on the ramp (feet side by side along the heading) adds no samples and keeps the incline cap:
     // the ground has not changed. (A single-support pause, no double-support refresh, lets it expire.)
     assert(near(cap.update(lastTouchdown + 5.0, both, {0.1, 0.1}, {0.0, 0.0}), 0.3));
     assert(near(cap.update(lastTouchdown + 5.5, leftOnly, {0.1, 0.1}, {0.0, 0.0}), 0.3));
     assert(std::isinf(cap.update(lastTouchdown + 8.6, leftOnly, {0.1, 0.1}, {0.0, 0.0})));
-    // Walking off the ramp onto the flat: the first full flat stride misses the plane by 2.6 cm and drops it at
-    // once (the references go flat; a flat step is no roughness); three flat samples make the plane flat again.
+    // Walking off the ramp onto the flat: the first full flat stride misses the plane by 2.6 cm. Read against
+    // the standing plane while that double support lasts it is one roughness trip (tier 2); its sample, read
+    // as the double support ends, drops the plane (the references go flat, flat steps are no roughness) and
+    // three flat samples make the plane flat again.
     scalar_t tf = lastTouchdown + 9.0;
-    for (int stride = 0; stride < 3; ++stride) {
+    for (int stride = 0; stride < 4; ++stride) {
       cap.update(tf, stride % 2 ? leftOnly : rightOnly, {0.2, 0.2}, {dBack + 0.3, dBack});
+      if (stride == 1) {
+        assert(!cap.slopeConsistent() && near(cap.slope(), rise / 0.3));  // dropped at the first flat sample; the incline cap keeps the slope for its hold
+      }
       cap.update(tf + 0.5, both, {0.2, 0.2}, {dBack + 0.3, dBack});
       if (stride == 0) {
-        assert(!cap.slopeConsistent() && cap.stepCount() == 2);
+        assert(near(cap.capValue(), 0.2) && cap.stepCount() == 4);
+      } else {
+        assert(cap.stepCount() == 4);
       }
       tf += 0.7;
     }
     assert(cap.slopeConsistent() && std::abs(cap.slope()) < 1e-9);
-    assert(std::isinf(cap.capValue()) && cap.stepCount() == 2);
+    assert(std::isinf(cap.update(tf + 1.0, leftOnly, {0.2, 0.2}, {dBack + 0.3, dBack})) && cap.stepCount() == 4);
   }
   // A 10 deg incline engages the second incline tier (0.12 -> 0.2 m/s); walking down it (negative slope) too.
   for (const scalar_t sign : {1.0, -1.0}) {
     TerrainSpeedCap cap(d);
     const scalar_t slope = sign * std::tan(10.0 * M_PI / 180.0);  // 0.176
-    for (int stride = 0; stride < 7; ++stride) {  // the first two raw 5.3 cm steps trip roughness tier 3 (0.1) for 3 s
+    for (int stride = 0; stride < 8; ++stride) {  // the first three raw 5.3 cm steps trip roughness tier 3 (0.1) for 3 s
       const scalar_t t = 0.7 * stride;
       cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
       cap.update(t + 0.5, both, {0.0, 0.3 * slope}, {0.0, 0.3});
@@ -137,42 +146,58 @@ int main() {
   // The plane stands through noise and falls to a contradiction, both measured in height: a noisy sample on a
   // short base (the stop's closing step: 8 cm apart, 4 mm of sole noise = 0.05 of slope) must not zero the plane
   // - the references and the contact normal would flip to flat on the incline - while the first full stride onto
-  // the plateau (a 5 cm miss) drops it at once; three agreeing ~0 samples then make the ground flat.
+  // the plateau (a 5 cm miss) drops it at once; three agreeing ~0 samples then make the ground flat. Each
+  // stride's sample is read at its lift-off (the end of the double support).
   {
     TerrainSpeedCap cap(d);
     const scalar_t slope = std::tan(10.0 * M_PI / 180.0);
     scalar_t t = 0.0;
-    for (int stride = 0; stride < 4; ++stride, t += 0.7) {
+    auto stride = [&](scalar_t dz, scalar_t dd) {
       cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
-      cap.update(t + 0.5, both, {0.0, 0.3 * slope}, {0.0, 0.3});
+      cap.update(t + 0.5, both, {0.0, dz}, {0.0, dd});
+      t += 0.7;
+      cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});  // lift-off: the sample is read
+    };
+    for (int k = 0; k < 4; ++k) {
+      stride(0.3 * slope, 0.3);
     }
     assert(cap.slopeConsistent() && near(cap.slope(), slope));
-    cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
-    cap.update(t + 0.5, both, {0.0, 0.08 * slope + 0.004}, {0.0, 0.08});  // the noisy short step: sample 0.226
-    t += 0.7;
+    stride(0.08 * slope + 0.004, 0.08);  // the noisy short step: sample 0.226
     assert(cap.slopeConsistent() && near(cap.slope(), slope));  // the plane is kept, not zeroed
-    cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
-    cap.update(t + 0.5, both, {0.0, 0.08 * slope - 0.004}, {0.0, 0.08});  // and the other way: sample 0.126
-    t += 0.7;
+    stride(0.08 * slope - 0.004, 0.08);  // and the other way: sample 0.126
     assert(cap.slopeConsistent() && near(cap.slope(), slope));
-    cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
-    cap.update(t + 0.5, both, {0.0, 0.08 * slope + 0.012}, {0.0, 0.08});  // 1.2 cm off on a short base: a contradiction
-    t += 0.7;
+    stride(0.08 * slope + 0.012, 0.08);  // 1.2 cm off on a short base: a contradiction
     assert(!cap.slopeConsistent() && near(cap.slope(), slope));  // dropped (the incline cap keeps the slope for its hold)
-    for (int stride = 0; stride < 3; ++stride, t += 0.7) {  // back on the ramp: three agreeing strides rebuild it
+    for (int k = 0; k < 3; ++k) {  // back on the ramp: three agreeing strides rebuild it
+      stride(0.3 * slope, 0.3);
+    }
+    assert(cap.slopeConsistent() && near(cap.slope(), slope));
+    stride(0.0, 0.3);  // the first full stride on the plateau: 5.3 cm off the plane
+    assert(!cap.slopeConsistent());
+    stride(0.0, 0.3);
+    stride(0.0, 0.3);  // two more flat samples: the ground is flat
+    assert(cap.slopeConsistent() && std::abs(cap.slope()) < 1e-9);
+  }
+  // The sample is read when the double support ends, not when it begins: a landing foot that is still in the
+  // air at the planned touchdown (planned above the ground by a kept plane) must not confirm that plane.
+  {
+    TerrainSpeedCap cap(d);
+    const scalar_t slope = std::tan(5.0 * M_PI / 180.0);
+    scalar_t t = 0.0;
+    for (int k = 0; k < 4; ++k, t += 0.7) {
       cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
       cap.update(t + 0.5, both, {0.0, 0.3 * slope}, {0.0, 0.3});
     }
-    assert(cap.slopeConsistent() && near(cap.slope(), slope));
     cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
-    cap.update(t + 0.5, both, {0.0, 0.0}, {0.0, 0.3});  // the first full stride on the plateau: 5.3 cm off the plane
-    t += 0.7;
+    assert(cap.slopeConsistent() && near(cap.slope(), slope));
+    // Onto the plateau: at the first solve of the double support the landing foot hangs where the plane put it
+    // (2.6 cm up); by the last solve it is down on the level ground.
+    cap.update(t + 0.5, both, {0.0, 0.3 * slope}, {0.0, 0.3});
+    cap.update(t + 0.55, both, {0.0, 0.5 * 0.3 * slope}, {0.0, 0.3});
+    cap.update(t + 0.65, both, {0.0, 0.0}, {0.0, 0.3});
+    assert(cap.slopeConsistent());  // not read yet
+    cap.update(t + 0.7, rightOnly, {0.0, 0.0}, {0.0, 0.3});  // lift-off: the sample is the landed reading
     assert(!cap.slopeConsistent());
-    for (int stride = 0; stride < 2; ++stride, t += 0.7) {  // two more flat samples: the ground is flat
-      cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
-      cap.update(t + 0.5, both, {0.0, 0.0}, {0.0, 0.3});
-    }
-    assert(cap.slopeConsistent() && std::abs(cap.slope()) < 1e-9);
   }
   // Tiles: steps of random sign do not agree, so they keep the raw step and the roughness tiers (no incline cap).
   {

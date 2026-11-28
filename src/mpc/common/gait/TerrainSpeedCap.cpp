@@ -76,6 +76,30 @@ scalar_t medianOf3(std::array<scalar_t, 3> v) {
 }
 }  // namespace
 
+void TerrainSpeedCap::takeSlopeSample(scalar_t dz, scalar_t dd) {
+  slopeSamples_[slopeSampleCount_ % slopeSamples_.size()] = dz / dd;
+  ++slopeSampleCount_;
+  // A standing plane falls only to a sample that contradicts it in height: the sole-height noise of a short
+  // double support (the stop's closing steps, 8 cm apart, +-4 mm = 0.05 of slope) stays within the tolerance
+  // and keeps the plane - zeroing it there flipped the references and the contact normal to flat mid-incline
+  // (run 25 C, slope_10 stops) - while the first full stride onto the plateau misses the plane by stride x
+  // slope (2-5 cm) and drops it at once (run 25 E: a plane kept for three more double supports planned the
+  // feet into the air over the crest of slope_5). The incline cap keeps the last slope for its hold; the
+  // references read slopeConsistent().
+  if (slopeConsistent_ && !fitsPlane(slope_, dz, dd)) {
+    slopeConsistent_ = false;
+  }
+  // A plane is built (or refreshed) by three samples that agree in rise / run: short bases scatter in slope
+  // and never fake one.
+  if (slopeSampleCount_ >= slopeSamples_.size()) {
+    const auto [lo, hi] = std::minmax_element(slopeSamples_.begin(), slopeSamples_.end());
+    if (*hi - *lo <= settings_.slopeConsistency) {
+      slopeConsistent_ = true;
+      slope_ = medianOf3(slopeSamples_);
+    }
+  }
+}
+
 bool TerrainSpeedCap::fitsPlane(scalar_t slope, scalar_t rise, scalar_t run) const {
   // In height, not in rise / run: a short base amplifies millimetres of sole noise into a slope "disagreement"
   // while a full stride on the wrong plane misses by centimetres.
@@ -105,6 +129,8 @@ void TerrainSpeedCap::reset() {
   stepCount_ = 0;
   slopeSamples_.fill(0.0);
   slopeSampleCount_ = 0;
+  lastDsDz_ = std::numeric_limits<scalar_t>::quiet_NaN();
+  lastDsDd_ = std::numeric_limits<scalar_t>::quiet_NaN();
   slope_ = 0.0;
   slopeConsistent_ = false;
   slopeTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
@@ -127,33 +153,21 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
   previousTime_ = time;
 
   const bool doubleSupport = contacts[0] && contacts[1];
+  // One slope sample per double support, taken when it ends: from the last solve inside it. At its first
+  // solve the landing foot can still be in the air (the schedule says double support from the planned
+  // touchdown; a foot planned above the ground - the plane kept over a crest - gets there late), and a sample
+  // read there confirms the plane that put the foot in the air: the plane decayed over six landings instead of
+  // dropping at the first flat stride (run 25 F, slope_5 crest, tdref +1.2..+2.7 cm). By the end of the double
+  // support the foot carries load and is down.
+  if (!doubleSupport && inDoubleSupport_ && std::isfinite(lastDsDz_) && std::isfinite(lastDsDd_) &&
+      std::abs(lastDsDd_) >= settings_.slopeMinSeparation) {
+    takeSlopeSample(lastDsDz_, lastDsDd_);
+  }
   if (doubleSupport) {
     const scalar_t dz = soleHeights[0] - soleHeights[1];
     const scalar_t dd = soleAlong[0] - soleAlong[1];
-    // One slope sample per double support, from the first solve in it (the landed foot is on the ground).
-    if (!inDoubleSupport_ && std::isfinite(dz) && std::isfinite(dd) && std::abs(dd) >= settings_.slopeMinSeparation) {
-      slopeSamples_[slopeSampleCount_ % slopeSamples_.size()] = dz / dd;
-      ++slopeSampleCount_;
-      // A standing plane falls only to a sample that contradicts it in height: the sole-height noise of a short
-      // double support (the stop's closing steps, 8 cm apart, +-4 mm = 0.05 of slope) stays within the tolerance
-      // and keeps the plane - zeroing it there flipped the references and the contact normal to flat mid-incline
-      // (run 25 C, slope_10 stops) - while the first full stride onto the plateau misses the plane by stride x
-      // slope (2-5 cm) and drops it at once (run 25 E: a plane kept for three more double supports planned the
-      // feet into the air over the crest of slope_5). The incline cap keeps the last slope for its hold; the
-      // references read slopeConsistent().
-      if (slopeConsistent_ && !fitsPlane(slope_, dz, dd)) {
-        slopeConsistent_ = false;
-      }
-      // A plane is built (or refreshed) by three samples that agree in rise / run: short bases scatter in slope
-      // and never fake one.
-      if (slopeSampleCount_ >= slopeSamples_.size()) {
-        const auto [lo, hi] = std::minmax_element(slopeSamples_.begin(), slopeSamples_.end());
-        if (*hi - *lo <= settings_.slopeConsistency) {
-          slopeConsistent_ = true;
-          slope_ = medianOf3(slopeSamples_);
-        }
-      }
-    }
+    lastDsDz_ = dz;
+    lastDsDd_ = dd;
     if (slopeConsistent_) {
       slopeTime_ = time;
     }
