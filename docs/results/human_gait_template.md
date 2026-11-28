@@ -1847,3 +1847,61 @@ humanT25c5S10: `slope` must be nonzero from the 0.5 rung in `speeds` and `backwa
 stops stand, about_face reaches the turn), `terrain_strides` on all of them, and a flat `speeds` plus
 `suite_mild` once (the provisional plane is new ground for tiles: the roughness trips should be
 unchanged, and `plane active %` on tiles should be small).
+
+**Run 25 G results (`186a2a5`, humanT25c6 vs humanT25c5).** Five of six runs survived, the stops stand
+everywhere, and the one fall is the turn. slope_5: **both stops stand** on the first 0.3 m of the
+down-ramp (forward stop-hold `slope −0.077`, backward `+0.090`; hold jerk 3.6 / 0.3), the crest kept
+(ramp → 0.2 / hold 0.2 at 38.3 / 32.3 forward, pitch_pp 4.9 / 1.4), steady means 26.3 / 0.44 / 143.
+The residual there is the first stride *down* off the plateau: it can only be planned at the
+plateau's height, finds the ground 2-2.5 cm lower, and the foot descends at the contactSync landing
+speed while the body goes on - forward t 51.93 step −2.0 cm with pitch 10.2 deg (stop transition
+pitch_pp 10.7), backward t 51.43 step −2.5 with pitch 20.9 (the hold −0.2 segment at jerk 47,
+pitch_pp 21.7, and the stop transition 19.4 - the same landing c5 took at 14.8 deg; the segment
+boundary moved, not the event). The landings before and after it are clean (`tdref` −0.1, `air1`
+0.0). slope_10 **speeds and backward both survived the whole script, backward for the first time**:
+the plane from the first ramp stride (ramp → 0.5 `slope +0.144` / `−0.137`, confirmed +0.169…0.180 /
+−0.174 from the hold), **one roughness step each** (c5 21), strides 0.13-0.14 m, steady 27.5 / 0.43 /
+154 and 27.0 / 0.38 / 134 (c4 29.1 / 26.7), stops at hold 1.9 / 6.8 (the backward stand has a 0.14
+lateral hf - watch), `tdref` mean +0.25 / +0.18, `air1` 0.00. slope_back_slow again the best (stop
+hold 0.34, −0.173). slope_about_face: plane +0.142 → +0.185, **the stop stood** (hold 0.61), then the
+turn in place at w 0.5 fell at 25.9 s exactly as c5 did (ramp → w jerk 123, pitch_pp 15; strides
+t 41.28 r step +1.9 tilt −4.2 pitch 12.6, t 42.0 l step −7.3 `tdref` +8.1 `air0` +5.6 pitch 29.3). The
+`guards-fail` verdict on S10 is that fall and the steady means it pollutes; against c5 it is falls
+2 → 1. One thing to watch: the first transition out of the stand (ramp → ±0.2 on the flat approach)
+is worse in five of six runs (42 vs 32, 41 vs 25, 34 vs 27, 39 vs 24, 26 vs 15) - the only change
+there is that a flat stride's first (noise) sample now makes a provisional plane of millimetres, so
+the flat approach takes the slope branch of the swing update instead of the flat one; run 26 gates
+the branch on |gradient| ≥ 0.01, and a flat `speeds` against c4/c5 would settle it.
+
+**Run 26: the plane in the world frame.** The slope was a scalar along the heading, sampled along the
+heading, and the references planned every footfall on the track at one height: turning in place on
+10 deg the feet straddle the slope sideways, the planned heights are wrong by ± stance width x
+gradient (± 2 cm at 90 deg, the whole 3.5 cm at the landing t 42.0), the contact normal rotates with
+the robot, and a sample taken sideways reads as a contradiction. Now (a) `TerrainSpeedCap` keeps a
+2-D gradient (world xy): a sample is the feet's height difference over their planar separation
+vector; three samples fit the gradient by least squares when their separations span the plane - the
+two feet lead alternately left and right of the track, so straight walking does - and only the
+component along their common line otherwise (a turn in place over a few degrees, the scalar unit
+tests), keeping the rest of the standing plane; a single sample lays its provisional plane along the
+heading when it has run along it (the stride's rise belongs to the stride, not the diagonal) and
+along the separation otherwise; a standing plane is tested in height against any separation and the
+incline cap reads the magnitude. Unit test: up a ramp, a 90 deg turn in place in six steps (plane,
+cap and step count unchanged), across the slope (the plane unchanged), back down, off onto level
+ground (one trip, provisional flat). (b) `planSlopeFootReference` takes the gradient, the base
+velocity vector, the yaw rate and the base position: walking, the footfall is v x elapsed along the
+anchor's track *plus the foot's own lateral offset from the anchor* (across a slope the two tracks
+differ by stance width x gradient - new test, 3.5 cm on 10 deg); standing, each foot lands where it
+is, swung about the base by the yaw rate until its touchdown (new test: a quarter turn by the
+touchdown puts the foot on the plane's zero line, not at its current ± 1.76 cm). (c) The reference
+manager feeds world sole positions and the heading to the cap, publishes the gradient itself for the
+contact normal, keeps `terrain/slope` as the gradient along the heading (telemetry), gates the slope
+branch on the gradient (nonzero across a slope where the heading component is zero) and treats a
+gradient under 0.01 as flat (the flat-ground swing update; the first sample of a stand and the sole
+noise of a flat stride no longer pick the slope branch). 25 contract tests OK; both C++ unit tests
+pass with the bare compiler.
+
+Rebuild and re-run: the four `slope_10` cases against humanT25c6S10 (**slope_about_face must survive
+the turn**: strides during w 0.5 with `tdref` ~0, `tilt` < 3 deg, and `slope` turning from +0.18
+through 0 to −0.18 across the about-face while `plane active` stays on), `slope_5` both ways against
+humanT25c6S5 (unchanged numbers expected: straight walking is the same fit), and a flat `speeds`
+against humanT25c4 or c5 (the first transition out of the stand; `terrain/slope` must stay 0.000).

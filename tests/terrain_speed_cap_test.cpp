@@ -102,7 +102,7 @@ int main() {
       if (stride == 0) {
         assert(!cap.slopeConsistent());
       } else {
-        assert(cap.slopeConsistent() && near(cap.slope(), rise / 0.3) && cap.slopeConfirmed() == (stride >= 3));
+        assert(cap.slopeConsistent() && near(cap.slopeAlongX(), rise / 0.3) && cap.slopeConfirmed() == (stride >= 3));
       }
       zBack = zFront; dBack = dFront; lead = back;
     }
@@ -121,7 +121,7 @@ int main() {
     for (int stride = 0; stride < 4; ++stride) {
       cap.update(tf, stride % 2 ? leftOnly : rightOnly, {0.2, 0.2}, {dBack + 0.3, dBack});
       if (stride >= 1) {
-        assert(cap.slopeConsistent() && std::abs(cap.slope()) < 1e-9 && cap.slopeConfirmed() == (stride >= 3));
+        assert(cap.slopeConsistent() && std::abs(cap.slopeAlongX()) < 1e-9 && cap.slopeConfirmed() == (stride >= 3));
       }
       cap.update(tf + 0.5, both, {0.2, 0.2}, {dBack + 0.3, dBack});
       assert(cap.stepCount() == 2);
@@ -130,7 +130,7 @@ int main() {
       }
       tf += 0.7;
     }
-    assert(cap.slopeConfirmed() && std::abs(cap.slope()) < 1e-9);
+    assert(cap.slopeConfirmed() && std::abs(cap.slopeAlongX()) < 1e-9);
     assert(std::isinf(cap.update(tf + 1.0, leftOnly, {0.2, 0.2}, {dBack + 0.3, dBack})) && cap.stepCount() == 2);
   }
   // A 10 deg incline engages the second incline tier (0.12 -> 0.2 m/s); walking down it (negative slope) too.
@@ -142,7 +142,7 @@ int main() {
       cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
       cap.update(t + 0.5, both, {0.0, 0.3 * slope}, {0.0, 0.3});
     }
-    assert(cap.slopeConfirmed() && near(cap.slope(), slope) && near(cap.capValue(), 0.2) && cap.stepCount() == 1);
+    assert(cap.slopeConfirmed() && near(cap.slopeAlongX(), slope) && near(cap.capValue(), 0.2) && cap.stepCount() == 1);
   }
   // The plane stands through noise and falls to a contradiction, both measured in height: a noisy sample on a
   // short base (the stop's closing step: 8 cm apart, 4 mm of sole noise = 0.05 of slope) must not zero the plane
@@ -162,23 +162,23 @@ int main() {
     for (int k = 0; k < 4; ++k) {
       stride(0.3 * slope, 0.3);
     }
-    assert(cap.slopeConfirmed() && near(cap.slope(), slope));
+    assert(cap.slopeConfirmed() && near(cap.slopeAlongX(), slope));
     stride(0.08 * slope + 0.004, 0.08);  // the noisy short step: sample 0.226
-    assert(cap.slopeConfirmed() && near(cap.slope(), slope));  // the plane is kept, not zeroed
+    assert(cap.slopeConfirmed() && near(cap.slopeAlongX(), slope));  // the plane is kept, not zeroed
     stride(0.08 * slope - 0.004, 0.08);  // and the other way: sample 0.126
-    assert(cap.slopeConfirmed() && near(cap.slope(), slope));
+    assert(cap.slopeConfirmed() && near(cap.slopeAlongX(), slope));
     stride(0.08 * slope + 0.012, 0.08);  // 1.2 cm off on a short base: a contradiction
     // The contradicting sample is the provisional plane (the references follow it; the incline cap does not).
-    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && near(cap.slope(), slope + 0.012 / 0.08));
+    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && near(cap.slopeAlongX(), slope + 0.012 / 0.08));
     for (int k = 0; k < 3; ++k) {  // back on the ramp: three agreeing strides confirm the true plane again
       stride(0.3 * slope, 0.3);
     }
-    assert(cap.slopeConfirmed() && near(cap.slope(), slope));
+    assert(cap.slopeConfirmed() && near(cap.slopeAlongX(), slope));
     stride(0.0, 0.3);  // the first full stride on the plateau: 5.3 cm off the plane
-    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && std::abs(cap.slope()) < 1e-9);  // provisional flat at once
+    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && std::abs(cap.slopeAlongX()) < 1e-9);  // provisional flat at once
     stride(0.0, 0.3);
     stride(0.0, 0.3);  // two more flat samples: the ground is confirmed flat
-    assert(cap.slopeConfirmed() && std::abs(cap.slope()) < 1e-9);
+    assert(cap.slopeConfirmed() && std::abs(cap.slopeAlongX()) < 1e-9);
   }
   // The sample is read when the double support ends, not when it begins: a landing foot that is still in the
   // air at the planned touchdown (planned above the ground by a kept plane) must not confirm that plane. It is
@@ -192,7 +192,7 @@ int main() {
       cap.update(t + 0.5, both, {0.0, 0.3 * slope}, {0.0, 0.3});
     }
     cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
-    assert(cap.slopeConfirmed() && near(cap.slope(), slope));
+    assert(cap.slopeConfirmed() && near(cap.slopeAlongX(), slope));
     // Onto the plateau: at the first solves of the double support the landing foot hangs where the plane put it
     // (2.6 cm up) and descends; the descending readings are not samples.
     cap.update(t + 0.5, both, {0.0, 0.3 * slope}, {0.0, 0.3});
@@ -201,7 +201,7 @@ int main() {
     assert(cap.slopeConfirmed());  // not read yet
     cap.update(t + 0.575, both, {0.0, 0.0}, {0.0, 0.3});
     cap.update(t + 0.6, both, {0.0, 0.0}, {0.0, 0.3});  // settled: the sample is the landed reading
-    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && std::abs(cap.slope()) < 1e-9);
+    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && std::abs(cap.slopeAlongX()) < 1e-9);
     cap.update(t + 0.65, both, {0.0, 0.0}, {0.0, 0.3});  // one sample per double support
     cap.update(t + 0.7, rightOnly, {0.0, 0.0}, {0.0, 0.3});
     assert(cap.slopeConsistent() && !cap.slopeConfirmed());
@@ -211,7 +211,78 @@ int main() {
     cap.update(t + 1.4, leftOnly, {0.0, 0.0}, {0.0, 0.3});
     cap.update(t + 1.9, both, {0.0, 0.0}, {0.0, 0.3});
     cap.update(t + 2.1, rightOnly, {0.0, 0.0}, {0.0, 0.3});
-    assert(cap.slopeConfirmed() && std::abs(cap.slope()) < 0.011);  // samples 0, 0.01, 0 agree within 0.03
+    assert(cap.slopeConfirmed() && std::abs(cap.slopeAlongX()) < 0.011);  // samples 0, 0.01, 0 agree within 0.03
+  }
+  // World-frame plane (run 26): confirmed by strides up a 10 deg ramp along x, it survives a turn in place -
+  // the feet then straddle the slope sideways, which a plane in the heading frame read as a contradiction -
+  // and strides across the slope afterwards refine only the component they see.
+  {
+    TerrainSpeedCap cap(d);
+    const scalar_t slope = std::tan(10.0 * M_PI / 180.0);
+    const auto ground = [&](const vector2_t& p) { return slope * p(0); };
+    scalar_t t = 0.0;
+    vector2_t heading(1.0, 0.0);
+    const auto support = [&](const vector2_t& p0, const vector2_t& p1, bool left) {
+      cap.update(t, left ? leftOnly : rightOnly, {ground(p0), ground(p1)}, feet_array_t<vector2_t>{p0, p1}, heading);
+      cap.update(t + 0.5, both, {ground(p0), ground(p1)}, feet_array_t<vector2_t>{p0, p1}, heading);
+      const scalar_t c = cap.update(t + 0.55, both, {ground(p0), ground(p1)}, feet_array_t<vector2_t>{p0, p1}, heading);
+      t += 0.7;
+      return c;
+    };
+    // Up the ramp: feet 0.2 m apart sideways, strides of 0.3, the lead foot alternating (left = foot 0 at +y).
+    for (int stride = 0; stride < 4; ++stride) {
+      const scalar_t x = 0.3 * stride;
+      if (stride % 2 == 0) {
+        support(vector2_t(x + 0.3, 0.1), vector2_t(x, -0.1), true);
+      } else {
+        support(vector2_t(x, 0.1), vector2_t(x + 0.3, -0.1), false);
+      }
+      if (stride == 0) {  // one diagonal sample: the provisional plane lies along the heading at the stride's slope
+        assert(cap.slopeConsistent() && !cap.slopeConfirmed() && near(cap.gradient()(0), slope) && near(cap.gradient()(1), 0.0));
+      }
+    }
+    assert(cap.slopeConfirmed() && near(cap.gradient()(0), slope) && near(cap.gradient()(1), 0.0));
+    // Turn in place: the feet's separation rotates from along x to along y (0.2 m apart, on the plane).
+    const vector2_t centre(1.2, 0.0);
+    const size_t steps = cap.stepCount();
+    for (int k = 1; k <= 6; ++k) {
+      const scalar_t angle = k * M_PI / 12.0;  // 15 deg per step, 90 deg in all
+      const vector2_t half = 0.1 * vector2_t(-std::sin(angle), std::cos(angle));
+      heading = vector2_t(std::cos(angle), std::sin(angle));
+      const scalar_t c = support(centre + half, centre - half, k % 2 == 0);
+      assert(cap.slopeConfirmed() && near(cap.gradient()(0), slope) && near(cap.gradient()(1), 0.0));
+      assert(near(c, k == 1 ? 0.1 : 0.2) && cap.stepCount() == steps);  // the incline cap holds (the first stride's trip until 3.55 s); no roughness trip
+    }
+    // Walking across the slope (along y): the strides, alternating left and right of the track, see the whole
+    // plane again (x from the stance width, y from the stride) and confirm it unchanged.
+    heading = vector2_t(0.0, 1.0);
+    for (int stride = 0; stride < 4; ++stride) {
+      const scalar_t y = 0.3 * stride;
+      if (stride % 2 == 0) {
+        support(centre + vector2_t(-0.1, y + 0.3), centre + vector2_t(0.1, y), true);
+      } else {
+        support(centre + vector2_t(-0.1, y), centre + vector2_t(0.1, y + 0.3), false);
+      }
+    }
+    assert(cap.slopeConfirmed() && near(cap.gradient()(0), slope) && near(cap.gradient()(1), 0.0) && cap.stepCount() == steps);
+    assert(near(cap.slopeAlong(vector2_t(0.0, 1.0)), 0.0) && near(cap.slopeAlong(vector2_t(1.0, 0.0)), slope));
+    // Back the way it came (heading -x, foot 0 now at -y): the plane unchanged.
+    heading = vector2_t(-1.0, 0.0);
+    for (int stride = 0; stride < 3; ++stride) {
+      const scalar_t x = 1.2 - 0.3 * stride;
+      if (stride % 2 == 0) {
+        support(vector2_t(x - 0.3, -0.1), vector2_t(x, 0.1), true);
+      } else {
+        support(vector2_t(x, -0.1), vector2_t(x - 0.3, 0.1), false);
+      }
+    }
+    assert(cap.slopeConfirmed() && near(cap.gradient()(0), slope) && near(cap.gradient()(1), 0.0) && cap.stepCount() == steps);
+    // Onto level ground: the first level stride misses the plane by 5.3 cm (one roughness trip) and lays a
+    // provisional level plane along the heading.
+    cap.update(t, leftOnly, {0.0, 0.0}, feet_array_t<vector2_t>{vector2_t(-0.3, -0.1), vector2_t(0.0, 0.1)}, heading);
+    assert(near(cap.update(t + 0.5, both, {0.0, 0.0}, feet_array_t<vector2_t>{vector2_t(-0.3, -0.1), vector2_t(0.0, 0.1)}, heading), 0.1));
+    cap.update(t + 0.55, both, {0.0, 0.0}, feet_array_t<vector2_t>{vector2_t(-0.3, -0.1), vector2_t(0.0, 0.1)}, heading);
+    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && cap.gradient().norm() < 1e-9 && cap.stepCount() == steps + 1);
   }
   // Provisional planes and roughness: a tile step on flat ground makes a provisional plane of 0.05, and the next
   // tile step (the other way) must still read as its own raw step, not as the residual from that plane.
@@ -220,10 +291,10 @@ int main() {
     cap.update(0.0, leftOnly, flat, {0.3, 0.0});
     cap.update(0.5, both, flat, {0.3, 0.0});
     cap.update(0.7, rightOnly, flat, {0.3, 0.0});
-    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && std::abs(cap.slope()) < 0.002);
+    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && std::abs(cap.slopeAlongX()) < 0.002);
     assert(near(cap.update(1.2, both, {0.015, 0.0}, {0.3, 0.0}), 0.5) && std::abs(cap.lastStep() - 0.015) < 0.001);  // tier 1
     cap.update(1.4, leftOnly, flat, {0.3, 0.0});
-    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && near(cap.slope(), 0.05));
+    assert(cap.slopeConsistent() && !cap.slopeConfirmed() && near(cap.slopeAlongX(), 0.05));
     assert(near(cap.update(1.9, both, {-0.015, 0.0}, {0.3, 0.0}), 0.5) && std::abs(cap.lastStep() - 0.015) < 0.001);  // not 3 cm
     assert(cap.stepCount() == 2);
   }
@@ -246,7 +317,7 @@ int main() {
       cap.update(0.7 * stride, rightOnly, flat, {0.3, 0.0});
       assert(std::isinf(cap.update(0.7 * stride + 0.5, both, flat, {0.3, 0.0})));
     }
-    assert(cap.slopeConfirmed() && std::abs(cap.slope()) < 0.01 && cap.stepCount() == 0);
+    assert(cap.slopeConfirmed() && std::abs(cap.slopeAlongX()) < 0.01 && cap.stepCount() == 0);
   }
   // Below the threshold: no cap.
   {

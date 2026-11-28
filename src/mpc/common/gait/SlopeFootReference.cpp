@@ -29,6 +29,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "legged_robot_mpc_controller/mpc/common/gait/SlopeFootReference.h"
 
+#include <Eigen/Geometry>
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -56,47 +58,49 @@ SlopeFootReferencePlan planSlopeFootReference(const SlopeFootReferenceInput& inp
   if (numPhases == 0 || eventTimes.size() + 1 != numPhases) {
     throw std::invalid_argument("[SlopeFootReference] event times must be one shorter than the phase sequence");
   }
-  if (!std::isfinite(input.slope) || !std::isfinite(input.velocityAlong)) {
-    throw std::invalid_argument("[SlopeFootReference] slope and velocity must be finite");
+  if (!input.gradient.allFinite() || !input.velocity.allFinite() || !std::isfinite(input.yawRate)) {
+    throw std::invalid_argument("[SlopeFootReference] gradient, velocity and yaw rate must be finite");
   }
 
   SlopeFootReferencePlan plan;
-  const scalar_t v = std::abs(input.velocityAlong) < input.standingSpeed ? 0.0 : input.velocityAlong;
+  const bool standing = input.velocity.norm() < input.standingSpeed;
+  const vector2_t v = standing ? vector2_t::Zero() : input.velocity;
   plan.strideVelocity = v;
 
   // The anchor: the stance foot furthest along the travel direction (the one that landed last in a
   // walk); the stance feet's midpoint when standing or with no foot on the ground (flight).
   int anchorFoot = -1;
-  scalar_t anchorAlong = 0.0, anchorHeight = 0.0;
+  vector2_t anchorPosition = vector2_t::Zero();
+  scalar_t anchorHeight = 0.0;
   {
     size_t numContacts = 0;
     for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
       if (input.contacts[foot]) {
         ++numContacts;
-        anchorAlong += input.soleAlong[foot];
+        anchorPosition += input.solePositions[foot];
         anchorHeight += input.soleHeights[foot];
       }
     }
     if (numContacts == 0) {
       for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
-        anchorAlong += input.soleAlong[foot];
+        anchorPosition += input.solePositions[foot];
         anchorHeight += input.soleHeights[foot];
       }
       numContacts = N_CONTACTS;
     }
-    anchorAlong /= static_cast<scalar_t>(numContacts);
+    anchorPosition /= static_cast<scalar_t>(numContacts);
     anchorHeight /= static_cast<scalar_t>(numContacts);
-    if (v != 0.0) {
-      const scalar_t direction = v > 0.0 ? 1.0 : -1.0;
+    if (!standing) {
+      const vector2_t direction = v.normalized();
       scalar_t best = -std::numeric_limits<scalar_t>::infinity();
       for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
-        if (input.contacts[foot] && direction * input.soleAlong[foot] > best) {
-          best = direction * input.soleAlong[foot];
+        if (input.contacts[foot] && direction.dot(input.solePositions[foot]) > best) {
+          best = direction.dot(input.solePositions[foot]);
           anchorFoot = static_cast<int>(foot);
         }
       }
       if (anchorFoot >= 0) {
-        anchorAlong = input.soleAlong[anchorFoot];
+        anchorPosition = input.solePositions[anchorFoot];
         anchorHeight = input.soleHeights[anchorFoot];
       }
     }
@@ -137,18 +141,36 @@ SlopeFootReferencePlan planSlopeFootReference(const SlopeFootReferenceInput& inp
       anchorTime = futureTouchDowns.empty() ? input.initTime - 0.5 * period : futureTouchDowns.front() - period;
     }
   }
-  plan.anchorAlong = anchorAlong;
+  plan.anchorPosition = anchorPosition;
   plan.anchorHeight = anchorHeight;
   plan.anchorTime = anchorTime;
 
-  // Height of the plane at the footfall that happens at `time` (anchor + v x elapsed along the heading).
-  const auto footfallHeight = [&](scalar_t time) { return anchorHeight + input.slope * v * (time - anchorTime); };
+  // The plane, anchored.
+  const auto plane = [&](const vector2_t& p) { return anchorHeight + input.gradient.dot(p - anchorPosition); };
+
+  // Where foot `foot` falls at `time`. Walking: v x elapsed along the anchor's track, offset sideways by the
+  // foot's own lateral position (the stance width; the anchor foot itself has none). Standing: where the foot
+  // is, swung about the base by the yaw rate (a turn in place).
+  const auto footfallPosition = [&](size_t foot, scalar_t time) {
+    if (!standing) {
+      const vector2_t direction = v.normalized();
+      const vector2_t offset = input.solePositions[foot] - anchorPosition;
+      const vector2_t lateral = static_cast<int>(foot) == anchorFoot ? vector2_t::Zero() : vector2_t(offset - offset.dot(direction) * direction);
+      return vector2_t(anchorPosition + v * (time - anchorTime) + lateral);
+    }
+    const scalar_t angle = input.yawRate * (time - input.initTime);
+    const Eigen::Rotation2D<scalar_t> rotation(angle);
+    return vector2_t(input.basePosition + rotation * (input.solePositions[foot] - input.basePosition));
+  };
+  const auto footfallHeight = [&](size_t foot, scalar_t time) { return plane(footfallPosition(foot, time)); };
 
   for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
     const auto& contacts = contactSequence[foot];
     scalar_t footHeight;
     if (input.contacts[foot]) {
       footHeight = input.soleHeights[foot];  // its own height: no pull towards a shared level
+    } else if (standing) {
+      footHeight = plane(input.solePositions[foot]);  // in the air, from about where it is
     } else {
       // In the air: its lift-off height is where it last touched down - the footfall before the anchor's,
       // i.e. the plane at that touchdown time (NOT at the lift-off time: the rule maps touchdown times to
@@ -157,13 +179,13 @@ SlopeFootReferencePlan planSlopeFootReference(const SlopeFootReferenceInput& inp
       bool found = false;
       for (size_t e = current; e-- > 0;) {
         if (isTouchDown(contacts, e)) {
-          footHeight = footfallHeight(eventTimes[e]);
+          footHeight = footfallHeight(foot, eventTimes[e]);
           found = true;
           break;
         }
       }
       if (!found) {
-        footHeight = footfallHeight(anchorTime - period);
+        footHeight = footfallHeight(foot, anchorTime - period);
       }
     }
     plan.liftOffHeights[foot].assign(numPhases, footHeight);
@@ -172,7 +194,7 @@ SlopeFootReferencePlan planSlopeFootReference(const SlopeFootReferenceInput& inp
       plan.liftOffHeights[foot][p] = footHeight;
       plan.touchDownHeights[foot][p] = footHeight + input.touchDownHeightOffset;
       if (p >= current && p < eventTimes.size() && isTouchDown(contacts, p)) {
-        const scalar_t touchDown = footfallHeight(eventTimes[p]);
+        const scalar_t touchDown = footfallHeight(foot, eventTimes[p]);
         plan.touchDownHeights[foot][p] = touchDown + input.touchDownHeightOffset;
         footHeight = touchDown;  // the stance that follows
       }
@@ -181,8 +203,8 @@ SlopeFootReferencePlan planSlopeFootReference(const SlopeFootReferenceInput& inp
   return plan;
 }
 
-vector3_t slopePlaneNormal(scalar_t slope, scalar_t yaw) {
-  return vector3_t(-slope * std::cos(yaw), -slope * std::sin(yaw), 1.0).normalized();
+vector3_t slopePlaneNormal(const vector2_t& gradient) {
+  return vector3_t(-gradient(0), -gradient(1), 1.0).normalized();
 }
 
 }  // namespace ocs2::humanoid

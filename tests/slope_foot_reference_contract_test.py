@@ -68,9 +68,9 @@ class SlopeFootReferenceContractTest(unittest.TestCase):
         # The gradient is written where the slope is read, zero when the feature is off ...
         start = REFMGR_CPP.index("void SwitchedModelReferenceManager::updateTerrainSpeedCap")
         body = REFMGR_CPP[start:REFMGR_CPP.index("void SwitchedModelReferenceManager::updateSwingOnSlope")]
-        self.assertIn("const scalar_t followed = slopeFootReference_ ? slope : 0.0;", body)
-        self.assertIn("slopeGradientX_.store(followed * heading(0));", body)
-        self.assertIn("slopeGradientY_.store(followed * heading(1));", body)
+        self.assertIn("const vector2_t followed = slopeFootReference_ && gradient.norm() >= kFlatGradient ? gradient : vector2_t::Zero();", body)
+        self.assertIn("slopeGradientX_.store(followed(0));", body)
+        self.assertIn("slopeGradientY_.store(followed(1));", body)
         # ... and getContactNormal turns it into the normal every orientation / cone term already reads.
         start = REFMGR_H.index("vector3_t getContactNormal(size_t foot, scalar_t time) const {")
         normal = REFMGR_H[start:start + 700]
@@ -82,7 +82,7 @@ class SlopeFootReferenceContractTest(unittest.TestCase):
     def test_flat_ground_path_takes_the_per_foot_update_only_on_a_read_slope(self):
         start = REFMGR_CPP.index("void SwitchedModelReferenceManager::modifyReferences")
         body = REFMGR_CPP[start:start + 9000]
-        self.assertIn("if (slopeFootReference_ && useTerrainHeightEstimate_ && terrainSlope_.load() != 0.0 && wellFormed) {", body)
+        self.assertIn("if (slopeFootReference_ && useTerrainHeightEstimate_ && slopePlaneRead() && wellFormed) {", body)
         self.assertIn("updateSwingOnSlope(initTime, initState, modeSchedule, swingHeights);", body)
         self.assertIn("swingTrajectoryPtr_->update(modeSchedule, terrainHeight, swingHeights);", body)
         # The base height reference is still adapted first (the per-foot plan replaces only the swing update).
@@ -93,6 +93,33 @@ class SlopeFootReferenceContractTest(unittest.TestCase):
         self.assertIn("planSlopeFootReference(input, modeSchedule.eventTimes, contactSequence)", update)
         self.assertIn("swingTrajectoryPtr_->update(modeSchedule, plan.liftOffHeights, plan.touchDownHeights, swingHeights);", update)
         self.assertIn("input.touchDownHeightOffset = swingTrajectoryPtr_->getConfig().touchDownHeightOffset;", update)
+
+    def test_plane_is_a_world_frame_gradient(self):
+        # Run 26: the plane in the heading frame turned with the robot - slope_about_face stood its stop on
+        # 10 deg (run 25 G) and fell in the turn in place, the feet planned at one height while they straddled
+        # the slope sideways. The cap reads world sole positions, the references take the gradient, the base
+        # velocity and the yaw rate (a foot lands where the turn takes it), and the flat / slope branch is
+        # gated on the gradient, not on its component along the heading (zero across a slope).
+        start = REFMGR_CPP.index("void SwitchedModelReferenceManager::updateTerrainSpeedCap")
+        body = REFMGR_CPP[start:REFMGR_CPP.index("void SwitchedModelReferenceManager::updateSwingOnSlope")]
+        self.assertIn("solePositions[foot] = feet[foot].head<2>();", body)
+        self.assertIn("terrainSpeedCap_.update(initTime, contacts, soleHeights, solePositions, heading)", body)
+        self.assertIn("terrainSpeedCap_.slopeConsistent() ? terrainSpeedCap_.gradient() : vector2_t::Zero()", body)
+        self.assertIn("terrainSlope_.store(gradient.dot(heading));", body)
+        start = REFMGR_CPP.index("void SwitchedModelReferenceManager::updateSwingOnSlope")
+        update = REFMGR_CPP[start:start + 3000]
+        self.assertIn("input.gradient = vector2_t(slopeGradientX_.load(), slopeGradientY_.load());", update)
+        self.assertIn("input.velocity = baseVelocity.head<2>();", update)
+        self.assertIn("input.yawRate = baseVelocity(3);", update)
+        self.assertIn("input.basePosition = mpcRobotModelPtr_->getBasePosition(initState).head<2>();", update)
+        self.assertIn("bool slopePlaneRead() const { return slopeGradientX_.load() != 0.0 || slopeGradientY_.load() != 0.0; }", REFMGR_H)
+        header = (ROOT / "include/legged_robot_mpc_controller/mpc/common/gait/SlopeFootReference.h").read_text()
+        self.assertIn("vector2_t gradient = vector2_t::Zero();", header)
+        self.assertIn("scalar_t yawRate = 0.0;", header)
+        self.assertIn("vector3_t slopePlaneNormal(const vector2_t& gradient);", header)
+        test = (ROOT / "tests/slope_foot_reference_test.cpp").read_text()
+        self.assertIn("Across the slope (run 26)", test)
+        self.assertIn("Turn in place on a cross-slope (run 26)", test)
 
     def test_telemetry_and_unit_test(self):
         self.assertIn('"terrain/next_touchdown"', CONTROLLER_CPP)

@@ -270,7 +270,8 @@ scalar_t maxOffset = 0.6;
   bool terrainSpeedCapActive() const { return std::isfinite(terrainSpeedCapValue_.load()); }
   size_t terrainStepCount() const { return terrainStepCount_.load(); }
   scalar_t terrainLastStep() const { return terrainLastStep_.load(); }
-  scalar_t terrainSlope() const { return terrainSlope_.load(); }  //!< [-] incline along the heading the feet agree on (0 = none / flat)
+  scalar_t terrainSlope() const { return terrainSlope_.load(); }  //!< [-] the plane's rise along the heading (telemetry; 0 = none / flat)
+  bool slopePlaneRead() const { return slopeGradientX_.load() != 0.0 || slopeGradientY_.load() != 0.0; }  //!< a plane stands and the references follow it
 
   /**
    * Foot references follow the incline the cap reads (SlopeFootReference.h, run 25 C): per-foot support
@@ -540,7 +541,7 @@ scalar_t maxOffset = 0.6;
 
   /// Incline foot references: solver thread only (modifyReferences); the gradient atomics feed getContactNormal.
   bool slopeFootReference_ = false;
-  std::atomic<scalar_t> slopeGradientX_{0.0};  //!< slope x heading, world xy; zero = flat references
+  std::atomic<scalar_t> slopeGradientX_{0.0};  //!< the plane's gradient, world xy (TerrainSpeedCap::gradient()); zero = flat references
   std::atomic<scalar_t> slopeGradientY_{0.0};
   std::atomic<scalar_t> slopeNextTouchDownHeight_{std::numeric_limits<scalar_t>::quiet_NaN()};
 

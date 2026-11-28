@@ -21,21 +21,22 @@ int main() {
   const std::vector<bool> rightContact{false, true, true, true, false, true, true, true};
   const feet_array_t<std::vector<bool>> contacts{leftContact, rightContact};
 
-  // 10 deg ramp (slope 0.176), walking up at 0.2 m/s; solve at t = 0.1, left foot in the air.
+  // 10 deg ramp (gradient 0.176 along x), walking up at 0.2 m/s; solve at t = 0.1, left foot in the air.
+  // Feet 0.2 m apart sideways (left at +y): with the gradient along x the stance width adds no height.
   SlopeFootReferenceInput in;
   in.initTime = 0.1;
-  in.slope = 0.176;
-  in.velocityAlong = 0.2;
+  in.gradient = vector2_t(0.176, 0.0);
+  in.velocity = vector2_t(0.2, 0.0);
   in.contacts = {false, true};
-  in.soleAlong = {-0.05, 0.10};      // right (stance) is the leading foot
-  in.soleHeights = {-0.0088, 0.0176};  // both on the plane z = 0.176 * along
+  in.solePositions = {vector2_t(-0.05, 0.1), vector2_t(0.10, -0.1)};  // right (stance) is the leading foot
+  in.soleHeights = {-0.0088, 0.0176};                                  // both on the plane z = 0.176 x
   in.touchDownHeightOffset = -0.001;
 
   // Walking up: footfalls v x dt further along, heights slope x that.
   {
     const auto plan = planSlopeFootReference(in, events, contacts);
-    assert(plan.strideVelocity == 0.2);
-    assert(near(plan.anchorAlong, 0.10) && near(plan.anchorHeight, 0.0176));
+    assert(plan.strideVelocity == vector2_t(0.2, 0.0));
+    assert(near(plan.anchorPosition(0), 0.10) && near(plan.anchorHeight, 0.0176));
     assert(near(plan.anchorTime, -0.25));  // the right foot's touchdown, from the schedule's past
     for (size_t foot = 0; foot < 2; ++foot) {
       assert(plan.liftOffHeights[foot].size() == 8 && plan.touchDownHeights[foot].size() == 8);
@@ -72,7 +73,7 @@ int main() {
     SlopeFootReferenceInput later = in;
     later.initTime = 1.0;
     later.contacts = {true, false};
-    later.soleAlong = {0.244, 0.10};
+    later.solePositions = {vector2_t(0.244, 0.1), vector2_t(0.10, -0.1)};
     later.soleHeights = {0.176 * 0.244, 0.0176};
     const auto plan = planSlopeFootReference(later, events, contacts);
     assert(near(plan.anchorTime, 0.47) && near(plan.anchorHeight, 0.176 * 0.244));
@@ -80,33 +81,70 @@ int main() {
     assert(near(plan.liftOffHeights[1][4], plan.anchorHeight - 0.176 * 0.2 * 0.72));
     assert(near(plan.touchDownHeights[1][4], plan.anchorHeight + 0.176 * 0.2 * 0.72 - 0.001));
   }
-  // Walking down the same ramp (heading unchanged, velocity negative): the leading foot is the rear one.
+  // Walking down the same ramp (velocity reversed): the leading foot is the rear one.
   {
     SlopeFootReferenceInput down = in;
-    down.velocityAlong = -0.2;
+    down.velocity = vector2_t(-0.2, 0.0);
     down.contacts = {true, true};
     const auto plan = planSlopeFootReference(down, events, contacts);
-    assert(near(plan.anchorAlong, -0.05) && near(plan.anchorHeight, -0.0088));
+    assert(near(plan.anchorPosition(0), -0.05) && near(plan.anchorHeight, -0.0088));
     assert(near(plan.anchorTime, 0.47 - 0.72));  // the left foot's last touchdown is before the schedule: one period back
     assert(near(plan.touchDownHeights[0][2], -0.0088 - 0.176 * 0.2 * 0.72 - 0.001));
     // Both stance feet keep their own heights until they step.
     assert(near(plan.liftOffHeights[0][2], -0.0088) && near(plan.liftOffHeights[1][2], 0.0176));
   }
-  // Standing (below standingSpeed): every touchdown at the feet midpoint height.
+  // Across the slope (run 26): the gradient along y, walking along x. The left track (y = +0.1) is 0.2 x
+  // 0.176 = 3.5 cm above the right one; the footfall rule keeps each foot on its own track.
+  {
+    SlopeFootReferenceInput across = in;
+    across.gradient = vector2_t(0.0, 0.176);
+    across.soleHeights = {0.0176, -0.0176};  // left at y = +0.1, right at y = -0.1, both on z = 0.176 y
+    const auto plan = planSlopeFootReference(across, events, contacts);
+    assert(near(plan.anchorHeight, -0.0176));  // the right foot leads along x
+    assert(near(plan.touchDownHeights[0][2], 0.0176 - 0.001));   // the left foot lands on its own track: 3.5 cm up
+    assert(near(plan.touchDownHeights[1][4], -0.0176 - 0.001));  // the right foot on its own
+    assert(near(plan.liftOffHeights[0][2], 0.0176));             // and the left lift-off is its own track too
+  }
+  // Standing (below standingSpeed): every touchdown at the plane where the foot is.
   {
     SlopeFootReferenceInput stand = in;
-    stand.velocityAlong = 0.02;
+    stand.velocity = vector2_t(0.02, 0.0);
     stand.contacts = {true, true};
     const auto plan = planSlopeFootReference(stand, events, contacts);
-    assert(plan.strideVelocity == 0.0);
-    assert(near(plan.anchorAlong, 0.025) && near(plan.anchorHeight, 0.0044));
-    assert(near(plan.touchDownHeights[0][2], 0.0044 - 0.001) && near(plan.touchDownHeights[1][4], 0.0044 - 0.001));
+    assert(plan.strideVelocity.norm() == 0.0);
+    assert(near(plan.anchorPosition(0), 0.025) && near(plan.anchorHeight, 0.0044));
+    assert(near(plan.touchDownHeights[0][2], -0.0088 - 0.001) && near(plan.touchDownHeights[1][4], 0.0176 - 0.001));
     assert(near(plan.liftOffHeights[1][0], 0.0176));  // a stance foot still holds its own height
   }
-  // Flat (slope 0): every height is the anchor's, i.e. the stance feet's own heights and the anchor for landings.
+  // Turn in place on a cross-slope (run 26): the gradient along y, the feet side by side at y = +-0.1 about the
+  // base, yaw rate 0.5 rad/s. A foot swung by the turn lands where the rotation takes it: after 90 deg both
+  // feet are on the y = 0 line, at the plane's height there (0), not at their current +-1.76 cm.
+  {
+    SlopeFootReferenceInput turn;
+    turn.initTime = 0.1;
+    turn.gradient = vector2_t(0.0, 0.176);
+    turn.velocity = vector2_t::Zero();
+    turn.yawRate = M_PI_2 / (0.47 - 0.1);  // a quarter turn by the left foot's touchdown at 0.47
+    turn.basePosition = vector2_t(0.0, 0.0);
+    turn.contacts = {false, true};
+    turn.solePositions = {vector2_t(0.0, 0.1), vector2_t(0.0, -0.1)};
+    turn.soleHeights = {0.0176, -0.0176};
+    const auto plan = planSlopeFootReference(turn, events, contacts);
+    assert(near(plan.touchDownHeights[0][2], 0.0));                   // left lands at (-0.1, 0): plane height 0
+    assert(near(plan.liftOffHeights[0][2], 0.0176));                  // its lift-off: the plane where it is
+    assert(near(plan.liftOffHeights[1][0], -0.0176));                 // the stance right foot: its own height
+    const double angle = turn.yawRate * (1.19 - 0.1);  // the right foot keeps turning until its touchdown at 1.19
+    const double rightY = -0.1 * std::cos(angle);        // rotating (0, -0.1) by `angle`
+    assert(near(plan.touchDownHeights[1][4], 0.176 * rightY));
+    // Without a yaw rate the feet land where they are.
+    turn.yawRate = 0.0;
+    const auto still = planSlopeFootReference(turn, events, contacts);
+    assert(near(still.touchDownHeights[0][2], 0.0176) && near(still.touchDownHeights[1][4], -0.0176));
+  }
+  // Flat (zero gradient): every height is the anchor's, i.e. the stance feet's own heights and the anchor for landings.
   {
     SlopeFootReferenceInput flat = in;
-    flat.slope = 0.0;
+    flat.gradient.setZero();
     flat.soleHeights = {0.0, 0.0};
     const auto plan = planSlopeFootReference(flat, events, contacts);
     for (size_t foot = 0; foot < 2; ++foot) {
@@ -120,7 +158,7 @@ int main() {
     SlopeFootReferenceInput fly = in;
     fly.contacts = {false, false};
     const auto plan = planSlopeFootReference(fly, events, contacts);
-    assert(near(plan.anchorAlong, 0.025));
+    assert(near(plan.anchorPosition(0), 0.025));
   }
   // Malformed inputs throw.
   {
@@ -139,17 +177,14 @@ int main() {
     }
     assert(threw);
   }
-  // The plane normal: tilted against the rise, unit length, heading-aware.
+  // The plane normal: tilted against the rise, unit length, in the world frame.
   {
-    const vector3_t n = slopePlaneNormal(0.176, 0.0);
+    const vector3_t n = slopePlaneNormal(vector2_t(0.176, 0.0));
     assert(near(n.norm(), 1.0) && n(0) < 0.0 && near(n(1), 0.0) && n(2) > 0.98);
     assert(near(std::atan2(-n(0), n(2)), std::atan(0.176)));  // pitched by the ramp angle
-    const vector3_t ny = slopePlaneNormal(0.176, M_PI_2);
+    const vector3_t ny = slopePlaneNormal(vector2_t(0.0, 0.176));
     assert(near(ny(0), 0.0) && ny(1) < 0.0);
-    const vector3_t back = slopePlaneNormal(0.176, M_PI);  // facing down the same ramp: slope reads negative along the heading
-    const vector3_t same = slopePlaneNormal(-0.176, 0.0);
-    assert(near(back(0), same(0)) && near(back(2), same(2)));
-    assert(near((slopePlaneNormal(0.0, 1.0) - vector3_t(0.0, 0.0, 1.0)).norm(), 0.0));
+    assert(near((slopePlaneNormal(vector2_t::Zero()) - vector3_t(0.0, 0.0, 1.0)).norm(), 0.0));
   }
   return 0;
 }

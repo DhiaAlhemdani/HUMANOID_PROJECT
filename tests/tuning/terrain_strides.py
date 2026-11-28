@@ -13,8 +13,8 @@ ray-cast at the four sole corners, so every touchdown gets:
   edge_cm   max - min of the ground height at the four sole corners: > --edge-mm means the foot straddles an
             edge and rests on heel or toe only (the partial-contact landing). On a ramp this is the ramp's own
             rise under the sole (0.17 m x tan 10 deg = 3.0 cm) whatever the foot does: read `tilt` there.
-  v         measured base velocity along the heading at the switch [m/s] (the slope foot reference's
-            `velocityAlong`: below `standingSpeed` 0.05 it plans every footfall at the feet's midpoint height)
+  v         measured base velocity along the heading at the switch [m/s] (the slope foot reference plans
+            footfalls v x time along the track; below `standingSpeed` 0.05 each foot lands where it is)
   base      base x ahead of the feet's midpoint along the heading at the switch [cm] (+ = body in front of
             the feet in body terms; on an incline the stance can only hold this inside the sole)
   tdref     planned rise of the landing foot over the stance foot (solver `terrain/next_touchdown` minus the

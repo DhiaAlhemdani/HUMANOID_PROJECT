@@ -29,6 +29,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "legged_robot_mpc_controller/mpc/common/gait/TerrainSpeedCap.h"
 
+#include <Eigen/Eigenvalues>
+
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -70,14 +72,11 @@ void validateTerrainSpeedCapSettings(const TerrainSpeedCapSettings& s) {
 }
 
 namespace {
-scalar_t medianOf3(std::array<scalar_t, 3> v) {
-  std::sort(v.begin(), v.end());
-  return v[1];
-}
+constexpr scalar_t kSpanning = 0.1;  // the three separations span the plane when the smaller eigenvalue of sum(run run^T) is this share of the larger
 }  // namespace
 
-void TerrainSpeedCap::takeSlopeSample(scalar_t dz, scalar_t dd) {
-  slopeSamples_[slopeSampleCount_ % slopeSamples_.size()] = dz / dd;
+void TerrainSpeedCap::takeSlopeSample(const SlopeSample& sample, const vector2_t& heading) {
+  slopeSamples_[slopeSampleCount_ % slopeSamples_.size()] = sample;
   ++slopeSampleCount_;
   // A standing plane falls only to a sample that contradicts it in height: the sole-height noise of a short
   // double support (the stop's closing steps, 8 cm apart, +-4 mm = 0.05 of slope) stays within the tolerance
@@ -88,29 +87,57 @@ void TerrainSpeedCap::takeSlopeSample(scalar_t dz, scalar_t dd) {
   // provisional plane: the references follow the ground from the first stride on it, not three strides later
   // (run 25 F': both slope_5 stops fell standing on the first 0.3 m of the down-ramp with level references,
   // the plane one agreeing sample short). The incline cap waits for a confirmed plane (three agreeing
-  // samples), so a tile step does not become an incline.
-  if (!slopeConsistent_ || !fitsPlane(slope_, dz, dd)) {
+  // samples), so a tile step does not become an incline. One sample fixes one component of the gradient:
+  // along the heading when the feet have run along it (a stride: its separation is stride plus stance
+  // width, and the rise belongs to the stride), else along the separation itself (a turn in place).
+  if (!slopeConsistent_ || !fitsPlane(gradient_, sample)) {
     slopeConsistent_ = true;
     slopeConfirmed_ = false;
-    slope_ = dz / dd;
+    const scalar_t alongHeading = sample.run.dot(heading);
+    if (std::abs(alongHeading) >= settings_.slopeMinSeparation) {
+      gradient_ = sample.rise / alongHeading * heading;
+    } else {
+      gradient_ = sample.rise / sample.run.squaredNorm() * sample.run;
+    }
   }
-  // A plane is confirmed (or refreshed) by three samples that agree in rise / run: short bases scatter in
-  // slope and never fake one.
+  // A plane is confirmed (or refreshed) by three samples that agree with one plane within slopeConsistency x
+  // their run: short bases scatter in slope and never fake one. Alternating strides span the plane (the lead
+  // foot is left, then right of the track) and fit the whole gradient; separations along one line (strides
+  // along one axis, a turn in place over a few degrees) fit only the component along it and keep the rest of
+  // the standing plane, so strides across a slope do not flatten the plane the strides up it confirmed.
   if (slopeSampleCount_ >= slopeSamples_.size()) {
-    const auto [lo, hi] = std::minmax_element(slopeSamples_.begin(), slopeSamples_.end());
-    if (*hi - *lo <= settings_.slopeConsistency) {
+    Eigen::Matrix2d normal = Eigen::Matrix2d::Zero();
+    vector2_t rhs = vector2_t::Zero();
+    for (const auto& s : slopeSamples_) {
+      normal += s.run * s.run.transpose();
+      rhs += s.rise * s.run;
+    }
+    const Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> eigen(normal);
+    const vector2_t values = eigen.eigenvalues();  // ascending
+    vector2_t fitted = gradient_;
+    if (values(0) >= kSpanning * values(1)) {
+      fitted = normal.ldlt().solve(rhs);
+    } else {
+      const vector2_t axis = eigen.eigenvectors().col(1);
+      fitted += (rhs.dot(axis) / values(1) - gradient_.dot(axis)) * axis;
+    }
+    bool agree = true;
+    for (const auto& s : slopeSamples_) {
+      agree = agree && std::abs(s.rise - fitted.dot(s.run)) <= settings_.slopeConsistency * s.run.norm();
+    }
+    if (agree) {
       slopeConsistent_ = true;
       slopeConfirmed_ = true;
-      slope_ = medianOf3(slopeSamples_);
+      gradient_ = fitted;
     }
   }
 }
 
-bool TerrainSpeedCap::fitsPlane(scalar_t slope, scalar_t rise, scalar_t run) const {
+bool TerrainSpeedCap::fitsPlane(const vector2_t& gradient, const SlopeSample& sample) const {
   // In height, not in rise / run: a short base amplifies millimetres of sole noise into a slope "disagreement"
   // while a full stride on the wrong plane misses by centimetres.
-  const scalar_t tolerance = std::max(settings_.slopeConsistency * std::abs(run), settings_.slopeHeightTolerance);
-  return std::abs(rise - slope * run) <= tolerance;
+  const scalar_t tolerance = std::max(settings_.slopeConsistency * sample.run.norm(), settings_.slopeHeightTolerance);
+  return std::abs(sample.rise - gradient.dot(sample.run)) <= tolerance;
 }
 
 TerrainSpeedCap::TerrainSpeedCap(TerrainSpeedCapSettings settings) : settings_(std::move(settings)) {
@@ -133,19 +160,19 @@ void TerrainSpeedCap::reset() {
   tierTime_.assign(settings_.stepKnots.size(), std::numeric_limits<scalar_t>::quiet_NaN());
   previousTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
   stepCount_ = 0;
-  slopeSamples_.fill(0.0);
+  slopeSamples_.fill(SlopeSample{});
   slopeSampleCount_ = 0;
   lastDsDz_ = std::numeric_limits<scalar_t>::quiet_NaN();
-  lastDsDd_ = std::numeric_limits<scalar_t>::quiet_NaN();
+  lastDsRun_.setZero();
   sampledThisSupport_ = false;
-  slope_ = 0.0;
+  gradient_.setZero();
   slopeConsistent_ = false;
   slopeConfirmed_ = false;
   slopeTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
 }
 
 scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, const feet_array_t<scalar_t>& soleHeights,
-                                 const feet_array_t<scalar_t>& soleAlong) {
+                                 const feet_array_t<vector2_t>& solePositions, const vector2_t& heading) {
   constexpr scalar_t kNoCap = std::numeric_limits<scalar_t>::infinity();
   if (!settings_.enabled) {
     active_ = false;
@@ -170,34 +197,34 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
   // early is down and loaded at the first solve, and that is the cleanest reading: by the end of the double
   // support the trailing foot is unloading: on 10 deg at 0.10 m strides the end-of-support readings built no
   // plane for 15 s (run 25 F', slope_10: speeds formed it only at the last 0.2 rung, backward never).
-  if (!doubleSupport && inDoubleSupport_ && !sampledThisSupport_ && std::isfinite(lastDsDz_) && std::isfinite(lastDsDd_) &&
-      std::abs(lastDsDd_) >= settings_.slopeMinSeparation) {
-    takeSlopeSample(lastDsDz_, lastDsDd_);
+  if (!doubleSupport && inDoubleSupport_ && !sampledThisSupport_ && std::isfinite(lastDsDz_) && lastDsRun_.allFinite() &&
+      lastDsRun_.norm() >= settings_.slopeMinSeparation) {
+    takeSlopeSample(SlopeSample{lastDsDz_, lastDsRun_}, heading);
   }
   if (!doubleSupport) {
     sampledThisSupport_ = false;
     lastDsDz_ = std::numeric_limits<scalar_t>::quiet_NaN();
-    lastDsDd_ = std::numeric_limits<scalar_t>::quiet_NaN();
+    lastDsRun_.setZero();
   }
   if (doubleSupport) {
     const scalar_t dz = soleHeights[0] - soleHeights[1];
-    const scalar_t dd = soleAlong[0] - soleAlong[1];
+    const vector2_t run = solePositions[0] - solePositions[1];
     constexpr scalar_t kSettled = 0.0005;  // [m] per solve: a foot descending at the contactSync landing speed (0.05 m/s, ~1.2 mm at 42 Hz) moves more
     if (!sampledThisSupport_ && std::isfinite(dz) && std::isfinite(lastDsDz_) && std::abs(dz - lastDsDz_) <= kSettled) {
       sampledThisSupport_ = true;
-      if (std::isfinite(dd) && std::abs(dd) >= settings_.slopeMinSeparation) {
-        takeSlopeSample(dz, dd);
+      if (run.allFinite() && run.norm() >= settings_.slopeMinSeparation) {
+        takeSlopeSample(SlopeSample{dz, run}, heading);
       }
     }
     lastDsDz_ = dz;
-    lastDsDd_ = dd;
+    lastDsRun_ = run;
     if (slopeConfirmed_) {
       slopeTime_ = time;
     }
     // Roughness: the step out of the plane the feet agree on; the raw step while no plane stands. Against a
     // provisional plane (one sample) a step counts only if neither level ground nor the plane explains it -
     // a tile step must not become a plane that doubles the next tile step's residual.
-    const scalar_t fromPlane = std::abs(dz - slope_ * dd);
+    const scalar_t fromPlane = run.allFinite() ? std::abs(dz - gradient_.dot(run)) : std::abs(dz);
     const scalar_t step = !slopeConsistent_ ? std::abs(dz) : slopeConfirmed_ ? fromPlane : std::min(fromPlane, std::abs(dz));
     if (std::isfinite(step) && step >= settings_.stepKnots.front()) {
       if (!inDoubleSupport_ || !countedThisSupport_) {
@@ -227,7 +254,7 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
   }
   if (std::isfinite(slopeTime_) && time - slopeTime_ < settings_.holdSeconds) {
     for (size_t i = 0; i < settings_.slopeKnots.size(); ++i) {
-      if (std::abs(slope_) >= settings_.slopeKnots[i]) {
+      if (gradient_.norm() >= settings_.slopeKnots[i]) {
         capValue_ = std::min(capValue_, settings_.slopeSpeedKnots[i]);
       }
     }

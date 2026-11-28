@@ -71,6 +71,16 @@ namespace ocs2::humanoid {
  * solve of the double support (a landed foot's reading does not change solve to solve), else at its
  * last: at the first solve a foot planned above the ground is still in the air and would confirm the
  * plane that put it there (run 25 F).
+ *
+ * The plane is a world-frame gradient (run 26). A sample is the feet's height difference over their
+ * planar separation vector (stride plus stance width, so the two feet alternately lead left and right
+ * of the track); three samples fit the gradient by least squares when their separations span the
+ * plane, else only its component along their common line; a single sample lays a provisional plane
+ * along the heading (the stride direction) when it has run along it, else along the separation. A
+ * standing plane is tested in height against any separation (rise = gradient . run), so it survives
+ * a turn in place - the feet then straddle the slope sideways, and a heading-frame slope read that as
+ * a contradiction or rotated the plane with the robot (run 25 F'/G: slope_about_face fell in the turn
+ * with the stop stood).
  */
 struct TerrainSpeedCapSettings {
   bool enabled = false;
@@ -79,7 +89,7 @@ struct TerrainSpeedCapSettings {
   scalar_t holdSeconds = 3.0;                          //!< [s] a tier stays after its last terrain step (about 4-5 strides)
   std::vector<scalar_t> slopeKnots{0.05, 0.12};        //!< [-] |rise / run| along the heading that counts as an incline (0.05 ~ 3 deg, 0.12 ~ 7 deg), increasing
   std::vector<scalar_t> slopeSpeedKnots{0.3, 0.2};     //!< [m/s] planar speed cap on each incline tier, non-increasing
-  scalar_t slopeMinSeparation = 0.08;                  //!< [m] feet closer than this along the heading give no slope sample (standing)
+  scalar_t slopeMinSeparation = 0.08;                  //!< [m] feet closer than this (planar separation) give no slope sample; a single sample lays its plane along the heading only with this much run along it
   scalar_t slopeConsistency = 0.03;                    //!< [-] spread of the last three slope samples below which the ground counts as a plane; also the per-run tolerance of a sample against a standing plane
   scalar_t slopeHeightTolerance = 0.01;                //!< [m] height tolerance floor of a sample against a standing plane (sole noise on a short base)
 };
@@ -98,11 +108,18 @@ class TerrainSpeedCap {
    * @param time        the solve's start time.
    * @param contacts    contact flags of the mode the schedule has at `time`.
    * @param soleHeights measured sole heights [m] (any common frame).
-   * @param soleAlong   sole positions projected on the heading [m] (same frame); feeds the slope estimate.
+   * @param solePositions planar sole positions [m] (same frame, world xy); feed the slope estimate.
+   * @param heading     unit stride direction (world xy): a single sample lays its provisional plane along it.
    * @return the speed cap in force: the smallest `speedKnots` / `slopeSpeedKnots` of the tiers that hold, +inf otherwise.
    */
   scalar_t update(scalar_t time, const contact_flag_t& contacts, const feet_array_t<scalar_t>& soleHeights,
-                  const feet_array_t<scalar_t>& soleAlong);
+                  const feet_array_t<vector2_t>& solePositions, const vector2_t& heading);
+  /** Sole positions along one axis (x, the heading): the gradient then lies along x and slopeAlongX() is its rise / run. */
+  scalar_t update(scalar_t time, const contact_flag_t& contacts, const feet_array_t<scalar_t>& soleHeights,
+                  const feet_array_t<scalar_t>& soleAlong) {
+    return update(time, contacts, soleHeights, feet_array_t<vector2_t>{vector2_t(soleAlong[0], 0.0), vector2_t(soleAlong[1], 0.0)},
+                  vector2_t(1.0, 0.0));
+  }
   scalar_t update(scalar_t time, const contact_flag_t& contacts, const feet_array_t<scalar_t>& soleHeights) {
     return update(time, contacts, soleHeights, feet_array_t<scalar_t>{0.0, 0.0});  // no slope samples
   }
@@ -111,7 +128,9 @@ class TerrainSpeedCap {
   scalar_t lastStep() const { return lastStep_; }          //!< [m] largest step of the last double support that tripped the cap
   scalar_t lastStepTime() const { return lastStepTime_; }  //!< [s] when a step was last seen (NaN = never)
   scalar_t capValue() const { return capValue_; }          //!< [m/s] the cap in force (+inf = none)
-  scalar_t slope() const { return slope_; }                //!< [-] slope of the standing plane (0 until a sample exists); the incline cap keeps the last confirmed slope for its hold
+  const vector2_t& gradient() const { return gradient_; }  //!< [-] rise per metre of the standing plane, world xy (zero until a sample exists); the incline cap keeps the last confirmed plane for its hold
+  scalar_t slopeAlongX() const { return gradient_(0); }    //!< [-] the gradient's x component: the signed slope when the positions ran along x
+  scalar_t slopeAlong(const vector2_t& direction) const { return gradient_.dot(direction); }  //!< [-] signed rise / run along a unit direction (the heading, for telemetry)
   bool slopeConsistent() const { return slopeConsistent_; }  //!< a plane stands (confirmed, or provisional from the latest sample that contradicted the previous one): the references follow it
   bool slopeConfirmed() const { return slopeConfirmed_; }    //!< three samples agreed on the standing plane and none since contradicted it: the incline cap applies
   size_t stepCount() const { return stepCount_; }          //!< double supports that tripped the cap so far
@@ -126,15 +145,19 @@ class TerrainSpeedCap {
   scalar_t lastStepTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
   scalar_t capValue_ = std::numeric_limits<scalar_t>::infinity();
   std::vector<scalar_t> tierTime_;  //!< [s] per tier: when a step of that size was last seen (NaN = never)
-  bool fitsPlane(scalar_t slope, scalar_t rise, scalar_t run) const;
-  void takeSlopeSample(scalar_t dz, scalar_t dd);
-  std::array<scalar_t, 3> slopeSamples_{};  //!< [-] rise / run of the last three double supports
+  struct SlopeSample {
+    scalar_t rise = 0.0;                    //!< [m] signed sole-height difference, foot 0 minus foot 1
+    vector2_t run = vector2_t::Zero();      //!< [m] planar separation, foot 0 minus foot 1
+  };
+  bool fitsPlane(const vector2_t& gradient, const SlopeSample& sample) const;
+  void takeSlopeSample(const SlopeSample& sample, const vector2_t& heading);
+  std::array<SlopeSample, 3> slopeSamples_{};  //!< the last three double supports' samples
   scalar_t lastDsDz_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [m] signed sole-height step at the last solve of the current double support
-  scalar_t lastDsDd_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [m] the feet's separation along the heading there
+  vector2_t lastDsRun_ = vector2_t::Zero();  //!< [m] the feet's planar separation there (valid with lastDsDz_)
   bool sampledThisSupport_ = false;  //!< the current double support has given its slope sample (a settled reading)
   bool slopeConfirmed_ = false;
   size_t slopeSampleCount_ = 0;
-  scalar_t slope_ = 0.0;
+  vector2_t gradient_ = vector2_t::Zero();
   bool slopeConsistent_ = false;
   scalar_t slopeTime_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [s] last solve with a consistent incline sample
   scalar_t previousTime_ = std::numeric_limits<scalar_t>::quiet_NaN();

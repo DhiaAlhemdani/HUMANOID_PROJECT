@@ -49,39 +49,43 @@ namespace ocs2::humanoid {
  * or toe edge - the strides tables read `edge` 3.0 cm at every landing on 10 deg, and standing on two
  * edges is how slope_10 ends.
  *
- * Once TerrainSpeedCap's slope samples agree the ground is a plane, this plans the per-foot support
- * heights on it:
+ * Once TerrainSpeedCap's slope samples agree the ground is a plane - a world-frame gradient (run 26) -
+ * this plans the per-foot support heights on it:
  *  - a stance foot's reference is its own measured sole height (no pull, whatever the plane fit);
- *  - the plan is anchored at the leading stance foot (the one furthest along the travel direction):
- *    footfalls of a periodic gait at speed v are v x (time since the anchor's touchdown) further
- *    along, so the n-th touchdown in the horizon is planned at anchor height + slope x that
- *    distance; the foot in the air gets its lift-off height from the same rule at its own last
- *    touchdown (one footfall before the anchor's);
- *  - below `standingSpeed` the anchor is the midpoint of the stance feet and every touchdown is
- *    planned at its height (a first step from standing lands next to the feet).
+ *  - the plane is anchored at the leading stance foot (the one furthest along the travel direction):
+ *    plane(p) = anchor height + gradient . (p - anchor position);
+ *  - walking, the footfall at time t is v x (t - the anchor's touchdown) further along the track,
+ *    offset sideways by the foot's own lateral position relative to the anchor's (the stance width:
+ *    across a slope the two tracks differ in height); the foot in the air gets its lift-off height
+ *    from the same rule at its own last touchdown (one footfall before the anchor's);
+ *  - below `standingSpeed` (standing, a turn in place) the anchor is the stance feet's midpoint and
+ *    each foot lands where it is, swung about the base by the yaw rate until its touchdown - on a
+ *    cross-slope the two feet differ in height by the stance width x the gradient across.
  * The ground normal for the orientation terms is the plane's: slopePlaneNormal().
  *
  * Pure: no solver types beyond the mode schedule's arrays, so it unit-tests with a bare compiler.
  */
 struct SlopeFootReferenceInput {
-  scalar_t initTime = 0.0;                       //!< [s] solve time (phase index = events before it)
-  scalar_t slope = 0.0;                          //!< [-] rise / run along the heading (TerrainSpeedCap::slope())
-  scalar_t velocityAlong = 0.0;                  //!< [m/s] base velocity projected on the heading, signed
-  contact_flag_t contacts{false, false};         //!< contact flags at initTime
-  feet_array_t<scalar_t> soleHeights{0.0, 0.0};  //!< [m] sole heights, world
-  feet_array_t<scalar_t> soleAlong{0.0, 0.0};    //!< [m] sole positions projected on the heading
-  scalar_t touchDownHeightOffset = 0.0;          //!< [m] added to every touchdown height (SwingTrajectoryPlanner::Config)
-  scalar_t standingSpeed = 0.05;                 //!< [m/s] |velocityAlong| below this plans every touchdown at the feet midpoint
-  scalar_t fallbackStepPeriod = 0.7;             //!< [s] touchdown spacing assumed when the schedule shows fewer than two
+  scalar_t initTime = 0.0;                             //!< [s] solve time (phase index = events before it)
+  vector2_t gradient = vector2_t::Zero();              //!< [-] rise per metre, world xy (TerrainSpeedCap::gradient())
+  vector2_t velocity = vector2_t::Zero();              //!< [m/s] base planar velocity, world
+  scalar_t yawRate = 0.0;                              //!< [rad/s] base yaw rate: where a foot lands when turning in place
+  vector2_t basePosition = vector2_t::Zero();          //!< [m] base planar position, world (the turn centre)
+  contact_flag_t contacts{false, false};               //!< contact flags at initTime
+  feet_array_t<scalar_t> soleHeights{0.0, 0.0};        //!< [m] sole heights, world
+  feet_array_t<vector2_t> solePositions{vector2_t::Zero(), vector2_t::Zero()};  //!< [m] sole planar positions, world
+  scalar_t touchDownHeightOffset = 0.0;                //!< [m] added to every touchdown height (SwingTrajectoryPlanner::Config)
+  scalar_t standingSpeed = 0.05;                       //!< [m/s] |velocity| below this plans every touchdown where the foot is
+  scalar_t fallbackStepPeriod = 0.7;                   //!< [s] touchdown spacing assumed when the schedule shows fewer than two
 };
 
 struct SlopeFootReferencePlan {
   feet_array_t<scalar_array_t> liftOffHeights;    //!< per foot, per phase (SwingTrajectoryPlanner::update layout)
   feet_array_t<scalar_array_t> touchDownHeights;  //!< per foot, per phase, touchDownHeightOffset included
-  scalar_t anchorAlong = 0.0;                     //!< [m] where the footfall sequence is anchored
+  vector2_t anchorPosition = vector2_t::Zero();   //!< [m] where the plane is anchored
   scalar_t anchorHeight = 0.0;                    //!< [m]
   scalar_t anchorTime = 0.0;                      //!< [s] the anchor foot's touchdown (estimated when not in the schedule)
-  scalar_t strideVelocity = 0.0;                  //!< [m/s] velocityAlong after the standing rule
+  vector2_t strideVelocity = vector2_t::Zero();   //!< [m/s] velocity after the standing rule
 };
 
 /**
@@ -92,7 +96,7 @@ struct SlopeFootReferencePlan {
 SlopeFootReferencePlan planSlopeFootReference(const SlopeFootReferenceInput& input, const scalar_array_t& eventTimes,
                                               const feet_array_t<std::vector<bool>>& contactSequence);
 
-/** Unit normal of the plane rising by `slope` per metre along the heading `yaw` (world frame). */
-vector3_t slopePlaneNormal(scalar_t slope, scalar_t yaw);
+/** Unit normal of the plane rising by `gradient` per metre (world frame). */
+vector3_t slopePlaneNormal(const vector2_t& gradient);
 
 }  // namespace ocs2::humanoid

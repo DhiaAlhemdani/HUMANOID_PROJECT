@@ -723,7 +723,7 @@ void SwitchedModelReferenceManager::modifyReferences(scalar_t initTime,
   } else {
     const scalar_t terrainHeight = adaptToCurrentGroundHeight(targetTrajectories, initState, initMode);
     const bool wellFormed = modeSchedule.eventTimes.size() + 1 == modeSchedule.modeSequence.size();
-    if (slopeFootReference_ && useTerrainHeightEstimate_ && terrainSlope_.load() != 0.0 && wellFormed) {
+    if (slopeFootReference_ && useTerrainHeightEstimate_ && slopePlaneRead() && wellFormed) {
       // On an incline the cap has read: per-foot support heights on the plane (SlopeFootReference.h).
       updateSwingOnSlope(initTime, initState, modeSchedule, swingHeights);
     } else {
@@ -953,40 +953,46 @@ void SwitchedModelReferenceManager::updateTerrainSpeedCap(scalar_t initTime, con
   // The schedule after contactSync: an advanced touchdown counts as double support at once.
   const contact_flag_t contacts = modeNumber2StanceLeg(modeSchedule.modeAtTime(initTime));
   const feet_array_t<vector3_t> feet = computeFeetPositions(initState);
-  // Sole positions along the heading: the signed step divided by this separation is the slope sample.
+  // World-frame sole positions: the signed step over the feet's separation is the slope sample; the heading
+  // tells a single sample which way to lay its plane.
   const scalar_t yaw = mpcRobotModelPtr_->getBasePose(initState)(3);
   const vector2_t heading(std::cos(yaw), std::sin(yaw));
-  feet_array_t<scalar_t> soleHeights, soleAlong;
+  feet_array_t<scalar_t> soleHeights;
+  feet_array_t<vector2_t> solePositions;
   for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
     soleHeights[foot] = feet[foot](2);
-    soleAlong[foot] = feet[foot].head<2>().dot(heading);
+    solePositions[foot] = feet[foot].head<2>();
   }
-  const scalar_t cap = terrainSpeedCap_.update(initTime, contacts, soleHeights, soleAlong);
+  const scalar_t cap = terrainSpeedCap_.update(initTime, contacts, soleHeights, solePositions, heading);
   terrainSpeedCapValue_.store(cap);
   terrainStepCount_.store(terrainSpeedCap_.stepCount());
   terrainLastStep_.store(terrainSpeedCap_.lastStep());
-  const scalar_t slope = terrainSpeedCap_.slopeConsistent() ? terrainSpeedCap_.slope() : 0.0;
-  terrainSlope_.store(slope);
-  // The plane the foot references follow (getContactNormal, the swing update): zero while flat or off.
-  const scalar_t followed = slopeFootReference_ ? slope : 0.0;
-  slopeGradientX_.store(followed * heading(0));
-  slopeGradientY_.store(followed * heading(1));
+  const vector2_t gradient = terrainSpeedCap_.slopeConsistent() ? terrainSpeedCap_.gradient() : vector2_t::Zero();
+  terrainSlope_.store(gradient.dot(heading));  // telemetry: the plane's rise along the heading
+  // The plane the foot references follow (getContactNormal, the swing update): zero while flat or off. A plane
+  // under 0.01 (0.6 deg: the first sample of a stand, the sole noise of a flat stride) is flat - the flat-ground
+  // swing update, not a plane of millimetres.
+  constexpr scalar_t kFlatGradient = 0.01;
+  const vector2_t followed = slopeFootReference_ && gradient.norm() >= kFlatGradient ? gradient : vector2_t::Zero();
+  slopeGradientX_.store(followed(0));
+  slopeGradientY_.store(followed(1));
 }
 
 void SwitchedModelReferenceManager::updateSwingOnSlope(scalar_t initTime, const vector_t& initState,
                                                        const ModeSchedule& modeSchedule, const scalar_array_t& swingHeights) {
-  // Same frame as the cap's slope sample: sole heights and positions along the heading.
-  const scalar_t yaw = mpcRobotModelPtr_->getBasePose(initState)(3);
-  const vector2_t heading(std::cos(yaw), std::sin(yaw));
+  // Same frame as the cap's plane: world sole heights and planar positions.
   const feet_array_t<vector3_t> feet = computeFeetPositions(initState);
+  const vector6_t baseVelocity = mpcRobotModelPtr_->getBaseComVelocity(initState);  // [v world (3), euler ZYX rates (3)]
   SlopeFootReferenceInput input;
   input.initTime = initTime;
-  input.slope = terrainSlope_.load();
-  input.velocityAlong = mpcRobotModelPtr_->getBaseComLinearVelocity(initState).head<2>().dot(heading);
+  input.gradient = vector2_t(slopeGradientX_.load(), slopeGradientY_.load());
+  input.velocity = baseVelocity.head<2>();
+  input.yawRate = baseVelocity(3);
+  input.basePosition = mpcRobotModelPtr_->getBasePosition(initState).head<2>();
   input.contacts = modeNumber2StanceLeg(modeSchedule.modeAtTime(initTime));
   for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
     input.soleHeights[foot] = feet[foot](2);
-    input.soleAlong[foot] = feet[foot].head<2>().dot(heading);
+    input.solePositions[foot] = feet[foot].head<2>();
   }
   input.touchDownHeightOffset = swingTrajectoryPtr_->getConfig().touchDownHeightOffset;
 
