@@ -77,6 +77,8 @@ class WholeBodyFeedbackContract(unittest.TestCase):
         # run 29 D: the descent target never brakes the swing and grows with the search
         self.assertIn("searchStartVelocity_[c] = -footVel[c].z();", layer)
         self.assertIn("velocityDesired.z() = -searchDescentVelocity(settings_.search, searchStartVelocity_[c], in.time - contactSince_[c]);", layer)
+        self.assertIn("if (searchBlocked(footVel[c].z(), target, elapsed)) {", layer)  # run 29 E: a sole that does not follow the push is landed
+        self.assertIn("inline bool searchBlocked(double soleVelocityZ, double targetVelocity, double elapsed)", core)
         src = (ROOT / "src/controller/controller.cpp").read_text()
         self.assertIn("settings.search.descentAcceleration = wb.searchDescentAcceleration;", src)
         for needle in ("input.time = observation.time;",

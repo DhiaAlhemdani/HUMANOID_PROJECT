@@ -120,8 +120,9 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
       searchWindow: {type: double, default_value: 0.0, description: "Touchdown search (run 29): a foot the plan has
           just switched to contact whose measured sole still descends faster than searchLandedVelocity is not on the
           ground; the layer keeps it a swing foot (no wrench, no stance rows, the body on the other foot) and drives it
-          down at searchDescentVelocity at the plan's foothold until it stops, or this long after the switch (then it
-          is loaded where it is). Decided every servo tick on the measured foot; the plan and schedule are untouched,
+          down at searchDescentVelocity at the plan's foothold until it stops or stops following the push (run 29 E:
+          a sole achieving under half the descent target 60 ms into the search stands on something), or this long after
+          the switch (then it is loaded where it is). Decided every servo tick on the measured foot; the plan and schedule are untouched,
           the estimator is told the foot is in the air, the contact-switch fade restarts at the real touchdown and the
           layer's torque carries the search. 0 = off [s]", validation: {gt_eq: [0.0]}}
       searchLandedVelocity: {type: double, default_value: 0.05, description: "Touchdown search: a sole descending

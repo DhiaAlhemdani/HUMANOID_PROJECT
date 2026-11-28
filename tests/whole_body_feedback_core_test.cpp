@@ -240,6 +240,13 @@ void testTouchdownSearch()
   assert(nearTo(searchDescentVelocity(s, 0.11, 0.1), 0.30));
   assert(nearTo(searchDescentVelocity(s, 0.3, 0.2), 0.60));
   assert(nearTo(searchDescentVelocity(s, 0.3, -1.0), 0.3));
+  // Blocked (run 29 E): after kBlockedAfter a sole achieving less than half the target is standing on something.
+  assert(!searchBlocked(-0.17, 0.35, 0.03));  // too early to judge
+  assert(!searchBlocked(-0.30, 0.35, 0.10));  // following the push: free
+  assert(searchBlocked(-0.17, 0.35, 0.10));   // the 29 D stop: 0.17 of 0.35 - blocked
+  assert(searchBlocked(0.02, 0.15, 0.10));    // moving up: blocked
+  assert(searchBlocked(kNaN, 0.15, 0.10));    // unknown velocity: not following
+  assert(!searchBlocked(-0.01, 0.0, 0.10));   // no target: nothing to judge
   // Time going back (a reset) is a fresh switch.
   since = kNaN;
   searching = false;

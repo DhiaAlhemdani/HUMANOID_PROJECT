@@ -118,6 +118,23 @@ inline double searchDescentVelocity(const TouchdownSearchSettings& s, double sta
   return std::max(s.descentVelocity, start) + s.descentAcceleration * std::max(elapsed, 0.0);
 }
 
+//! A search is an experiment - push the sole down - and its readout is whether the sole follows. Run 29 D
+//! (slope_5, the stop): a foot switched to contact 3 mm from the ground was driven at a target growing from
+//! 0.20 to 0.57 m/s and sat at 0.14-0.20 m/s for the whole double support; the velocity rule kept it
+//! "descending" because the estimator's base velocity, disturbed by the search itself, lagged the truth by
+//! more than `landedVelocity`. A free leg follows a `swingKd` target within a few time constants; one that
+//! does not after `kBlockedAfter` is standing on something: landed where it is, whatever its velocity reads.
+constexpr double kBlockedAfter{0.06};    //!< [s] three time constants of swingKd 20 - the push has had time to act
+constexpr double kBlockedFraction{0.5};  //!< the sole achieves less than this share of the target: blocked
+inline bool searchBlocked(double soleVelocityZ, double targetVelocity, double elapsed)
+{
+  if (elapsed < kBlockedAfter || !(targetVelocity > 0.0)) {
+    return false;
+  }
+  const double down = std::isfinite(soleVelocityZ) ? -soleVelocityZ : 0.0;
+  return down < kBlockedFraction * targetVelocity;
+}
+
 //! The per-foot decision. `contactSince` is the caller's state (NaN = the plan has the foot swinging),
 //! `searching` the previous tick's decision; both are updated in place. Returns the decision.
 inline bool touchdownSearch(const TouchdownSearchSettings& s, double time, bool planContact, bool otherPlanContact,

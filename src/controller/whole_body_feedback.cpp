@@ -145,6 +145,15 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
     if (out.searching[c] && !wasSearching) {
       searchStartVelocity_[c] = -footVel[c].z();  // the swing's own descent: the search never brakes it
     }
+    if (out.searching[c]) {
+      // The sole does not follow the push: it stands on something. Landed where it is (run 29 E).
+      const double elapsed = in.time - contactSince_[c];
+      const double target = searchDescentVelocity(settings_.search, searchStartVelocity_[c], elapsed);
+      if (searchBlocked(footVel[c].z(), target, elapsed)) {
+        searching_[c] = false;
+        out.searching[c] = false;
+      }
+    }
   }
   if (out.searching[0] && out.searching[1]) {
     // Never both: the foot whose switch came later is loaded where it is, the earlier one keeps searching.

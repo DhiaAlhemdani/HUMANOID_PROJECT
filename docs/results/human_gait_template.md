@@ -2278,3 +2278,24 @@ more than N cm below the plan foothold, so the loop cannot run away - and (c) en
 estimator's base velocity disagrees with the plan's by more than the search velocity, the bags decide:
 `fall_anatomy.py` now prints, per search, the foot's obs z − plan z and vz at start and end and the
 estimated vs TRUE base vz at the end. Run it on `humanT29dS5__backward` and `humanT29dM__backward`.
+
+**Run 29 D anatomy (the two `backward` bags).** slope_5, the 250 ms search: left foot, switched at
+51.43 at z −0.3 cm - the height the right foot had landed at 0.7 s earlier and been "landed" in 16 ms.
+It ran the whole double support and was ended by the right foot lifting. Through it the sole read vz
+−0.20 → −0.14 while its target grew 0.20 → 0.57 m/s: the foot never followed the push. A free leg with
+the posture released follows a `swingKd` 20 target in ~50 ms; one sitting at a third of it for 250 ms
+is standing on something. The left leg never appears in the top-3 torques (all right knee / hip -
+unloaded, not pushing) and the estimated base vz lagged the true one by 0.08 m/s at the end - more than
+`landedVelocity` - which is how a sole on the ramp reads "descending" for a quarter second: the search's
+own action (one leg unloaded, the body on the other) disturbs the estimate the search is decided on.
+Tiles: zero searches in the window; the right foot stopped at z 3.3 cm 50 ms before the switch (a 3.3 cm
+tile, not air) and the fall starts at the switch with the right ankle pitch saturated (50 Nm, 0.32 rad)
+and a planned CoP 20 cm behind the foot - an edge landing, a tiles residual, not the search.
+
+**Run 29 E (code, same humanT29.yaml).** A search is an experiment and its readout is whether the sole
+follows the push: 60 ms into a search (three `swingKd` time constants) a sole achieving less than half
+the descent target is blocked - landed where it is, whatever its velocity reads (`searchBlocked`,
+`kBlockedAfter 0.06`, `kBlockedFraction 0.5`, no new parameters). On the 29 D stop this ends the search
+at ~0.1 s (0.17 of 0.35 m/s) inside the double support; a foot truly in the air (the crest) follows the
+push and keeps searching until the ground stops it. The 1.5 m/s² ramp stays: it is what makes "not
+following" visible against a constant 0.15 m/s target.
