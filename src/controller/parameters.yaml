@@ -535,7 +535,7 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             terrain step (about 4-5 strides)", validation: {gt: [0.0]}}
         slopeKnots: {type: double_array, default_value: [0.05, 0.12], description: "Incline tiers [rise / run along
             the heading], increasing (0.05 ~ 3 deg, 0.12 ~ 7 deg). The signed step between the stance feet divided
-            by their separation along the heading is a slope sample; when the last three agree within
+            by their separation along the heading is a slope sample; when the last four agree within
             slopeConsistency the ground is a plane, the roughness step becomes the residual from it and the incline
             is capped at slopeSpeedKnots. Empty = no incline cap (a ramp then reads as roughness).",
             validation: {lower_element_bounds<>: [0.0]}}
@@ -543,9 +543,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             each incline tier, non-increasing; same length as slopeKnots", validation: {lower_element_bounds<>: [0.0]}}
         slopeMinSeparation: {type: double, default_value: 0.08, description: "Feet closer than this along the heading
             [m] give no slope sample (standing, side steps)", validation: {gt: [0.0]}}
-        slopeConsistency: {type: double, default_value: 0.03, description: "Spread of the last three slope samples
-            [rise / run] below which the ground counts as a plane (tile fields never agree, ramps do); also the
-            per-run tolerance of a later sample against the standing plane", validation: {gt: [0.0]}}
+        slopeConsistency: {type: double, default_value: 0.03, description: "Spread of the last four slope samples
+            [rise / run] below which the ground counts as a plane (ramps agree, tile fields rarely: and two
+            contradictions in a row are rough ground, which keeps no plane until two samples agree within half
+            this); also the per-run tolerance of a later sample against the standing plane", validation: {gt: [0.0]}}
         slopeHeightTolerance: {type: double, default_value: 0.01, description: "Height tolerance floor [m] of a
             sample against the standing plane: a sample whose rise is off by more than max(slopeConsistency x run,
             this) contradicts the plane and drops it (the first full stride onto a plateau); the sole noise of a

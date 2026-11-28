@@ -743,7 +743,7 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # commanded planar speed at the smallest speedKnots of the tiers that hold. Tiers from run 24: 1-2 cm
         # steps are walked at 0.5 m/s and lost at 0.8, 2-4 cm steps at 0.2 and lost at 0.5, a 3.5 cm step means
         # the big edges are here. Slopes (run 25): the stance feet's signed step over their separation along the
-        # heading is a slope sample; three agreeing samples make the ground a plane (roughness = the residual)
+        # heading is a slope sample; four agreeing samples make the ground a plane (roughness = the residual)
         # and cap the incline at slopeSpeedKnots. Off pending the terrain ladder (humanT24e: suite_mild 0 falls,
         # flat unchanged).
         terrainSpeedCap:

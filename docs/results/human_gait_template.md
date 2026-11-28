@@ -1932,3 +1932,54 @@ trips at jerk 54 / roll_pp 5.5 (c6 1 trip, 34); the about_face entry took 2 at 3
 watch. (3) The backward slope_10 stand has a slow lateral sway (stop hold jerk 5.4 / 6.8, lat_hf
 0.12-0.14, both c6 and here). (4) The provisional plane and the 2-D fit have not been run on tiles
 since `186a2a5`: `suite_mild` both ways against the humanT24e / T25c tile tags before anything ships.
+
+**Run 26 M (`19847b5`, humanT26M on `suite_mild` vs humanT24eM): the plane does not belong on tiles.**
+`speeds` survived (steady 35.1 / 0.58 / 190 vs T24e's 36.7 / 0.68 / 206) but `backward` **fell at 40.8 s** -
+standing, 0.8 s after the script's last knot, trunk tilt 0.81 - and the transitions were worse (jerk max
+78.5 vs 60.1, the −0.5 → −0.2 ramp). The `slope` column tells why: on a flat tile field `terrain/slope`
+read +0.010 … +0.038 and −0.049 in nearly every segment, −0.058 in the `speeds` stand (with the incline
+cap on, `100 % @ 0.30`), +0.023 in the stand that fell. Three things leaked: (1) every tile stride
+contradicts the provisional plane the previous stride laid, and each contradiction laid a new one - a
+0.05 plane per 1.5 cm step over 0.3 m, the references tilted 3 deg a new way at every landing; (2) three
+samples against two parameters leave one residual degree of freedom, and with a centimetre of tolerance a
+tile field passes that about every other stride - a replay of the suite's field through `TerrainSpeedCap`
+(feet 0.2 m apart, 0.14 / 0.22 / 0.30 m strides, both directions, three lateral offsets against the 0.5 m
+tile rows) had a plane of |g| ≥ 0.03 applied on 45-95 % of strides and *confirmed* on 15-27 of 40; (3) a
+stop's closing step, 8 cm along the heading, turned a tile edge into a plane of 0.19 and the stand took
+it. (Not tested on tiles since `186a2a5` made the first contradicting sample a plane - humanT25c3M, the
+last tile run, still zeroed the plane on disagreement.)
+
+### Run 27: rough ground has no plane
+
+`TerrainSpeedCap` (no config change; humanT25c.yaml is the recipe):
+
+- **Two contradictions in a row are rough ground**, not a second new plane: no plane (level references, the
+  raw step as roughness - the run 24 E behaviour) until a sample agrees with the plane the one before it laid
+  (two samples, at half the tolerance) or four confirm one. Leaving rough ground puts one contradiction on
+  the count, so the next one is rough at once; agreeing samples work the count off one at a time. A crest
+  is one contradiction and then agreement, so ramp → plateau → ramp costs nothing: the plateau and the
+  down-ramp still get their provisional plane from the first stride on them.
+- One contradiction is rough ground too when a raw step (a step on rough ground) was seen within
+  `holdSeconds` before the double support, or when the sample's base along the heading is under 2 x
+  `slopeMinSeparation` (0.16 m): a closing step or the feet side by side cannot lay a plane alone (they can
+  still agree, contradict, pair and confirm). The 0.14 m strides under the 0.2 m/s cap are under that too:
+  a ramp entered at 0.2 m/s gets its plane from the second stride, not the first.
+- **Four samples confirm** (two residual degrees of freedom when walking straight), and the sample window
+  restarts at a contradiction: with the old samples kept, the four-sample fit absorbed the first stride off
+  a crest (1.4 cm over 0.26 m) into the lateral component and stood on the down-ramp with a "confirmed"
+  −0.02 for −0.087.
+
+Replay of the suite's tile field through the class, same 18 cases: a plane of |g| ≥ 0.03 applied on **5 %**
+of strides (max 15 %, |g| ≤ 0.1, mostly one stride), confirmed ≥ 0.01 on 10 %, the rest rough or level.
+Replay of a slope_5 profile: entry plane from the first ramp stride, confirmed at the fourth; plateau and
+down-ramp planes from their first stride; a stop one stride onto the down-ramp stands on the provisional
+plane (−0.054 … −0.087 depending on where the straddling stride fell) with the closing step agreeing.
+Unit test blocks "Rough ground (run 27)" and "A stop on tiles (run 27)"; the run 25 / 26 blocks re-timed for
+four samples.
+
+What this costs on the slopes, to watch in the rerun: the incline cap arrives one stride later (fourth
+sample); on slope_10 entered at 0.2 m/s (0.14 m strides) the references follow the ramp from the second
+stride; a stop whose last full stride straddled the crest stands on that stride's plane rather than a
+refit. Rerun: `suite_mild` `speeds` + `backward` (humanT27M vs humanT24eM: 0 falls, `slope` ±0.000 or
+blank almost everywhere, holds within T24e's), then `slope_10` and `slope_5` all scripts against humanT26
+(nothing should move but the cap timing), then flat `speeds`.

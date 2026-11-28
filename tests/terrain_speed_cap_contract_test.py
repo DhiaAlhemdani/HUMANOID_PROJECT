@@ -85,9 +85,9 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         # full stride on the plateau misses the plane by stride x slope). A standing plane must fall only to a
         # sample that contradicts it in height, with a floor for the sole noise of a short base.
         sample = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::takeSlopeSample("):CAP_CPP.index("TerrainSpeedCap::fitsPlane(")]
-        self.assertIn("if (!slopeConsistent_ || !fitsPlane(gradient_, sample)) {", sample)
-        self.assertIn("if (agree) {\n      slopeConsistent_ = true;\n      slopeConfirmed_ = true;\n      gradient_ = fitted;", sample)
-        self.assertIn("std::abs(s.rise - fitted.dot(s.run)) <= settings_.slopeConsistency * s.run.norm()", sample)
+        self.assertIn("} else if (fitsPlane(gradient_, sample)) {\n    contradictions_ = std::max(0, contradictions_ - 1);", sample)
+        self.assertIn("if (agree) {\n      slopeConsistent_ = true;\n      slopeConfirmed_ = true;", sample)
+        self.assertIn("std::abs(s.rise - fitted.dot(s.run)) <= share * settings_.slopeConsistency * s.run.norm()", sample)
         self.assertIn("std::max(settings_.slopeConsistency * sample.run.norm(), settings_.slopeHeightTolerance)", CAP_CPP)
         self.assertIn("The plane stands through noise and falls to a contradiction", (ROOT / "tests/terrain_speed_cap_test.cpp").read_text())
 
@@ -96,11 +96,11 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         # the next one, both slope_5 stops landed on the first 0.3 m of the down-ramp with level references and
         # a level contact normal and fell standing there. The contradicting sample is itself the new
         # (provisional) plane: the references follow it from the first stride; the incline cap waits for a
-        # confirmed plane (three agreeing samples), so a tile step is not an incline.
+        # confirmed plane (four agreeing samples), so a tile step is not an incline.
         sample = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::takeSlopeSample("):CAP_CPP.index("TerrainSpeedCap::fitsPlane(")]
         update = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::update("):]
-        self.assertIn("if (!slopeConsistent_ || !fitsPlane(gradient_, sample)) {\n    slopeConsistent_ = true;\n    slopeConfirmed_ = false;", sample)
-        self.assertIn("gradient_ = sample.rise / alongHeading * heading;", sample)
+        self.assertIn("} else {\n    contradicted = true;\n    slopeConfirmed_ = false;\n    gradient_ = provisional(sample);", sample)
+        self.assertIn("return s.rise / alongHeading * heading;", sample)
         self.assertIn("if (slopeConfirmed_) {\n      slopeTime_ = time;", update)
         self.assertIn("slopeConfirmed_ ? fromPlane : std::min(fromPlane, std::abs(dz))", update)
         self.assertIn("terrainSpeedCap_.slopeConsistent() ? terrainSpeedCap_.gradient() : vector2_t::Zero()", REFMGR_CPP)
@@ -115,7 +115,7 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         # reading in the double support (unchanged from the previous solve), else the last one as it ends.
         update = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::update("):]
         self.assertIn("if (!doubleSupport && inDoubleSupport_ && !sampledThisSupport_ && std::isfinite(lastDsDz_) && lastDsRun_.allFinite() &&\n"
-                      "      lastDsRun_.norm() >= settings_.slopeMinSeparation) {\n    takeSlopeSample(SlopeSample{lastDsDz_, lastDsRun_}, heading);", update)
+                      "      lastDsRun_.norm() >= settings_.slopeMinSeparation) {\n    takeSlopeSample(time, SlopeSample{lastDsDz_, lastDsRun_}, heading);", update)
         self.assertIn("std::abs(dz - lastDsDz_) <= kSettled) {\n      sampledThisSupport_ = true;", update)
         self.assertIn("lastDsDz_ = dz;\n    lastDsRun_ = run;", update)
         self.assertNotIn("slopeSamples_[slopeSampleCount_ % slopeSamples_.size()] =", update)
@@ -123,7 +123,7 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
                       (ROOT / "tests/terrain_speed_cap_test.cpp").read_text())
 
     def test_plane_is_a_world_frame_gradient(self):
-        # Run 26: samples are rise over the planar separation vector; three spanning samples fit the whole
+        # Run 26: samples are rise over the planar separation vector; spanning samples fit the whole
         # gradient, collinear ones only the component along their line; the incline cap reads its magnitude.
         self.assertIn("const feet_array_t<vector2_t>& solePositions, const vector2_t& heading);", CAP_H)
         self.assertIn("const vector2_t& gradient() const { return gradient_; }", CAP_H)
@@ -131,6 +131,31 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         self.assertIn("fitted += (rhs.dot(axis) / values(1) - gradient_.dot(axis)) * axis;", CAP_CPP)
         self.assertIn("if (gradient_.norm() >= settings_.slopeKnots[i]) {", CAP_CPP)
         self.assertIn("World-frame plane (run 26)", (ROOT / "tests/terrain_speed_cap_test.cpp").read_text())
+
+    def test_rough_ground_has_no_plane(self):
+        # Run 26 M (tiles): every stride contradicted the plane the previous one laid, and with three samples
+        # and two parameters the confirm passed about every other stride, so the references tilted a new way
+        # at every landing and the backward stop fell standing on a plane read off a tile edge. Run 27: two
+        # contradictions in a row - or one within holdSeconds of a raw step, or one on a short base - are
+        # rough ground with no plane until two samples agree (at half the tolerance) or four confirm; the
+        # sample window restarts at a contradiction so the fit cannot absorb a crest.
+        sample = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::takeSlopeSample("):CAP_CPP.index("TerrainSpeedCap::fitsPlane(")]
+        self.assertIn("static constexpr size_t kSlopeSamples = 4;", CAP_H)
+        self.assertIn("bool rough() const { return rough_; }", CAP_H)
+        self.assertIn("constexpr int kRoughContradictions = 2;", CAP_CPP)
+        self.assertIn("constexpr scalar_t kRoughShare = 0.5;", CAP_CPP)
+        self.assertIn("constexpr scalar_t kProvisionalBase = 2.0;", CAP_CPP)
+        self.assertIn("} else if (++contradictions_ >= kRoughContradictions || !calmBefore || !strideBase) {\n    contradicted = true;\n    rough_ = true;", sample)
+        self.assertIn("if (pendingSet_ && fitsPlane(pending_, sample, kRoughShare)) {\n      rough_ = false;", sample)
+        self.assertIn("if (contradicted) {", sample)
+        self.assertIn("slopeSamples_[0] = sample;\n    slopeSampleCount_ = 1;\n    return;", sample)
+        self.assertIn("const scalar_t share = rough_ ? kRoughShare : 1.0;", sample)
+        update = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::update("):]
+        self.assertIn("rawStepBeforeSupport_ = lastRawStepTime_;", update)
+        self.assertIn("if (rough_) {\n        lastRawStepTime_ = time;", update)
+        unit = (ROOT / "tests/terrain_speed_cap_test.cpp").read_text()
+        self.assertIn("Rough ground (run 27)", unit)
+        self.assertIn("A stop on tiles (run 27)", unit)
 
     def test_telemetry_and_unit_test(self):
         for name in ("terrain/cap", "terrain/steps", "terrain/last_step", "terrain/slope"):

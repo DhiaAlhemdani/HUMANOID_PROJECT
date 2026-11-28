@@ -81,6 +81,15 @@ namespace ocs2::humanoid {
  * a turn in place - the feet then straddle the slope sideways, and a heading-frame slope read that as
  * a contradiction or rotated the plane with the robot (run 25 F'/G: slope_about_face fell in the turn
  * with the stop stood).
+ *
+ * Two contradictions in a row are rough ground (run 27): a tile field contradicts each provisional
+ * plane with the next stride, and the references tilted a new way at every landing (run 26 M). So is
+ * one contradiction within holdSeconds of a raw step, or one on a short base (a closing step, the feet
+ * side by side: a tile edge under it would be a 0.19 plane). Rough ground has no plane - level
+ * references, the raw step as roughness - until a sample agrees with the plane the one before it laid
+ * (two samples, at half the tolerance) or four confirm one; the sample window restarts at a
+ * contradiction so a fit cannot absorb a crest. A crest is one contradiction and then agreement, so
+ * a change of plane costs nothing extra.
  */
 struct TerrainSpeedCapSettings {
   bool enabled = false;
@@ -132,7 +141,8 @@ class TerrainSpeedCap {
   scalar_t slopeAlongX() const { return gradient_(0); }    //!< [-] the gradient's x component: the signed slope when the positions ran along x
   scalar_t slopeAlong(const vector2_t& direction) const { return gradient_.dot(direction); }  //!< [-] signed rise / run along a unit direction (the heading, for telemetry)
   bool slopeConsistent() const { return slopeConsistent_; }  //!< a plane stands (confirmed, or provisional from the latest sample that contradicted the previous one): the references follow it
-  bool slopeConfirmed() const { return slopeConfirmed_; }    //!< three samples agreed on the standing plane and none since contradicted it: the incline cap applies
+  bool slopeConfirmed() const { return slopeConfirmed_; }    //!< four samples agreed on the standing plane and none since contradicted it: the incline cap applies
+  bool rough() const { return rough_; }                      //!< rough ground (two planes in a row contradicted, or one on ground that was already rough): no plane until two samples agree (or four confirm)
   size_t stepCount() const { return stepCount_; }          //!< double supports that tripped the cap so far
   void reset();
 
@@ -143,15 +153,18 @@ class TerrainSpeedCap {
   bool active_ = false;
   scalar_t lastStep_ = 0.0;
   scalar_t lastStepTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
+  scalar_t lastRawStepTime_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [s] when a step was last seen on rough ground
+  scalar_t rawStepBeforeSupport_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [s] lastRawStepTime_ as the current double support began: a single sample lays a plane only when none is recent
   scalar_t capValue_ = std::numeric_limits<scalar_t>::infinity();
   std::vector<scalar_t> tierTime_;  //!< [s] per tier: when a step of that size was last seen (NaN = never)
+  static constexpr size_t kSlopeSamples = 4;  //!< samples that confirm a plane (two residual degrees of freedom when walking straight)
   struct SlopeSample {
     scalar_t rise = 0.0;                    //!< [m] signed sole-height difference, foot 0 minus foot 1
     vector2_t run = vector2_t::Zero();      //!< [m] planar separation, foot 0 minus foot 1
   };
-  bool fitsPlane(const vector2_t& gradient, const SlopeSample& sample) const;
-  void takeSlopeSample(const SlopeSample& sample, const vector2_t& heading);
-  std::array<SlopeSample, 3> slopeSamples_{};  //!< the last three double supports' samples
+  bool fitsPlane(const vector2_t& gradient, const SlopeSample& sample, scalar_t share = 1.0) const;
+  void takeSlopeSample(scalar_t time, const SlopeSample& sample, const vector2_t& heading);
+  std::array<SlopeSample, kSlopeSamples> slopeSamples_{};  //!< the last double supports' samples
   scalar_t lastDsDz_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [m] signed sole-height step at the last solve of the current double support
   vector2_t lastDsRun_ = vector2_t::Zero();  //!< [m] the feet's planar separation there (valid with lastDsDz_)
   bool sampledThisSupport_ = false;  //!< the current double support has given its slope sample (a settled reading)
@@ -159,6 +172,10 @@ class TerrainSpeedCap {
   size_t slopeSampleCount_ = 0;
   vector2_t gradient_ = vector2_t::Zero();
   bool slopeConsistent_ = false;
+  bool rough_ = false;                   //!< rough ground: no plane is applied (see takeSlopeSample)
+  bool pendingSet_ = false;              //!< pending_ holds the plane of the latest rough-ground sample
+  vector2_t pending_ = vector2_t::Zero();  //!< the plane the latest sample laid while rough: adopted when the next sample fits it
+  int contradictions_ = 0;               //!< planes contradicted in a row (an agreeing sample works one off)
   scalar_t slopeTime_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [s] last solve with a consistent incline sample
   scalar_t previousTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
   size_t stepCount_ = 0;
