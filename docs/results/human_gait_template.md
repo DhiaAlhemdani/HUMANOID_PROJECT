@@ -1983,3 +1983,21 @@ stride; a stop whose last full stride straddled the crest stands on that stride'
 refit. Rerun: `suite_mild` `speeds` + `backward` (humanT27M vs humanT24eM: 0 falls, `slope` ±0.000 or
 blank almost everywhere, holds within T24e's), then `slope_10` and `slope_5` all scripts against humanT26
 (nothing should move but the cap timing), then flat `speeds`.
+
+**Run 27 results (`9466193`, humanT27 vs humanT24eM / humanT26).** **Tiles: 0 falls** in `speeds` and
+`backward` (humanT26M fell standing at 40.8 s). Walking on the field the slope read ±0.004-0.019 (T26M:
+0.010-0.058) and the cap was the roughness cap at 0.50 / 0.20 - the T24e behaviour. The stands still
+took a plane from the last stride, +0.032 (`speeds`) and +0.052 (`backward`, two consecutive 1.4 cm
+up-steps over 0.27 m, paired at half tolerance; the closing step's predicted rise of 4 mm over 8 cm is
+under the 1 cm floor, so it agrees with anything): both stands survived, the `backward` one with jerk
+13.3 / acc_hf 0.11 against T24e's 2.0 / 0.005 - open. Guards: `v_err_max` 0.336 (limit 0.326) from the
++0.8 hold, which hit a 2 cm step and walked at 0.2 for the hold (T24e 72 % capped there too); arm acc
+1.81 vs 1.46 - the same field, different footfalls, one run each. **slope_10: winner** against humanT26S10
+(transition jerk max 54 → 41, everything else within noise; about-face +0.159 → +0.002 → −0.161 as
+before; slope_back_slow 80 % @ 0.21, −0.131, same). **slope_5: 0 falls**; the plateau stand after
+`speeds` is now flat (slope 0.000, cap 0 %: T26 held the ramp's confirmed 0.087 through it); the
+`backward` stop one stride onto the down-ramp stands on the provisional plane +0.090 (true 0.087) with
+jerk 27 / acc_hf 0.45 (T26: 57 / 1.07) - and the first down-ramp stride still pitches 22° (pitch_pp 22.1
+in the −0.2 hold; T26 had it at the stop). The predicted cost shows: the incline cap lands one stride
+later (`speeds` entry ramp → 0.5 at 0.23 mean vs 0.32). Guards: `solve_hz` 36.5 (machine load, MPC at
+274 % utilisation) and arm acc 1.195 vs limit 1.193.
