@@ -2299,3 +2299,19 @@ the descent target is blocked - landed where it is, whatever its velocity reads 
 at ~0.1 s (0.17 of 0.35 m/s) inside the double support; a foot truly in the air (the crest) follows the
 push and keeps searching until the ground stops it. The 1.5 m/s² ramp stays: it is what makes "not
 following" visible against a constant 0.15 m/s target.
+
+**Run 29 E results (humanT29, code `86e7d7a`).** slope_5: both scripts survive with NO guard failure -
+the first time with the search on. Steady 25.3 / 0.418 / 144 (T27S5 27.6 / 0.441 / 147), crest-down
+`ramp → −0.5` pitch_pp 2.12 (T27 ~22), the `backward` stop 4.3°, `hold −0.2` on the far edge 27.7 /
+0.475 / 171 vs T27's 51.4 / 0.841 / 218, `longest` 0.024 / 0.044 s; compare says "no gain" only because
+the primaries are not 10 % better. The blocked rule did what the anatomy said it would.
+Tiles: both scripts fell (hold +0.8 at 20.0 s, hold −0.5 at 27.8 s) - steady segments this time, short
+searches (0.042 / 0.062 s) - and the segments before the falls were rougher than 29 D (hold +0.5 73.3 /
+0.887 / tau_rate 428; 29 D 52.0 / 0.851 / 347; T27M 59.5 / 0.931 / 300; pitch_pp 11.9). Five search runs
+on the tiles, five with falls, while the T25c/T26/T27 line walked them; hold +0.5 tau_rate across A–E:
+300 (T27) → 323 → 342 → 347 → 428. The long search is gone, so what the tiles pay for is what a search
+does on every touchdown it fires on (8–18 per script on tiles, 5–7 on the slope): the plan wrench
+dropped on that foot, the estimator's contact cleared, the fade restarted when it ends. Which of the
+three - or whether the falls are the tiles' edge-landing residual with the search only changing where
+the feet land - is a bag question (`fall_anatomy.py` on `humanT29eM__speeds` and `humanT29eM__backward`),
+not another code iteration.
