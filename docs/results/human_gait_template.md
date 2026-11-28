@@ -2001,3 +2001,9 @@ jerk 27 / acc_hf 0.45 (T26: 57 / 1.07) - and the first down-ramp stride still pi
 in the −0.2 hold; T26 had it at the stop). The predicted cost shows: the incline cap lands one stride
 later (`speeds` entry ramp → 0.5 at 0.23 mean vs 0.32). Guards: `solve_hz` 36.5 (machine load, MPC at
 274 % utilisation) and arm acc 1.195 vs limit 1.193.
+**Flat (humanT27F vs humanT26F):** slope 0.000 in every segment, cap 0 %, no terrain steps; "no gain",
+all metrics within noise of T26F (steady jerk 38.3 vs 39.5, transition jerk max 57.0 vs 66.2).
+
+That closes the ladder for the humanT25c recipe on `9466193`: flat unchanged, suite_mild 0 falls (the
+T24e behaviour plus a plane in the stands), slope_5 0 falls, slope_10 0 falls and a winner. Open: the
+crest-down first stride on slope_5 (22° pitch), the stand-on-a-tile plane (≤ 0.05, survived twice).
