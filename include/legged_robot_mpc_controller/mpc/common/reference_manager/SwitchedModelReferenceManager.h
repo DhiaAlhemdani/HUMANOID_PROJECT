@@ -255,6 +255,8 @@ scalar_t maxOffset = 0.6;
   scalar_t contactSyncAdvancedSeconds() const { return contactSyncAdvancedSeconds_.load(); }
   size_t contactSyncBlockedCount() const { return contactSyncBlocked_.load(); }
   size_t contactSyncDescendingCount() const { return contactSyncDescending_.load(); }
+  size_t contactSyncProbedCount() const { return contactSyncProbed_.load(); }  //!< solves that held a still-descending foot (the probe)
+  scalar_t contactSyncProbeDepth() const { return contactSyncProbeDepth_.load(); }  //!< [m] how far the probed foot's target is lowered now (0 = none)
 
   /**
    * Blind terrain speed cap (TerrainSpeedCap.h): the sole-height difference in double support marks
@@ -527,6 +529,13 @@ scalar_t maxOffset = 0.6;
   std::atomic<scalar_t> contactSyncAdvancedSeconds_{0.0};
   std::atomic<size_t> contactSyncBlocked_{0};     //!< landings accepted by the blockedHeight rule
   std::atomic<size_t> contactSyncDescending_{0};  //!< near-plane soles rejected by the descentVelocity rule
+  std::atomic<size_t> contactSyncProbed_{0};      //!< solves whose hold was the probe's
+  std::atomic<scalar_t> contactSyncProbeDepth_{0.0};
+  /// Probe (ContactSync.h): per foot, how far below its planned touchdown height the held foot's target is
+  /// taken this solve (probeDescent x the hold so far; 0 when the foot is not held). Solver thread only.
+  feet_array_t<scalar_t> probeOffset_{0.0, 0.0};
+  /// Lowers the probed feet's touchdown targets for their current swing in a per-foot height sequence.
+  void applyProbeOffsets(scalar_t initTime, const ModeSchedule& modeSchedule, feet_array_t<scalar_array_t>& touchDownHeights) const;
 
   /// Terrain speed cap: solver thread only (modifyReferences); the atomics are its published state.
   void updateTerrainSpeedCap(scalar_t initTime, const vector_t& initState, const ModeSchedule& modeSchedule);

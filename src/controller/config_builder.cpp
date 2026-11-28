@@ -149,6 +149,8 @@ ocs2::humanoid::WbIdMpcInterface::Config buildWholeBodyInverseDynamicsMpcConfig(
   config.contactSync.minPhaseDuration = p.gait.contactSync.minPhaseDuration;
   config.contactSync.descentVelocity = p.gait.contactSync.descentVelocity;
   config.contactSync.blockedHeight = p.gait.contactSync.blockedHeight;
+  config.contactSync.probeWindow = p.gait.contactSync.probeWindow;
+  config.contactSync.probeDescent = p.gait.contactSync.probeDescent;
   ocs2::humanoid::validateContactSyncSettings(config.contactSync);
 
   // --- blind terrain speed cap ---

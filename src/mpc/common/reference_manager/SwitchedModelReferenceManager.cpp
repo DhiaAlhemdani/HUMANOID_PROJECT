@@ -726,6 +726,18 @@ void SwitchedModelReferenceManager::modifyReferences(scalar_t initTime,
     if (slopeFootReference_ && useTerrainHeightEstimate_ && slopePlaneRead() && wellFormed) {
       // On an incline the cap has read: per-foot support heights on the plane (SlopeFootReference.h).
       updateSwingOnSlope(initTime, initState, modeSchedule, swingHeights);
+    } else if (wellFormed && (probeOffset_[0] > 0.0 || probeOffset_[1] > 0.0)) {
+      // Flat estimate with a probed foot: the single-height update, with that foot's target lowered.
+      const scalar_array_t liftOff(modeSchedule.modeSequence.size(), terrainHeight);
+      const scalar_array_t touchDown(modeSchedule.modeSequence.size(),
+                                     terrainHeight + swingTrajectoryPtr_->getConfig().touchDownHeightOffset);
+      feet_array_t<scalar_array_t> liftOffHeights;
+      liftOffHeights.fill(liftOff);
+      feet_array_t<scalar_array_t> touchDownHeights;
+      touchDownHeights.fill(touchDown);
+      applyProbeOffsets(initTime, modeSchedule, touchDownHeights);
+      swingTrajectoryPtr_->update(modeSchedule, liftOffHeights, touchDownHeights, swingHeights);
+      slopeNextTouchDownHeight_.store(std::numeric_limits<scalar_t>::quiet_NaN());
     } else {
       swingTrajectoryPtr_->update(modeSchedule, terrainHeight, swingHeights);
       slopeNextTouchDownHeight_.store(std::numeric_limits<scalar_t>::quiet_NaN());
@@ -920,6 +932,16 @@ void SwitchedModelReferenceManager::applyContactSync(scalar_t initTime, const ve
     }
   }
   const ContactSyncResult result = synchroniseTouchdowns(contactSync_, initTime, feet, modeSchedule, contactSyncHoldOrigin_);
+  // The probe: a held foot's touchdown target goes down with the hold (ContactSync.h), read by the swing
+  // planner update later in this solve; a foot not held this solve has no offset.
+  probeOffset_.fill(0.0);
+  if (result.heldFoot >= 0 && result.probing && contactSync_.probeDescent > 0.0) {
+    probeOffset_[static_cast<size_t>(result.heldFoot)] = contactSync_.probeDescent * result.heldBy;
+  }
+  contactSyncProbeDepth_.store(result.heldFoot >= 0 ? probeOffset_[static_cast<size_t>(result.heldFoot)] : 0.0);
+  if (result.probing) {
+    contactSyncProbed_.fetch_add(1);
+  }
   if (result.blockedLandings > 0) {
     contactSyncBlocked_.fetch_add(static_cast<size_t>(result.blockedLandings));
   }
@@ -1006,7 +1028,8 @@ void SwitchedModelReferenceManager::updateSwingOnSlope(scalar_t initTime, const 
       contactSequence[foot].push_back(flags[foot]);
     }
   }
-  const SlopeFootReferencePlan plan = planSlopeFootReference(input, modeSchedule.eventTimes, contactSequence);
+  SlopeFootReferencePlan plan = planSlopeFootReference(input, modeSchedule.eventTimes, contactSequence);
+  applyProbeOffsets(initTime, modeSchedule, plan.touchDownHeights);
   swingTrajectoryPtr_->update(modeSchedule, plan.liftOffHeights, plan.touchDownHeights, swingHeights);
 
   // Diagnostics: the next touchdown's planned height.
@@ -1022,6 +1045,23 @@ void SwitchedModelReferenceManager::updateSwingOnSlope(scalar_t initTime, const 
     }
   }
   slopeNextTouchDownHeight_.store(next);
+}
+
+void SwitchedModelReferenceManager::applyProbeOffsets(scalar_t initTime, const ModeSchedule& modeSchedule,
+                                                      feet_array_t<scalar_array_t>& touchDownHeights) const {
+  // The held foot is still swinging in the schedule (its touchdown was pushed past initTime); the planner
+  // reads the touchdown height at the swing's last mode, so every swing mode of the current swing is lowered.
+  const auto& events = modeSchedule.eventTimes;
+  const auto& modes = modeSchedule.modeSequence;
+  const size_t k = static_cast<size_t>(std::upper_bound(events.begin(), events.end(), initTime) - events.begin());
+  for (size_t foot = 0; foot < N_CONTACTS; ++foot) {
+    if (!(probeOffset_[foot] > 0.0)) {
+      continue;
+    }
+    for (size_t p = k; p < modes.size() && p < touchDownHeights[foot].size() && !modeNumber2StanceLeg(modes[p])[foot]; ++p) {
+      touchDownHeights[foot][p] -= probeOffset_[foot];
+    }
+  }
 }
 
 feet_array_t<vector3_t> SwitchedModelReferenceManager::computeFeetPositions(const vector_t& initState) {

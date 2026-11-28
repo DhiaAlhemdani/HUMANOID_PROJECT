@@ -47,14 +47,20 @@ void validateContactSyncSettings(const ContactSyncSettings& s) {
     throw std::invalid_argument(
         "[ContactSync] earlyWindow, lateWindow, heightThreshold and minPhaseDuration must be >= 0 and holdStep > 0");
   }
-  if (s.earlyWindow == 0.0 && s.lateWindow == 0.0) {
-    throw std::invalid_argument("[ContactSync] enabled with both windows 0: nothing to do; disable it instead");
+  if (s.earlyWindow == 0.0 && s.lateWindow == 0.0 && s.probeWindow == 0.0) {
+    throw std::invalid_argument("[ContactSync] enabled with every window 0: nothing to do; disable it instead");
   }
-  if (!(s.descentVelocity >= 0.0) || !(s.blockedHeight >= 0.0)) {
-    throw std::invalid_argument("[ContactSync] descentVelocity and blockedHeight must be >= 0");
+  if (!(s.descentVelocity >= 0.0) || !(s.blockedHeight >= 0.0) || !(s.probeWindow >= 0.0) || !(s.probeDescent >= 0.0)) {
+    throw std::invalid_argument("[ContactSync] descentVelocity, blockedHeight, probeWindow and probeDescent must be >= 0");
   }
   if (s.blockedHeight > 0.0 && s.descentVelocity <= 0.0) {
     throw std::invalid_argument("[ContactSync] blockedHeight needs descentVelocity > 0 to tell a stopped sole from a descending one");
+  }
+  if (s.probeWindow > 0.0 && s.descentVelocity <= 0.0) {
+    throw std::invalid_argument("[ContactSync] probeWindow needs descentVelocity > 0: it holds a sole that still descends");
+  }
+  if (s.probeDescent > 0.0 && s.probeWindow <= 0.0) {
+    throw std::invalid_argument("[ContactSync] probeDescent lowers a probed foot's target: it needs probeWindow > 0");
   }
 }
 
@@ -131,12 +137,17 @@ ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, sca
       result.advancedFoot = static_cast<int>(foot);
       result.advancedBy = lead - (newTime - time);
     } else {
-      // Late half: the schedule has the foot down since events[k - 1] but it is still in the air.
-      if (settings.lateWindow <= 0.0 || k == 0 || modeNumber2StanceLeg(modes[k - 1])[foot]) {
+      // Late half: the schedule has the foot down since events[k - 1] but it is still in the air. The
+      // probe is the late half for a sole that is still descending (it has not found the ground the plan
+      // assumed); a stopped sole gets the late window only.
+      const bool descending = settings.descentVelocity > 0.0 && std::isfinite(feet[foot].soleVelocity) &&
+                              feet[foot].soleVelocity < -settings.descentVelocity;
+      const scalar_t window = std::max(settings.lateWindow, descending ? settings.probeWindow : 0.0);
+      if (window <= 0.0 || k == 0 || modeNumber2StanceLeg(modes[k - 1])[foot]) {
         holdOrigin[foot] = kNaN;
         continue;
       }
-      if (time - (std::isnan(holdOrigin[foot]) ? events[k - 1] : holdOrigin[foot]) <= settings.lateWindow) {
+      if (time - (std::isnan(holdOrigin[foot]) ? events[k - 1] : holdOrigin[foot]) <= window) {
         count();
       }
       if (landed) {
@@ -144,16 +155,29 @@ ContactSyncResult synchroniseTouchdowns(const ContactSyncSettings& settings, sca
         continue;
       }
       const scalar_t planned = std::isnan(holdOrigin[foot]) ? events[k - 1] : holdOrigin[foot];
-      scalar_t newTime = std::min(time + settings.holdStep, planned + settings.lateWindow);
-      newTime = std::min(newTime, events[k] - std::max(settings.minPhaseDuration, scalar_t(1e-3)));
+      const bool probing = descending && window > settings.lateWindow;
+      scalar_t newTime = std::min(time + settings.holdStep, planned + window);
+      if (!probing) {
+        // The late half eats the double support, down to the minimum phase.
+        newTime = std::min(newTime, events[k] - std::max(settings.minPhaseDuration, scalar_t(1e-3)));
+      }
       if (newTime <= events[k - 1] || newTime <= time) {
         holdOrigin[foot] = kNaN;  // the window is used up: the plan loads the foot where it is
         continue;
+      }
+      if (probing) {
+        // A probed step simply takes longer: the rest of the schedule slides with its touchdown, the
+        // double support and the other foot's swing keep their lengths.
+        const scalar_t shift = newTime - events[k - 1];
+        for (size_t i = k; i < events.size(); ++i) {
+          events[i] += shift;
+        }
       }
       events[k - 1] = newTime;
       holdOrigin[foot] = planned;
       result.heldFoot = static_cast<int>(foot);
       result.heldBy = newTime - planned;
+      result.probing = probing;
     }
   }
   return result;

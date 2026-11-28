@@ -53,6 +53,11 @@ class SlopeFootReferenceContractTest(unittest.TestCase):
         for section in ("gait", "reference", "constraints", "costs", "model"):
             candidate = dict(CANDIDATE["ocs2"][section])
             expected = dict(base["ocs2"][section])
+            if section == "gait":
+                # The probe keys (run 28) were added to the block after T24e was written; both are off here.
+                candidate["contactSync"] = dict(candidate["contactSync"])
+                for key in ("probeWindow", "probeDescent"):
+                    self.assertEqual(candidate["contactSync"].pop(key), 0.0)
             if section == "reference":
                 candidate["groundHeight"] = dict(candidate["groundHeight"])
                 candidate["groundHeight"].pop("followSlope")

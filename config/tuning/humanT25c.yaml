@@ -857,6 +857,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           minPhaseDuration: 0.02
           descentVelocity: 0.05
           blockedHeight: 0.01
+          # Probe (run 28, candidate config/tuning/humanT28.yaml): hold a still-descending foot past its planned
+          # touchdown and take its target down to find the ground (the first stride off a crest). Off here.
+          probeWindow: 0.0
+          probeDescent: 0.0
 
         # Swing-foot trajectory, shared by every template.
         swingTrajectory:

@@ -362,7 +362,10 @@ def _counter(name):
         return None
     v = v[np.isfinite(v)]
     return int(v[-1] - v[0]) if v.size else 0
-agg["contact_sync"] = {k: _counter(f"contact_sync/{k}") for k in ("advanced", "held", "blocked", "descending")}
+agg["contact_sync"] = {k: _counter(f"contact_sync/{k}") for k in ("advanced", "held", "blocked", "descending", "probed")}
+# Probe (run 28): deepest lowering of a held foot's target over the run [m] (None for bags without the column).
+probe_depth = sc("contact_sync/probe_depth")
+agg["probe_depth_max"] = round(float(np.nanmax(probe_depth)), 4) if probe_depth is not None and np.isfinite(probe_depth).any() else None
 agg["terrain_steps"] = _counter("terrain/steps")
 cap_all = sc("terrain/cap")
 agg["cap_frac"] = round(float(np.mean(cap_all[np.isfinite(cap_all)] > 0)), 4) if cap_all is not None and np.isfinite(cap_all).any() else None
@@ -373,7 +376,8 @@ print(f"SUITE {TITLE} | survived={agg['survived']} fell_at={agg['fell_at']} | st
       f"acc_hf {agg['steady_acc_hf_mean']} tau_rate {agg['steady_tau_rate_mean']} v_err {agg['steady_v_err_mean']} | "
       f"transitions ({len(trans)}): jerk max {agg['transition_jerk_max']} acc_hf max {agg['transition_acc_hf_max']} "
       f"tau_rate max {agg['transition_tau_rate_max']} | worst: {agg.get('worst_transition')}"
-      + (" | contact_sync " + " ".join(f"{k} {v}" for k, v in agg["contact_sync"].items())
+      + (" | contact_sync " + " ".join(f"{k} {v}" for k, v in agg["contact_sync"].items() if v is not None)
+         + (f" probe_depth_max {agg['probe_depth_max']:.3f}" if agg["probe_depth_max"] is not None else "")
          if agg["contact_sync"]["advanced"] is not None else "")
       + (f" | terrain steps {agg['terrain_steps']} cap {agg['cap_frac']:.0%} of solves" if agg["cap_frac"] is not None else ""))
 print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err   z_m step_t step_l   ds leg_acc leg_jrk arm_acc arm_pp  hl_leg knee_ms hip_rom knee_sw arm_amp arm_ph  modes")

@@ -2015,3 +2015,49 @@ tiers unchanged), `contactSync.heightThreshold 0.01 / descentVelocity 0.05 / blo
 contact-synchronised touchdown + the terrain recipe. `config/tuning/humanT25c.yaml` is now identical to
 the shipped file but for the suite's `diagnostics.trackingRate`; new candidates regenerate from the
 shipped file as before. The flat suite baseline for later runs is humanT27F.
+
+### Run 28: the probe - a foot that has not found the ground keeps looking
+
+The one near-fall left on the ladder: the first stride down off the slope_5 crest, pitch 22° in both
+humanT26S5 and humanT27S5 `backward` (and 3-22° forward, run to run). Mechanism, from the plan's side:
+on the plateau the plane is flat, so the swing targets the plateau height; the ground is 1.4-2.6 cm
+lower. The foot reaches its target at the planned touchdown still moving at the swing's end velocity
+(−0.11 m/s) - contactSync's velocity rule correctly calls that `Descending`, not landed - and with
+`lateWindow 0` the schedule switches anyway: the plan loads a foot 2.6 cm in the air and the body
+pivots onto it until the foot hits. Tiles have the same event at 1-2 cm and survive it; the crest is
+the same thing at the size that does not.
+
+Why not the late half: run 23 B showed it destroying the tile gait, and the reason was a dead band -
+a sole *stopped* 2-10 mm above the plane was neither landed nor blocked, so it was held while pressed
+on the tile and the re-stretched spline lifted it again. `heightThreshold 0.01` (T23d, shipped) closed
+the band: after the planned touchdown every stopped sole is now landed (on the plane within 1 cm, or
+blocked ≥ 1 cm above the finished plan). What remains not-landed there is exactly a sole still going
+down. The run 26 note asked for a rule "specific to a foot still in the air at its planned touchdown
+while the plane has just been contradicted downwards"; the first half of that is the whole of it - the
+contradiction comes from this very stride and cannot be known yet.
+
+`contactSync.probeWindow` / `probeDescent` (candidate `humanT28.yaml`: 0.3 s, 0.15 m/s; off in the
+shipped file):
+
+- a foot past its planned touchdown that is still descending faster than `descentVelocity` has its
+  touchdown held, `holdStep` at a time, up to `probeWindow` after the planned time - **only while it
+  descends**; a stopped sole is landed or (velocity unknown) loaded where it is, never held;
+- unlike the late half, which squeezes the following double support down to `minPhaseDuration`, a probe
+  hold **slides the rest of the schedule** with the touchdown: the step simply takes longer, the double
+  support and the other foot's swing keep their lengths (a 2.6 cm drop at 0.11 m/s needs 0.24 s; the
+  0.2 m/s double support is 0.18 s);
+- the reference manager lowers the held foot's touchdown target by `probeDescent × (hold so far)` in
+  the planner update of the same solve (flat and incline paths), so the swing keeps going down instead
+  of hovering at the plane the way a re-stretched spline alone would;
+- the hold ends when the sole stops (landed on the lower ground - the plan loads it there, the ground
+  estimate walks down at `maxStepPerSolve`) or when the window is used up (a hole: loaded where it is).
+
+Telemetry: `contact_sync/probed` (solves held by the probe), `contact_sync/probe_depth` (the current
+lowering [m]); the suite line gets `probed N probe_depth_max 0.0xx`. Unit tests in
+`tests/contact_sync_test.cpp` ("Probe (run 28)": the crest, a stopped sole, unknown velocity, a hole,
+and the late half proper still eating the double support).
+
+Expected on the ladder: slope_5 `backward` crest-down pitch well under 22° with `probed` > 0 and
+`probe_depth_max` ≈ 0.015-0.026 at that stride; slope_10 the same at its crest; tiles: `probed` > 0
+on every lower-tile landing (1-2 cm, 0.1-0.15 s each) - the risk is there, the gait on tiles becomes
+a gait of variable step time; flat: `probed 0` and nothing else moves. Run: `suite_mild` first.

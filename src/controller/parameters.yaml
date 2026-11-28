@@ -716,6 +716,15 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
             stopped descending at least this far [m] above its planned swing height, while the plan descends or has
             finished, IS landed (it stands on ground higher than the plane). Needs descentVelocity > 0. 0 = off",
             validation: {gt_eq: [0.0]}}
+        probeWindow: {type: double, default_value: 0.0, description: "Probe (run 28): the planned touchdown of a foot
+            that is still descending faster than descentVelocity is held up to this long [s] past the planned time
+            (the first stride down off a crest reaches the plane the plateau laid with the ground 1.5-2.6 cm lower; the
+            plan otherwise loads the foot in the air and the body pivots onto it). Only while the sole descends: a
+            stopped sole is landed or loaded where it is, the late half's tile failure. Needs descentVelocity > 0. 0 =
+            off", validation: {gt_eq: [0.0]}}
+        probeDescent: {type: double, default_value: 0.0, description: "Probe (run 28): the held foot's touchdown target is
+            lowered at this rate [m/s] over the hold, so the swing keeps descending to find the ground instead of
+            hovering at the plane. Needs probeWindow > 0. 0 = hold only", validation: {gt_eq: [0.0]}}
       swingTrajectory:
         liftOffVelocity: {type: double, default_value: 0.05, description: "Swing foot lift-off vertical velocity [m/s]"}
         touchDownVelocity: {type: double, default_value: -0.0, description: "Swing foot touch-down vertical velocity

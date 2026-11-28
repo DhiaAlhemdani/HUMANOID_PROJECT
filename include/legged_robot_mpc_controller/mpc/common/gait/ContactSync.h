@@ -68,6 +68,16 @@ namespace ocs2::humanoid {
  *  - a sole at least `blockedHeight` above its planned swing height, while the plan is descending or
  *    at rest and the sole has stopped descending (slower than `descentVelocity`), IS landed (it is
  *    standing on higher ground than the plan assumed).
+ *
+ * Probe (run 28): the first stride down off a crest reaches its planned touchdown at the plane the
+ * plateau laid, still descending, with the ground 1.5-2.6 cm lower (slope_5: the plan loaded the foot
+ * in the air and the body pivoted onto it, pitch 22 deg). With `probeWindow` > 0 the planned touchdown
+ * of a foot that is still DESCENDING faster than `descentVelocity` is held like the late half, up to
+ * `probeWindow` after the planned time - and only while it descends: a stopped sole is landed (on the
+ * plane or blocked) or loaded where it is, which is what made the general late half destructive on
+ * tiles (run 23 B: a sole pressed on a tile, held and lifted again). Needs the velocity terms. The
+ * reference manager lowers the held foot's touchdown target by `probeDescent` x the hold so far, so the
+ * swing keeps going down instead of hovering at the plane (a re-stretched spline alone lifts the foot).
  */
 struct ContactSyncSettings {
   bool enabled = false;
@@ -78,6 +88,8 @@ struct ContactSyncSettings {
   scalar_t minPhaseDuration = 0.02;  //!< [s] no phase is shortened below this
   scalar_t descentVelocity = 0.0;    //!< [m/s] a sole descending faster than this is in the air whatever its height; 0 = off
   scalar_t blockedHeight = 0.0;      //!< [m] a stopped sole this far above the descending plan is landed; 0 = off
+  scalar_t probeWindow = 0.0;        //!< [s] the planned touchdown is held up to this long while the sole still descends; 0 = off
+  scalar_t probeDescent = 0.0;       //!< [m/s] the held foot's touchdown target is lowered at this rate over the hold (reference manager)
 };
 
 /** What the rule sees of one foot. Velocities and the plan may be NaN (unknown): the height-only rule then applies. */
@@ -108,6 +120,7 @@ struct ContactSyncResult {
   scalar_t advancedBy = 0.0;    //!< [s] how much earlier the touchdown now is
   int heldFoot = -1;            //!< foot whose touchdown was pushed back, -1 = none
   scalar_t heldBy = 0.0;        //!< [s] how far past the originally planned time it now is
+  bool probing = false;         //!< the hold is the probe's (the sole still descending past its planned touchdown)
   //! Diagnostics of the velocity terms, counted only where the decision was consulted (a swing foot
   //! inside the early window; a just-switched foot in the late half).
   int blockedLandings = 0;      //!< feet accepted as landed by the blockedHeight rule this call

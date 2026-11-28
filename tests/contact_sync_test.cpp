@@ -274,5 +274,132 @@ int main() {
     assert(done.heldFoot == -1 && std::isnan(hold[1]));
     assert(done.descendingRejections == 0 && done.blockedLandings == 0);
   }
+  // Probe (run 28): the late half for a sole that is still descending only.
+  {
+    ContactSyncSettings probe = s;
+    probe.heightThreshold = 0.01;
+    probe.descentVelocity = 0.05;
+    probe.blockedHeight = 0.01;
+    probe.probeWindow = 0.3;
+    probe.probeDescent = 0.15;
+    validateContactSyncSettings(probe);
+    // It needs the velocity terms, and probeDescent needs the window.
+    {
+      ContactSyncSettings bad = probe;
+      bad.descentVelocity = 0.0;
+      bad.blockedHeight = 0.0;
+      bool threw = false;
+      try {
+        validateContactSyncSettings(bad);
+      } catch (const std::invalid_argument&) {
+        threw = true;
+      }
+      assert(threw);
+      bad = probe;
+      bad.probeWindow = 0.0;
+      threw = false;
+      try {
+        validateContactSyncSettings(bad);
+      } catch (const std::invalid_argument&) {
+        threw = true;
+      }
+      assert(threw);
+    }
+    // The first stride off a crest: at the planned touchdown (0.3) the right foot is at the plane, still
+    // going down at the swing's end velocity, the ground 2.6 cm lower. The event is pushed solve by solve.
+    auto sch = makeSchedule();
+    feet_array_t<scalar_t> hold{kNaN, kNaN};
+    feet_array_t<ContactSyncFootObservation> feet;
+    feet[0].soleHeight = 0.0;
+    feet[1].soleHeight = -0.001;
+    feet[1].soleVelocity = -0.11;
+    feet[1].plannedHeight = -0.001;
+    feet[1].plannedVelocity = -0.11;
+    const auto first = synchroniseTouchdowns(probe, 0.31, feet, sch, hold);
+    assert(first.heldFoot == 1 && first.probing && near(sch.eventTimes[1], 0.33) && near(hold[1], 0.3));
+    assert(near(first.heldBy, 0.03) && first.descendingRejections == 1);
+    // The rest of the schedule slides with the touchdown: the double support keeps its 0.1 s.
+    assert(near(sch.eventTimes[2], 0.43) && near(sch.eventTimes[3], 0.73) && near(sch.eventTimes[4], 0.83));
+    feet[1].soleHeight = -0.012;  // below the plane, still descending: held on
+    const auto second = synchroniseTouchdowns(probe, 0.33, feet, sch, hold);
+    assert(second.heldFoot == 1 && second.probing && near(sch.eventTimes[1], 0.35) && near(second.heldBy, 0.05));
+    assert(near(sch.eventTimes[2], 0.45) && near(sch.eventTimes[4], 0.85));
+    // It touches the ramp and stops: landed (within the threshold of the lowered plan / on the plane), hold over.
+    feet[1].soleHeight = -0.026;
+    feet[1].soleVelocity = 0.0;
+    feet[1].plannedHeight = -0.026;
+    const auto landed = synchroniseTouchdowns(probe, 0.351, feet, sch, hold);
+    assert(landed.heldFoot == -1 && landed.advancedFoot == -1 && !landed.probing && std::isnan(hold[1]));
+    assert(near(sch.eventTimes[1], 0.35) && sch.modeAtTime(0.352) == STANCE);
+    // A sole that has STOPPED in the air past its planned touchdown is not probed (lateWindow 0: loaded where
+    // it is) - the run 23 B tile failure was a stopped sole held and lifted. 1.5 cm up, plan at the plane:
+    // that is a blocked landing anyway; 5 mm up it is on the plane. Neither is held.
+    {
+      auto sch2 = makeSchedule();
+      feet_array_t<scalar_t> hold2{kNaN, kNaN};
+      feet_array_t<ContactSyncFootObservation> stopped;
+      stopped[0].soleHeight = 0.0;
+      stopped[1].soleHeight = 0.015;
+      stopped[1].soleVelocity = 0.0;
+      stopped[1].plannedHeight = -0.001;
+      stopped[1].plannedVelocity = 0.0;
+      const auto r = synchroniseTouchdowns(probe, 0.31, stopped, sch2, hold2);
+      assert(r.heldFoot == -1 && !r.probing && near(sch2.eventTimes[1], 0.3));
+      assert(r.blockedLandings == 0);  // not consulted: no window applies to a stopped sole
+      stopped[1].soleHeight = 0.005;
+      const auto r2 = synchroniseTouchdowns(probe, 0.31, stopped, sch2, hold2);
+      assert(r2.heldFoot == -1 && near(sch2.eventTimes[1], 0.3));
+      // Velocity unknown: no probe either (the height-only rule has nothing to say about descent).
+      stopped[1].soleHeight = 0.02;
+      stopped[1].soleVelocity = kNaN;
+      const auto r3 = synchroniseTouchdowns(probe, 0.31, stopped, sch2, hold2);
+      assert(r3.heldFoot == -1 && near(sch2.eventTimes[1], 0.3));
+    }
+    // The window caps the hold: a hole. From 0.3 the foot descends with nothing under it; the pushes stop at
+    // 0.6 and the plan loads the foot where it is.
+    {
+      auto sch3 = makeSchedule();
+      feet_array_t<scalar_t> hold3{kNaN, kNaN};
+      feet_array_t<ContactSyncFootObservation> falling = feet;
+      falling[1].soleVelocity = -0.11;
+      falling[1].plannedVelocity = -0.11;
+      scalar_t t = 0.31;
+      ContactSyncResult r;
+      for (; t < 0.7; t += 0.02) {
+        falling[1].soleHeight = -0.001 - 0.11 * (t - 0.3);
+        falling[1].plannedHeight = falling[1].soleHeight;
+        r = synchroniseTouchdowns(probe, t, falling, sch3, hold3);
+        if (r.heldFoot < 0) {
+          break;
+        }
+        assert(sch3.eventTimes[1] <= 0.6 + 1e-9 && near(r.heldBy, sch3.eventTimes[1] - 0.3));
+      }
+      assert(t > 0.58 && near(sch3.eventTimes[1], 0.6) && std::isnan(hold3[1]));
+      // The whole gait is 0.3 s later, phase lengths untouched.
+      assert(near(sch3.eventTimes[2], 0.7) && near(sch3.eventTimes[3], 1.0) && near(sch3.eventTimes[4], 1.1));
+    }
+    // The late half proper (lateWindow, a sole merely not landed) still eats the double support instead.
+    {
+      ContactSyncSettings late = probe;
+      late.probeWindow = 0.0;
+      late.probeDescent = 0.0;
+      late.lateWindow = 0.3;
+      auto sch4 = makeSchedule();
+      feet_array_t<scalar_t> hold4{kNaN, kNaN};
+      feet_array_t<ContactSyncFootObservation> f4 = feet;
+      f4[1].soleHeight = -0.001;
+      f4[1].soleVelocity = -0.11;
+      f4[1].plannedHeight = -0.001;
+      f4[1].plannedVelocity = -0.11;
+      for (scalar_t t = 0.31; t < 0.5; t += 0.02) {
+        const auto r = synchroniseTouchdowns(late, t, f4, sch4, hold4);
+        assert(!r.probing);
+        if (r.heldFoot < 0) {
+          break;
+        }
+      }
+      assert(near(sch4.eventTimes[1], 0.38) && near(sch4.eventTimes[2], 0.4));
+    }
+  }
   return 0;
 }

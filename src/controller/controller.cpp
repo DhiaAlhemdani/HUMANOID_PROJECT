@@ -2234,6 +2234,11 @@ void HumanoidWholeBodyInverseDynamicsMpcController::configure_tracking()
   for (const auto* name : {"contact_sync/advanced", "contact_sync/held", "contact_sync/blocked", "contact_sync/descending"}) {
     solver_names.push_back(name);
   }
+  // Probe (run 28): solves that held a still-descending foot past its planned touchdown, and how far below
+  // its planned height that foot's target is taken this solve [m] (0 = no probe).
+  for (const auto* name : {"contact_sync/probed", "contact_sync/probe_depth"}) {
+    solver_names.push_back(name);
+  }
   // Blind terrain speed cap (TerrainSpeedCap.h): cap in force (0 = none), double supports that tripped it, last step [m],
   // incline along the heading the feet agree on (rise / run, 0 = none), and the plane height planned for the next
   // touchdown when the foot references follow that incline (SlopeFootReference.h; NaN while flat / off).
@@ -2341,6 +2346,8 @@ void HumanoidWholeBodyInverseDynamicsMpcController::publish_solver_metrics(doubl
     put(static_cast<double>(reference_manager->contactSyncHeldCount()));
     put(static_cast<double>(reference_manager->contactSyncBlockedCount()));
     put(static_cast<double>(reference_manager->contactSyncDescendingCount()));
+    put(static_cast<double>(reference_manager->contactSyncProbedCount()));
+    put(reference_manager->contactSyncProbeDepth());
     const double cap = reference_manager->terrainSpeedCapValue();
     put(std::isfinite(cap) ? cap : 0.0);
     put(static_cast<double>(reference_manager->terrainStepCount()));

@@ -20,10 +20,12 @@ INTERFACE_H = (ROOT / "include/legged_robot_mpc_controller/mpc/wb_id/WbIdMpcInte
 INTERFACE_CPP = (ROOT / "src/mpc/wb_id/WbIdMpcInterface.cpp").read_text()
 REFMGR_CPP = (ROOT / "src/mpc/common/reference_manager/SwitchedModelReferenceManager.cpp").read_text()
 SYNC_H = (ROOT / "include/legged_robot_mpc_controller/mpc/common/gait/ContactSync.h").read_text()
+SYNC_CPP = (ROOT / "src/mpc/common/gait/ContactSync.cpp").read_text()
+CONTROLLER_CPP = (ROOT / "src/controller/controller.cpp").read_text()
 CMAKE = (ROOT / "CMakeLists.txt").read_text()
 
 KEYS = ("enabled", "earlyWindow", "lateWindow", "heightThreshold", "holdStep", "minPhaseDuration", "descentVelocity",
-        "blockedHeight")
+        "blockedHeight", "probeWindow", "probeDescent")
 
 
 class ContactSyncContractTest(unittest.TestCase):
@@ -33,7 +35,8 @@ class ContactSyncContractTest(unittest.TestCase):
         self.assertFalse(schema["enabled"]["default_value"])
         # The schema defaults are the C++ struct defaults, so a config that only sets `enabled` gets the documented rule.
         for key, value in (("earlyWindow", 0.06), ("lateWindow", 0.0), ("heightThreshold", 0.002), ("holdStep", 0.02),
-                           ("minPhaseDuration", 0.02), ("descentVelocity", 0.0), ("blockedHeight", 0.0)):
+                           ("minPhaseDuration", 0.02), ("descentVelocity", 0.0), ("blockedHeight", 0.0),
+                           ("probeWindow", 0.0), ("probeDescent", 0.0)):
             self.assertEqual(schema[key]["default_value"], value, key)
             self.assertIn(f"scalar_t {key} = {value};", SYNC_H.replace("0.060", "0.06"), key)
 
@@ -48,6 +51,30 @@ class ContactSyncContractTest(unittest.TestCase):
         shipped = {"heightThreshold": 0.01, "descentVelocity": 0.05, "blockedHeight": 0.01}
         for key in KEYS[1:]:
             self.assertEqual(block[key], shipped.get(key, SCHEMA["ocs2"]["gait"]["contactSync"][key]["default_value"]), key)
+
+    def test_probe_is_a_candidate_and_wired_through(self):
+        # Run 28: the probe holds a still-descending foot and slides the schedule; the reference manager
+        # lowers that foot's target. Off in the G1 file; humanT28 = the shipped file + the two keys.
+        self.assertEqual(PARAMS["ocs2"]["gait"]["contactSync"]["probeWindow"], 0.0)
+        self.assertEqual(PARAMS["ocs2"]["gait"]["contactSync"]["probeDescent"], 0.0)
+        candidate = yaml.load((ROOT / "config/tuning/humanT28.yaml").read_text(), Loader=UniqueLoader)[NAME]["ros__parameters"]
+        self.assertEqual(candidate["ocs2"]["gait"]["contactSync"]["probeWindow"], 0.3)
+        self.assertEqual(candidate["ocs2"]["gait"]["contactSync"]["probeDescent"], 0.15)
+        shipped = dict(PARAMS["ocs2"]["gait"]["contactSync"])
+        probed = dict(candidate["ocs2"]["gait"]["contactSync"])
+        for key in ("probeWindow", "probeDescent"):
+            shipped.pop(key)
+            probed.pop(key)
+        self.assertEqual(shipped, probed)
+        self.assertIn("const scalar_t window = std::max(settings.lateWindow, descending ? settings.probeWindow : 0.0);", SYNC_CPP)
+        self.assertIn("events[i] += shift;", SYNC_CPP)
+        self.assertIn("bool probing = false;", SYNC_H)
+        for needle in ("probeOffset_[static_cast<size_t>(result.heldFoot)] = contactSync_.probeDescent * result.heldBy;",
+                       "applyProbeOffsets(initTime, modeSchedule, touchDownHeights);",
+                       "applyProbeOffsets(initTime, modeSchedule, plan.touchDownHeights);"):
+            self.assertIn(needle, REFMGR_CPP, needle)
+        for needle in ('"contact_sync/probed", "contact_sync/probe_depth"', "contactSyncProbedCount()", "contactSyncProbeDepth()"):
+            self.assertIn(needle, CONTROLLER_CPP, needle)
 
     def test_builder_copies_every_key_and_validates(self):
         for key in KEYS:
