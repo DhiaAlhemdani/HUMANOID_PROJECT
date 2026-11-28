@@ -2315,3 +2315,23 @@ dropped on that foot, the estimator's contact cleared, the fade restarted when i
 three - or whether the falls are the tiles' edge-landing residual with the search only changing where
 the feet land - is a bag question (`fall_anatomy.py` on `humanT29eM__speeds` and `humanT29eM__backward`),
 not another code iteration.
+
+**Run 29 E anatomy (the two tiles bags).** Neither fall is a search event. `speeds` hold +0.8: last
+search 0.7 s earlier (38 ms, landed); the fall starts at the 31.49 landing - left foot switched at z
+1.8 cm already stopped (a 1.8 cm tile, it stays there through the fall) and the plan gives it 44 N at
++20 ms, then under 20 N, while the body runs forward over it (base ahead −0.7 → 12.4 cm), the rear
+foot's planned CoP out to 11.4 cm, its ankle pitch saturated, pitch 1.2 → 9.7° in 100 ms. Cap in the
+segment 100 % at 0.36 (from 0.50). `backward` hold −0.5: one 26 ms search 1.4 s earlier; the fall
+starts at the 37.26 landing - right foot at z 2.5 cm, stopped, and the plan's wrench on it at +20 ms is
+−266 N with a 3.2 cm base-x plan jump and a 0.17 rad hip-yaw command step; the same picture as 29 D's
+backward fall (3.3 cm tile, CoP −20 cm). Cap 100 % at 0.17.
+
+The tiles falls are high-tile landings (1.8–3.3 cm) after which the plan's wrench on the new foot is
+wrong - under-loaded forward at 0.8 m/s, negative / discontinuous backward - each with the terrain cap
+stepping the command down hard at that moment. With 29 A–D's falls all on commanded deceleration ramps,
+the series' tiles failure mode is "decelerating on tiles", not the search. Open: whether the search
+makes these landings more likely (hold +0.5 tau_rate 300 → 323 / 342 / 347 / 428 across T27 and 29 B–E
+says the search runs arrive at them rougher) or T27M's single clean tiles run was partly luck - a
+search-off rerun on the tiles (humanT25c.yaml, the T27 recipe) calibrates that before anything else is
+changed. Standing result: the search (29 E) passes every slope_5 guard and removes the crest residual;
+it stays off in the shipped G1 config until the tiles question is settled.
