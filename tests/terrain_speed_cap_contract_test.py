@@ -44,10 +44,11 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
             else:
                 self.assertIn(f"scalar_t {key} = {value};", CAP_H, key)
 
-    def test_g1_block_is_present_and_off(self):
+    def test_g1_block_is_on_with_the_default_tiers(self):
+        # Shipped after run 27 (flat unchanged, suite_mild / slope_5 / slope_10 0 falls); the tiers are the schema's.
         block = PARAMS["ocs2"]["reference"]["terrainSpeedCap"]
         self.assertEqual(tuple(block), KEYS)
-        self.assertFalse(block["enabled"])
+        self.assertTrue(block["enabled"])
         for key in KEYS[1:]:
             self.assertEqual(block[key], SCHEMA["ocs2"]["reference"]["terrainSpeedCap"][key]["default_value"], key)
 

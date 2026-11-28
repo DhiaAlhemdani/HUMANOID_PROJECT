@@ -730,13 +730,16 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         velocityCommandJerkLimits:
           [0.0, 0.0, 0.0, 0.0]
         
+        # Shipped as the terrain recipe (config/tuning/humanT25c.yaml, runs 22-27): stance-foot FK is the
+        # ground height (run 22 D: the first config to walk suite_mild both ways; flat unchanged).
         groundHeight:
-          useEstimate: false
+          useEstimate: true
           maxStepPerSolve: 0.002
           # Run 25 C: on an incline the cap reads, per-foot support heights on the plane and the plane's
           # normal for the foot orientation (a level sole on a 10 deg ramp rests on its heel or toe edge).
-          # Needs useEstimate and terrainSpeedCap.enabled; config/tuning/humanT25c.yaml carries it.
-          followSlope: false
+          # Needs useEstimate and terrainSpeedCap.enabled. Run 27 ladder: slope_10 and slope_5 every
+          # script 0 falls, the stands on the ramps level in the plane; tiles and flat read no plane.
+          followSlope: true
 
         # Blind terrain speed cap (TerrainSpeedCap.h, run 24): a sole-height difference of stepKnots[i]
         # between the two stance feet marks the ground as uneven at tier i for holdSeconds and caps the
@@ -744,10 +747,11 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # steps are walked at 0.5 m/s and lost at 0.8, 2-4 cm steps at 0.2 and lost at 0.5, a 3.5 cm step means
         # the big edges are here. Slopes (run 25): the stance feet's signed step over their separation along the
         # heading is a slope sample; four agreeing samples make the ground a plane (roughness = the residual)
-        # and cap the incline at slopeSpeedKnots. Off pending the terrain ladder (humanT24e: suite_mild 0 falls,
-        # flat unchanged).
+        # and cap the incline at slopeSpeedKnots. Rough ground (run 27) has no plane: two contradictions in a
+        # row, a recent raw step or a short base keep the references level until samples agree again. On
+        # since run 27 (humanT27: flat unchanged, suite_mild / slope_5 / slope_10 0 falls).
         terrainSpeedCap:
-          enabled: false
+          enabled: true
           stepKnots: [0.01, 0.02, 0.035]
           speedKnots: [0.5, 0.2, 0.1]
           holdSeconds: 3.0
@@ -846,24 +850,27 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         # omni hold better, 0 falls, solve rate -6 %. The late half cost balance at 0.8 m/s: off.
         # descentVelocity / blockedHeight (run 23) make "landed" velocity-aware for uneven ground
         # (a sole passing the plane towards a lower tile is not landed; a sole stopped on a higher
-        # tile is); both 0 = the flat-ground height-only rule, pending the terrain ladder.
+        # tile is); both 0 = the flat-ground height-only rule. Shipped on with heightThreshold 0.01 from
+        # run 27 (run 23 C: the T23d recipe; flat unchanged through humanT27F).
         contactSync:
           enabled: true
           earlyWindow: 0.06
           lateWindow: 0.0
-          heightThreshold: 0.002
+          heightThreshold: 0.01
           holdStep: 0.02
           minPhaseDuration: 0.02
-          descentVelocity: 0.0
-          blockedHeight: 0.0
+          descentVelocity: 0.05
+          blockedHeight: 0.01
 
         # Swing-foot trajectory, shared by every template.
         swingTrajectory:
           liftOffVelocity: 0.05
-          # -0.05 m/s: sweep-proven softer landing (pelvis acc_hf 1.1805 -> 1.078, -8.7%,
-          # leg PD HF -7.8%); +0.05 was +29% acc_hf. Effective node velocity is 0.75x this
-          # for the 0.3 s walk swing. docs/results/touchdown_sweep.md
-          touchDownVelocity: -0.05
+          # -0.05 m/s was the flat sweep's softest landing (pelvis acc_hf 1.1805 -> 1.078, -8.7%,
+          # leg PD HF -7.8%; docs/results/touchdown_sweep.md). -0.15 since run 27: with
+          # groundHeight.useEstimate the swing has to reach a tile 1-2 cm below the plan, and the
+          # flat suite did not move (humanT27F vs the -0.05 flat runs within noise). Effective node
+          # velocity is 0.75x this for the 0.3 s walk swing.
+          touchDownVelocity: -0.15
           swingHeight: 0.08 # default fallback for templates that omit swingHeight; 0.08 [m] is the walk value.
           touchDownHeightOffset: -0.001
           swingTimeScale: 0.4

@@ -37,15 +37,17 @@ class ContactSyncContractTest(unittest.TestCase):
             self.assertEqual(schema[key]["default_value"], value, key)
             self.assertIn(f"scalar_t {key} = {value};", SYNC_H.replace("0.060", "0.06"), key)
 
-    def test_g1_ships_the_early_half_only(self):
+    def test_g1_ships_the_early_half_with_the_terrain_rule(self):
         # Run 18 (docs/results/human_gait_template.md): the early half is a suite-wide win; the late half
-        # (holding the event while the foot is still up) cost balance at 0.8 m/s and stays off.
+        # (holding the event while the foot is still up) cost balance at 0.8 m/s and stays off. Run 27
+        # shipped the terrain recipe (run 23 C): the velocity-aware "landed" rule with a 1 cm threshold.
         block = PARAMS["ocs2"]["gait"]["contactSync"]
         self.assertEqual(tuple(block), KEYS)
         self.assertTrue(block["enabled"])
         self.assertEqual(block["lateWindow"], 0.0)
+        shipped = {"heightThreshold": 0.01, "descentVelocity": 0.05, "blockedHeight": 0.01}
         for key in KEYS[1:]:
-            self.assertEqual(block[key], SCHEMA["ocs2"]["gait"]["contactSync"][key]["default_value"], key)
+            self.assertEqual(block[key], shipped.get(key, SCHEMA["ocs2"]["gait"]["contactSync"][key]["default_value"]), key)
 
     def test_builder_copies_every_key_and_validates(self):
         for key in KEYS:

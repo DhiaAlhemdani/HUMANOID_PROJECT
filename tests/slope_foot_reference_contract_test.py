@@ -37,8 +37,13 @@ class SlopeFootReferenceContractTest(unittest.TestCase):
         self.assertEqual(block["followSlope"]["type"], "bool")
         self.assertFalse(block["followSlope"]["default_value"])
 
-    def test_g1_off_and_candidate_on_with_its_prerequisites(self):
-        self.assertFalse(PARAMS["ocs2"]["reference"]["groundHeight"]["followSlope"])
+    def test_g1_and_candidate_on_with_the_prerequisites(self):
+        # Shipped after run 27; the G1 file is the candidate but for the suite's tracking-topic rate.
+        shipped = PARAMS["ocs2"]["reference"]["groundHeight"]
+        self.assertTrue(shipped["followSlope"])
+        self.assertTrue(shipped["useEstimate"])
+        self.assertTrue(PARAMS["ocs2"]["reference"]["terrainSpeedCap"]["enabled"])
+        self.assertEqual(PARAMS["ocs2"], CANDIDATE["ocs2"])
         ground = CANDIDATE["ocs2"]["reference"]["groundHeight"]
         self.assertTrue(ground["followSlope"])
         self.assertTrue(ground["useEstimate"])

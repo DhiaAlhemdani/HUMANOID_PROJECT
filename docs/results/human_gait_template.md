@@ -2007,3 +2007,11 @@ all metrics within noise of T26F (steady jerk 38.3 vs 39.5, transition jerk max 
 That closes the ladder for the humanT25c recipe on `9466193`: flat unchanged, suite_mild 0 falls (the
 T24e behaviour plus a plane in the stands), slope_5 0 falls, slope_10 0 falls and a winner. Open: the
 crest-down first stride on slope_5 (22° pitch), the stand-on-a-tile plane (≤ 0.05, survived twice).
+
+**Shipped (run 27).** `config/g1/ros2_controllers.yaml` now carries the humanT25c recipe:
+`groundHeight.useEstimate true`, `followSlope true`, `terrainSpeedCap.enabled true` (the block's
+tiers unchanged), `contactSync.heightThreshold 0.01 / descentVelocity 0.05 / blockedHeight 0.01`,
+`swingTrajectory.touchDownVelocity -0.15`. Shipped G1 = humanUB4 + lift-off end window +
+contact-synchronised touchdown + the terrain recipe. `config/tuning/humanT25c.yaml` is now identical to
+the shipped file but for the suite's `diagnostics.trackingRate`; new candidates regenerate from the
+shipped file as before. The flat suite baseline for later runs is humanT27F.
