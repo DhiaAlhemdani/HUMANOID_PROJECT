@@ -139,8 +139,12 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
   }
   std::array<bool, kContacts> inContact = in.inContact;
   for (std::size_t c = 0; c < kContacts; ++c) {
+    const bool wasSearching = searching_[c];
     out.searching[c] = touchdownSearch(settings_.search, in.time, in.inContact[c], in.inContact[1 - c], footVel[c].z(),
                                        contactSince_[c], searching_[c]);
+    if (out.searching[c] && !wasSearching) {
+      searchStartVelocity_[c] = -footVel[c].z();  // the swing's own descent: the search never brakes it
+    }
   }
   if (out.searching[0] && out.searching[1]) {
     // Never both: the foot whose switch came later is loaded where it is, the earlier one keeps searching.
@@ -197,7 +201,7 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
       Eigen::Vector3d positionError = footPlan[c] - foot[c];
       positionError.z() = 0.0;
       Eigen::Vector3d velocityDesired = Eigen::Vector3d::Zero();
-      velocityDesired.z() = -settings_.search.descentVelocity;
+      velocityDesired.z() = -searchDescentVelocity(settings_.search, searchStartVelocity_[c], in.time - contactSince_[c]);
       swing.desiredAcc = settings_.swingKp.cwiseProduct(positionError) + settings_.swingKd.cwiseProduct(velocityDesired - footVel[c]);
       continue;
     }

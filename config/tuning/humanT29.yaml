@@ -286,10 +286,12 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         frictionCoefficient: 0.6
         soleHalfLength: 0.10
         soleHalfWidth: 0.04
-        # Touchdown search (run 29): off here, candidate config/tuning/humanT29.yaml turns it on (0.3 s).
+        # Touchdown search (run 29): on, 0.3 s. Run 29 D: the descent target is at least the sole's own velocity at
+        # the switch and grows 1.5 m/s^2 (0.15 m/s ran out the 0.23 s double support on the tiles' deceleration ramps).
         searchWindow: 0.3
         searchLandedVelocity: 0.05
         searchDescentVelocity: 0.15
+        searchDescentAcceleration: 1.5
 
     diagnostics:
       statusLogPeriod: 2.0

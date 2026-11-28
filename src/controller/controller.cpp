@@ -210,6 +210,7 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
       settings.search.window = wb.searchWindow;
       settings.search.landedVelocity = wb.searchLandedVelocity;
       settings.search.descentVelocity = wb.searchDescentVelocity;
+      settings.search.descentAcceleration = wb.searchDescentAcceleration;
       whole_body_feedback_ = std::make_unique<legged_robot_mpc_controller::wbc::WholeBodyFeedback>(
         settings, contact_frame_names(), *control_pinocchio_);
       // Residual servo: residualKp on every joint the shipped PD drives, 0 where it is 0 (wheels).

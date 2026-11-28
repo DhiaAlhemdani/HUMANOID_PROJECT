@@ -2217,3 +2217,35 @@ task rows and the posture may be let go of without the foot rolling. `fall_anato
 `wbc/search` and the fade alpha in the timeline and lists the searches in the window (start, end,
 duration, foot, mode after, true pitch) - run it on `humanT29bM__speeds` to see whether the 28.8 s
 fall sits at a search end, a fade restart, or neither.
+
+**Run 29 C results (humanT29, code `02e0787`).** slope_5 is the cleanest run of the series: 0 falls,
+steady 25.7 / 0.420 / 145 (T27S5 27.6 / 0.441 / 147), crest-down 2.26, the `backward` stop 1.42 (29 B:
+11.9); the sole task did what it was for. The one guard is the down-ramp `ramp → −0.2` tau_rate 228
+(limit 221.6). Tiles: `backward` landings recovered from 29 B (hold −0.5 36.6 / 0.603 / 233 vs 29 B's
+60.5 / 0.978 / 331, T27M 47.5 / 0.739 / 197) - and then BOTH scripts fell, again on deceleration ramps
+(`speeds` 24.0 s in ramp → +0.5 after hold +0.8, `backward` 28.4 s in ramp → −0.2), each with a
+`longest` search of 0.23 s. Three runs, three tile falls, all on slow-downs: 29 A 21.0 s (0.232 s
+search), 29 B 28.8 s, 29 C 24.0 / 28.4 s (0.234 / 0.230 s).
+
+0.23 s is not a number the search chose: at 0.45–0.5 m/s the continuous gait's double support is
+0.25 s (`doubleSupport: [0.25, 0.25, 0.12, 0.09]` at the speed knots). The longest searches ran the
+whole double support and were ended by the "other foot lifts" rule - the foot was still coming down,
+in the air, when it became the only support. At 0.15 m/s a search covers 3.5 cm in that time. Why
+would a foot be that far up at the plan's switch? Slow-downs re-tile the gait to longer steps and a
+longer double support from the next boundary: the switch to contact moves EARLIER relative to the
+swing that is already in flight, so the foot is switched while still descending several centimetres
+above the plane. Speed-ups move it later (the foot has landed: no search) - which is the asymmetry
+behind "always on a deceleration ramp". And the search then BRAKED the foot: the `swingKd` target of
+−0.15 m/s is slower than a mid-descent swing, so a foot that would have reached the ground on its own
+was slowed to the search velocity. Without the search (run 27) the plan wrench slammed that airborne
+foot down in a few tens of milliseconds - rough, but inside the double support.
+
+**Run 29 D (code + `humanT29.yaml`).** The search's descent target is (a) never slower than the
+sole's own velocity at the switch (latched when the search begins; parameter-free), and (b) grows with
+`control.wholeBody.searchDescentAcceleration` (new, 0 = off and the shipped default; 1.5 m/s² in
+humanT29.yaml): from 0.15 m/s the target is 0.30 after 0.1 s, 0.45 after 0.2 s, 7 cm covered inside a
+0.23 s double support, 3 cm inside the 0.12 s one at 0.8 m/s. The 1–2 cm tile steps still get the
+gentle 0.15 m/s (found in < 0.13 s). Expected: tiles no longer fall on the slow-downs, `longest`
+well under the double support; slope_5 unchanged (its searches are 0.04–0.05 s). If a 0.23 s search
+remains, the foot is not where the kinematics think it is - then `fall_anatomy.py` on the bag (search
+list + the timeline's feet z) decides, not another parameter.

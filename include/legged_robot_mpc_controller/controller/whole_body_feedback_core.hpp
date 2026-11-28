@@ -103,8 +103,20 @@ struct TouchdownSearchSettings
 {
   double window{0.0};           //!< [s]
   double landedVelocity{0.05};  //!< [m/s] a sole descending slower than this has landed
-  double descentVelocity{0.15}; //!< [m/s] the searching foot's downward velocity target
+  double descentVelocity{0.15}; //!< [m/s] the searching foot's downward velocity target, at least
+  double descentAcceleration{0.0};  //!< [m/s^2] the target grows this fast the longer the search runs (0 = constant)
 };
+
+//! The searching foot's downward velocity target (positive = down), `elapsed` seconds into the search. Never
+//! slower than the sole came down at the switch (`startVelocity`, positive = down): a search that interrupts a
+//! swing's descent (run 29 C: the deceleration ramps re-tile the gait and switch the foot to contact while it
+//! is still several centimetres up) must not brake it - at 0.15 m/s it ran out the whole double support
+//! without reaching the ground. `descentAcceleration` bounds the time a deep search takes.
+inline double searchDescentVelocity(const TouchdownSearchSettings& s, double startVelocity, double elapsed)
+{
+  const double start = std::isfinite(startVelocity) ? std::max(startVelocity, 0.0) : 0.0;
+  return std::max(s.descentVelocity, start) + s.descentAcceleration * std::max(elapsed, 0.0);
+}
 
 //! The per-foot decision. `contactSince` is the caller's state (NaN = the plan has the foot swinging),
 //! `searching` the previous tick's decision; both are updated in place. Returns the decision.

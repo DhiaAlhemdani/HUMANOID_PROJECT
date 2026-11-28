@@ -127,7 +127,12 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
       searchLandedVelocity: {type: double, default_value: 0.05, description: "Touchdown search: a sole descending
           slower than this has landed [m/s]", validation: {gt: [0.0]}}
       searchDescentVelocity: {type: double, default_value: 0.15, description: "Touchdown search: the vertical
-          velocity the searching foot is driven at (the swing's own touchdown velocity) [m/s]", validation: {gt: [0.0]}}
+          velocity the searching foot is driven at, at least - a search never brakes the descent the sole arrived
+          with [m/s]", validation: {gt: [0.0]}}
+      searchDescentAcceleration: {type: double, default_value: 0.0, description: "Touchdown search: the descent
+          velocity target grows this fast the longer the search runs, so a deep search (the gait re-tiled on a
+          deceleration, the foot switched to contact centimetres up) ends inside the double support. 0 = constant
+          [m/s^2]", validation: {gt_eq: [0.0]}}
   diagnostics:
     statusLogPeriod: {type: double, default_value: 5.0, description: "Period of the MPC timing/utilization status
         log [s]", validation: {gt: [0.0]}}

@@ -88,6 +88,7 @@ private:
   std::array<double, kContacts> contactSince_{{std::numeric_limits<double>::quiet_NaN(),
                                                std::numeric_limits<double>::quiet_NaN()}};  //!< [s] when the plan switched the foot to contact
   std::array<bool, kContacts> searching_{{false, false}};
+  std::array<double, kContacts> searchStartVelocity_{{0.0, 0.0}};  //!< [m/s, down] the sole's velocity when its search began
   std::array<std::vector<Eigen::Index>, kContacts> legColumns_{};  //!< generalized-velocity columns of each leg's joints
 };
 

@@ -229,6 +229,17 @@ void testTouchdownSearch()
   since = kNaN;
   searching = false;
   assert(!touchdownSearch(off, 60.0, true, true, -0.3, since, searching) && since == 60.0);
+  // The descent target (run 29 D): at least descentVelocity, never slower than the sole arrived, growing with
+  // descentAcceleration; an unknown or upward start velocity counts as zero.
+  const auto nearTo = [](double a, double b) { return std::abs(a - b) < 1e-12; };
+  assert(nearTo(searchDescentVelocity(s, 0.11, 0.0), 0.15));
+  assert(nearTo(searchDescentVelocity(s, 0.3, 0.0), 0.3));
+  assert(nearTo(searchDescentVelocity(s, -0.2, 0.0), 0.15));
+  assert(nearTo(searchDescentVelocity(s, kNaN, 0.1), 0.15));
+  s.descentAcceleration = 1.5;
+  assert(nearTo(searchDescentVelocity(s, 0.11, 0.1), 0.30));
+  assert(nearTo(searchDescentVelocity(s, 0.3, 0.2), 0.60));
+  assert(nearTo(searchDescentVelocity(s, 0.3, -1.0), 0.3));
   // Time going back (a reset) is a fresh switch.
   since = kNaN;
   searching = false;

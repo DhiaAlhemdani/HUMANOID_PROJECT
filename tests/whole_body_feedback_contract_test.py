@@ -62,7 +62,10 @@ class WholeBodyFeedbackContract(unittest.TestCase):
         self.assertEqual(cand["control"]["wholeBody"]["searchWindow"], 0.3)
         self.assertEqual(cand["control"]["wholeBody"]["searchLandedVelocity"], 0.05)
         self.assertEqual(cand["control"]["wholeBody"]["searchDescentVelocity"], 0.15)
+        self.assertEqual(cand["control"]["wholeBody"]["searchDescentAcceleration"], 1.5)  # run 29 D
+        self.assertEqual(base["control"]["wholeBody"]["searchDescentAcceleration"], 0.0)
         cand["control"]["wholeBody"]["searchWindow"] = 0.0
+        cand["control"]["wholeBody"]["searchDescentAcceleration"] = 0.0
         self.assertEqual(base, cand)
         core = (ROOT / "include/legged_robot_mpc_controller/controller/whole_body_feedback_core.hpp").read_text()
         self.assertIn("inline bool touchdownSearch(const TouchdownSearchSettings& s,", core)
@@ -71,7 +74,11 @@ class WholeBodyFeedbackContract(unittest.TestCase):
         self.assertIn("inContact[c] = in.inContact[c] && !out.searching[c];", layer)
         self.assertIn("p.accWeight(col) *= kSearchLegWeight;", layer)  # run 29 B: the searching leg is free of the posture PD
         self.assertIn("LinearTask& sole = p.tasks[footOrientationTask_ + c];", layer)  # run 29 C: the sole keeps the plan's orientation
+        # run 29 D: the descent target never brakes the swing and grows with the search
+        self.assertIn("searchStartVelocity_[c] = -footVel[c].z();", layer)
+        self.assertIn("velocityDesired.z() = -searchDescentVelocity(settings_.search, searchStartVelocity_[c], in.time - contactSince_[c]);", layer)
         src = (ROOT / "src/controller/controller.cpp").read_text()
+        self.assertIn("settings.search.descentAcceleration = wb.searchDescentAcceleration;", src)
         for needle in ("input.time = observation.time;",
                        "if ((feedforward_is_fallback && wb.holdOnTorqueWindowOverrun) || searching) {",
                        "whole_body_last_switch_time_ = policy_time;\n      }\n      whole_body_contact_alpha_ = contact_switch_fade(",

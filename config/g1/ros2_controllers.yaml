@@ -290,6 +290,7 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         searchWindow: 0.0
         searchLandedVelocity: 0.05
         searchDescentVelocity: 0.15
+        searchDescentAcceleration: 0.0
 
     diagnostics:
       statusLogPeriod: 2.0
