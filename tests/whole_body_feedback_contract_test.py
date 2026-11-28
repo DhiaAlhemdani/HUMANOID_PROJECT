@@ -49,6 +49,36 @@ class WholeBodyFeedbackContract(unittest.TestCase):
         # Horizontal base position is left to the MPC (no fight with its footholds / velocity tracking).
         self.assertEqual(block["baseKp"][:2], [0.0, 0.0])
 
+    def test_touchdown_search_is_a_candidate_and_wired_through(self):
+        # Run 29: off in the schema and the shipped G1 block, on (0.3 s) in config/tuning/humanT29.yaml, which is
+        # otherwise the shipped recipe (humanT25c.yaml); the layer decides it in the Eigen-only core, the controller
+        # forces the fade off while a foot searches, restarts it at the real touchdown and tells the estimator.
+        schema = schema_whole_body()
+        self.assertEqual(schema["searchWindow"]["default_value"], 0.0)
+        g1 = yaml.safe_load((ROOT / "config/g1/ros2_controllers.yaml").read_text())
+        self.assertEqual(g1[CTRL]["ros__parameters"]["control"]["wholeBody"]["searchWindow"], 0.0)
+        base = yaml.safe_load((ROOT / "config/tuning/humanT25c.yaml").read_text())[CTRL]["ros__parameters"]
+        cand = yaml.safe_load((ROOT / "config/tuning/humanT29.yaml").read_text())[CTRL]["ros__parameters"]
+        self.assertEqual(cand["control"]["wholeBody"]["searchWindow"], 0.3)
+        self.assertEqual(cand["control"]["wholeBody"]["searchLandedVelocity"], 0.05)
+        self.assertEqual(cand["control"]["wholeBody"]["searchDescentVelocity"], 0.15)
+        cand["control"]["wholeBody"]["searchWindow"] = 0.0
+        self.assertEqual(base, cand)
+        core = (ROOT / "include/legged_robot_mpc_controller/controller/whole_body_feedback_core.hpp").read_text()
+        self.assertIn("inline bool touchdownSearch(const TouchdownSearchSettings& s,", core)
+        layer = (ROOT / "src/controller/whole_body_feedback.cpp").read_text()
+        self.assertIn("touchdownSearch(settings_.search, in.time, in.inContact[c], in.inContact[1 - c], footVel[c].z()", layer)
+        self.assertIn("inContact[c] = in.inContact[c] && !out.searching[c];", layer)
+        src = (ROOT / "src/controller/controller.cpp").read_text()
+        for needle in ("input.time = observation.time;",
+                       "if ((feedforward_is_fallback && wb.holdOnTorqueWindowOverrun) || searching) {",
+                       "whole_body_last_switch_time_ = policy_time;\n      }\n      whole_body_contact_alpha_ = contact_switch_fade(",
+                       "contact[c] = contact[c] && !whole_body_searching_[c];",
+                       '"wbc/search_ticks"', '"contact_alpha", "search"'):
+            self.assertIn(needle, src, needle)
+        self.assertIn("testTouchdownSearch();", (ROOT / "tests/whole_body_feedback_core_test.cpp").read_text())
+        self.assertIn("search_longest_s", (ROOT / "tests/tuning/score_suite.py").read_text())
+
     def test_no_empty_lists_in_controller_configs(self):
         # rcl_yaml_param_parser cannot assign a type to `[]`; declaring such a key as double_array makes the
         # controller fail to load (controller_sequence.py exit 1, no locomotion) -- this cost WBC sweep 2 6/8 cases.

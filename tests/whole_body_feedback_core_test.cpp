@@ -5,6 +5,7 @@
 
 #include <cassert>
 #include <cstdio>
+#include <limits>
 #include <random>
 
 using namespace legged_robot_mpc_controller::wbc;
@@ -187,10 +188,59 @@ void testRejectsBadSizes()
   assert(!s.valid);
   std::puts("bad sizes: rejected");
 }
+void testTouchdownSearch()
+{
+  constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
+  TouchdownSearchSettings s;
+  s.window = 0.3;
+  // The crest: the plan switches the foot to contact at t = 10.0 while the sole still comes down at the
+  // swing's end velocity; it searches until the sole stops at 10.2 (the ramp, 2.6 cm lower), then stays landed.
+  double since = kNaN;
+  bool searching = false;
+  assert(!touchdownSearch(s, 9.99, false, true, -0.11, since, searching) && std::isnan(since));
+  assert(touchdownSearch(s, 10.0, true, true, -0.11, since, searching) && since == 10.0);
+  assert(touchdownSearch(s, 10.1, true, true, -0.14, since, searching));
+  assert(!touchdownSearch(s, 10.2, true, true, -0.01, since, searching) && since == 10.0);
+  assert(!touchdownSearch(s, 10.25, true, true, -0.2, since, searching));  // a later wobble does not restart it
+  assert(!touchdownSearch(s, 10.5, false, true, -0.2, since, searching) && std::isnan(since));  // lifted: state cleared
+  // An ordinary touchdown: the sole has stopped by the switch - no search.
+  since = kNaN;
+  searching = false;
+  assert(!touchdownSearch(s, 20.0, true, true, 0.0, since, searching) && since == 20.0);
+  assert(!touchdownSearch(s, 20.01, true, true, -0.3, since, searching));
+  // A hole: still descending at the end of the window - loaded where it is.
+  since = kNaN;
+  searching = false;
+  assert(touchdownSearch(s, 30.0, true, true, -0.15, since, searching));
+  assert(touchdownSearch(s, 30.29, true, true, -0.15, since, searching));
+  assert(!touchdownSearch(s, 30.31, true, true, -0.15, since, searching));
+  assert(!touchdownSearch(s, 30.32, true, true, -0.15, since, searching));
+  // The plan lifts the other foot mid-search: the body needs a foot, the search ends.
+  since = kNaN;
+  searching = false;
+  assert(touchdownSearch(s, 40.0, true, true, -0.15, since, searching));
+  assert(!touchdownSearch(s, 40.05, true, false, -0.15, since, searching));
+  assert(!touchdownSearch(s, 40.06, true, true, -0.15, since, searching));  // and does not come back
+  // Unknown velocity: no search. Off (window 0): never.
+  since = kNaN;
+  searching = false;
+  assert(!touchdownSearch(s, 50.0, true, true, kNaN, since, searching));
+  TouchdownSearchSettings off;
+  since = kNaN;
+  searching = false;
+  assert(!touchdownSearch(off, 60.0, true, true, -0.3, since, searching) && since == 60.0);
+  // Time going back (a reset) is a fresh switch.
+  since = kNaN;
+  searching = false;
+  assert(!touchdownSearch(s, 70.0, true, true, 0.0, since, searching));
+  assert(touchdownSearch(s, 5.0, true, true, -0.2, since, searching) && since == 5.0);
+  std::puts("touchdown search: crest, ordinary landing, hole, other foot lifted, unknown velocity, off, reset");
+}
 }  // namespace
 
 int main()
 {
+  testTouchdownSearch();
   testDoubleSupportConstraints();
   testRecoversConsistentPlan();
   testSingleSupportAndSwingTask();

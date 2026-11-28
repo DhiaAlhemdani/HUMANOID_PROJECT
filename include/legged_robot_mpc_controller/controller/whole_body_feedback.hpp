@@ -13,6 +13,7 @@
 #include <ocs2_pinocchio_interface/PinocchioInterface.h>
 
 #include <array>
+#include <limits>
 #include <string>
 
 namespace legged_robot_mpc_controller::wbc
@@ -41,10 +42,12 @@ struct Settings
   double swingWeight{0.0};
   double wrenchWeight{1e-2};
   WrenchLimits limits;
+  TouchdownSearchSettings search;  //!< touchdown search (run 29, whole_body_feedback_core.hpp)
 };
 
 struct Input
 {
+  double time{0.0};           //!< [s] this tick's time (the touchdown search's clock)
   Eigen::VectorXd qMeasured;  //!< generalized coordinates (nq == nv for this base joint)
   Eigen::VectorXd vMeasured;
   Eigen::VectorXd qPlan;      //!< policy state at the current time
@@ -60,6 +63,7 @@ struct Output
   Eigen::VectorXd jointTorque;
   double dynamicsResidual{0.0};
   int wrenchClips{0};
+  std::array<bool, kContacts> searching{{false, false}};  //!< feet the touchdown search kept out of contact this tick
 };
 
 class WholeBodyFeedback
@@ -79,6 +83,9 @@ private:
   std::size_t orientationFrameId_{0};
   bool hasOrientationTask_{false};
   Problem problem_;  //!< reused allocation
+  std::array<double, kContacts> contactSince_{{std::numeric_limits<double>::quiet_NaN(),
+                                               std::numeric_limits<double>::quiet_NaN()}};  //!< [s] when the plan switched the foot to contact
+  std::array<bool, kContacts> searching_{{false, false}};
 };
 
 }  // namespace legged_robot_mpc_controller::wbc

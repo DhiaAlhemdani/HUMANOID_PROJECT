@@ -286,6 +286,10 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
         frictionCoefficient: 0.6
         soleHalfLength: 0.10
         soleHalfWidth: 0.04
+        # Touchdown search (run 29): off here, candidate config/tuning/humanT29.yaml turns it on (0.3 s).
+        searchWindow: 0.0
+        searchLandedVelocity: 0.05
+        searchDescentVelocity: 0.15
 
     diagnostics:
       statusLogPeriod: 2.0

@@ -2135,3 +2135,45 @@ measured sole is still descending and above the estimated ground gets its wrench
 reference continued downwards until contact, with the plan's schedule left alone (the body does not
 pivot on a point in the air; nothing has to travel through the solver). That is a design for a later
 run, not a tuning item.
+
+### Run 29: the touchdown search - the probe moved to where the measurement is
+
+The run 28 post-mortem left one fact: a foot that reaches its planned touchdown still moving down is not
+on the ground, and the right reaction cannot travel through a 42 Hz solver. The whole-body layer runs at
+500 Hz on the measured state and already decides, every tick, which feet are contacts. So the rule
+moves there (`control.wholeBody.searchWindow`, candidate `humanT29.yaml` = the shipped recipe +
+`searchWindow 0.3`; schema and shipped G1 block off):
+
+- at the tick the plan switches a foot to contact, if its measured sole still descends faster than
+  `searchLandedVelocity` (0.05 m/s, contactSync's `descentVelocity`), the layer **keeps it a swing
+  foot**: no wrench, no stance rows, the base task realised on the other foot alone (the QP's
+  dynamics rows are then true - no fictitious reaction, so the body does not pivot on a point in the
+  air), and the swing task drives it **down at `searchDescentVelocity`** (0.15 m/s, the swing's own
+  touchdown velocity; a velocity target, not a position below the ground to overshoot into) at the
+  plan's horizontal foothold;
+- the search ends when the sole stops (landed, on whatever it found - a lower tile, the ramp below
+  the crest), or `searchWindow` after the switch (a hole: loaded where it is), or when the plan lifts
+  the other foot (the body needs a foot); it never restarts within the same contact phase and never
+  runs on both feet;
+- while a foot searches the layer's torque carries the tick (`contact_alpha 1`: the plan's torque is
+  the one that loads the airborne foot); when the search ends the **contact-switch fade restarts** at
+  that tick - the real touchdown - so the plan's torque carries the landing over `contactBlendSeconds`
+  as at every other switch;
+- the estimator's contact flags get the searching foot as in the air;
+- **the plan and its schedule are untouched**: contactSync's early half still pulls early landings,
+  the probe stays off.
+
+Ordinary touchdowns do not search: by the time the plan switches, the sole has stopped (the early half
+pulled the event to the landing) or is within its last millimetres and stops within a tick or two -
+a search of 2-10 ms, which is the layer not loading a foot 2 ms before it is down. The crest-down
+stride (2.6 cm at 0.11-0.15 m/s) searches for ≈ 0.2 s on one leg; the question run 29 answers is
+whether the layer can hold the body on the stance foot for that long with the plan's double-support
+accelerations as the target. Telemetry: tracking `wbc/search` (0 none, 1 left, 2 right), solver
+`wbc/search_ticks`; the SUITE line gets `search ticks N searches M longest X s`. Unit test
+`testTouchdownSearch` in `tests/whole_body_feedback_core_test.cpp` (crest, ordinary landing, hole,
+other foot lifted, unknown velocity, off, reset).
+
+Expected: tiles - `searches` ≈ the number of lower-tile landings, `longest` 0.05-0.15 s, no change
+to `step_t` (the plan is not touched) and jerk within T27M; slope_5 - crest-down `backward` pitch_pp
+22 → < 10 with one search of ≈ 0.2 s there, the stop segments unchanged; flat - searches of a few ms
+at most. Order: `suite_mild`, `slope_5`, then flat and slope_10.

@@ -174,6 +174,9 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
     whole_body_last_mode_ = std::numeric_limits<std::size_t>::max();
     whole_body_last_switch_time_ = -1.0;
     whole_body_contact_alpha_ = 1.0;
+    whole_body_searching_ = {false, false};
+    whole_body_search_previous_ = {false, false};
+    whole_body_search_ticks_.store(0);
     if (parameters_.control.wholeBody.enabled) {
       const auto& wb = parameters_.control.wholeBody;
       if (joint_kp_.size() == 0) {
@@ -204,6 +207,9 @@ controller_interface::CallbackReturn HumanoidWholeBodyInverseDynamicsMpcControll
       settings.limits.frictionCoefficient = wb.frictionCoefficient;
       settings.limits.soleHalfLengthX = wb.soleHalfLength;
       settings.limits.soleHalfLengthY = wb.soleHalfWidth;
+      settings.search.window = wb.searchWindow;
+      settings.search.landedVelocity = wb.searchLandedVelocity;
+      settings.search.descentVelocity = wb.searchDescentVelocity;
       whole_body_feedback_ = std::make_unique<legged_robot_mpc_controller::wbc::WholeBodyFeedback>(
         settings, contact_frame_names(), *control_pinocchio_);
       // Residual servo: residualKp on every joint the shipped PD drives, 0 where it is 0 (wheels).
@@ -726,6 +732,7 @@ controller_interface::return_type HumanoidWholeBodyInverseDynamicsMpcController:
 
   read_state_estimator();
   whole_body_tick_ = false;
+  whole_body_searching_ = {false, false};  // set again by this tick's layer solve, if any
 
   const auto observation = build_observation(time);
   const bool solver_ready = mpc_ready_.load(std::memory_order_acquire);
@@ -1473,7 +1480,11 @@ void HumanoidWholeBodyInverseDynamicsMpcController::write_estimator_references(d
   const auto phase = bring_up_phase_.load();
   const bool mpc_driving = !uses_state_estimator(parameters_.floatingBase.source) ||
     phase == BringUpPhase::Blend || phase == BringUpPhase::Locomotion;
-  const auto contact = mpc_driving ? contact_flags_at(time) : ocs2::contact_flag_t{true, true};
+  auto contact = mpc_driving ? contact_flags_at(time) : ocs2::contact_flag_t{true, true};
+  // A foot the touchdown search holds out of contact is in the air whatever the schedule says.
+  for (std::size_t c = 0; c < legged_robot_mpc_controller::wbc::kContacts && c < contact.size(); ++c) {
+    contact[c] = contact[c] && !whole_body_searching_[c];
+  }
   auto& left = command_interfaces_[estimator_command_index_[legged_robot_state_estimator::estimator_interfaces::kContactLeft]];
   auto& right = command_interfaces_[estimator_command_index_[legged_robot_state_estimator::estimator_interfaces::kContactRight]];
   auto& epoch = command_interfaces_[estimator_command_index_[legged_robot_state_estimator::estimator_interfaces::kInitializeEpoch]];
@@ -1944,6 +1955,7 @@ HumanoidWholeBodyInverseDynamicsMpcController::compute_mpc_joint_action(const oc
   // replaces the feedforward above; on an invalid solve this tick keeps the plan's torque.
   if (whole_body_feedback_) {
     legged_robot_mpc_controller::wbc::Input input;
+    input.time = observation.time;
     input.qMeasured = control_model_->getGeneralizedCoordinates(observation.state);
     input.vMeasured = control_model_->getGeneralizedVelocities(observation.state);
     input.qPlan = control_model_->getGeneralizedCoordinates(policy_state);
@@ -1956,6 +1968,20 @@ HumanoidWholeBodyInverseDynamicsMpcController::compute_mpc_joint_action(const oc
     }
     const auto result = whole_body_feedback_->compute(*control_pinocchio_, input);
     whole_body_tick_ = true;  // gains go to the residual set even on a fallback tick
+    // Touchdown search (whole_body_feedback.hpp): a search ending with the plan still in contact is the
+    // real touchdown - the contact-switch fade restarts there; while a search runs the layer's torque
+    // carries the tick whatever the fade says (the plan's torque loads a foot that is in the air).
+    bool search_ended = false;
+    bool searching = false;
+    for (std::size_t c = 0; c < legged_robot_mpc_controller::wbc::kContacts; ++c) {
+      search_ended = search_ended || (whole_body_search_previous_[c] && !result.searching[c] && input.inContact[c]);
+      searching = searching || result.searching[c];
+    }
+    whole_body_search_previous_ = result.searching;
+    whole_body_searching_ = result.searching;
+    if (searching) {
+      whole_body_search_ticks_.fetch_add(1);
+    }
     if (result.valid && result.jointTorque.size() == command.feedforward.size()) {
       vector_t tau = result.jointTorque;
       // The modelled joint Coulomb friction, as the plan's inverse dynamics adds it.
@@ -1972,9 +1998,12 @@ HumanoidWholeBodyInverseDynamicsMpcController::compute_mpc_joint_action(const oc
       // Contact-switch fade: the plan's torque carries the switch, the layer's torque the rest.
       // When the plan's torque is the unconstrained fallback the layer keeps the whole tick: its
       // torque is at least contact- and limit-consistent at the measured state.
+      if (search_ended) {
+        whole_body_last_switch_time_ = policy_time;
+      }
       whole_body_contact_alpha_ = contact_switch_fade(policy_time, policy_mode);
       const auto& wb = parameters_.control.wholeBody;
-      if (feedforward_is_fallback && wb.holdOnTorqueWindowOverrun) {
+      if ((feedforward_is_fallback && wb.holdOnTorqueWindowOverrun) || searching) {
         whole_body_contact_alpha_ = 1.0;
       }
       command.feedforward = command.feedforward + whole_body_contact_alpha_ * (tau - command.feedforward);
@@ -2175,7 +2204,8 @@ void HumanoidWholeBodyInverseDynamicsMpcController::configure_tracking()
     // Whole-body layer: 1 when this tick's torque came from it, the base-rows residual of its
     // solve, the number of wrench components clipped, the servo-gain ramp (0 shipped PD, 1 residual)
     // and the contact-switch fade (1 layer torque, 0 plan torque).
-    for (const char* name : {"active", "residual", "clips", "gain_alpha", "contact_alpha"}) {
+    // and the touchdown search (0 none, 1 left foot, 2 right, 3 both - never both).
+    for (const char* name : {"active", "residual", "clips", "gain_alpha", "contact_alpha", "search"}) {
       tracking_names_.push_back(std::string("wbc/") + name);
     }
   }
@@ -2229,6 +2259,8 @@ void HumanoidWholeBodyInverseDynamicsMpcController::configure_tracking()
   for (const auto& name : solver_state_soft_terms_) solver_names.push_back("state_soft/" + name);
   solver_tail_start_ = solver_names.size();
   for (const auto* name : {"grid_nodes", "grid_min_dt", "grid_max_dt", "grid_fine_max_dt"}) solver_names.push_back(name);
+  // Touchdown search (run 29, whole_body_feedback.hpp): cumulative servo ticks a foot was held out of contact.
+  solver_names.push_back("wbc/search_ticks");
   // Contact-synchronised touchdown counters (cumulative; ContactSync.h): advanced / held events and
   // the velocity-rule decisions (blocked landings accepted, near-plane descents rejected).
   for (const auto* name : {"contact_sync/advanced", "contact_sync/held", "contact_sync/blocked", "contact_sync/descending"}) {
@@ -2341,6 +2373,7 @@ void HumanoidWholeBodyInverseDynamicsMpcController::publish_solver_metrics(doubl
   put(std::isfinite(min_dt) ? min_dt : 0.0);
   put(max_dt);
   put(fine_max_dt);
+  put(static_cast<double>(whole_body_search_ticks_.load()));
   if (const auto reference_manager = mpc_interface_->getSwitchedModelReferenceManagerPtr()) {
     put(static_cast<double>(reference_manager->contactSyncAdvancedCount()));
     put(static_cast<double>(reference_manager->contactSyncHeldCount()));
@@ -2466,6 +2499,8 @@ void HumanoidWholeBodyInverseDynamicsMpcController::publish_tracking(
     put(whole_body_tick_ ? static_cast<double>(whole_body_last_clips_) : std::numeric_limits<double>::quiet_NaN());
     put(whole_body_gain_alpha_);
     put(whole_body_tick_ ? whole_body_contact_alpha_ : std::numeric_limits<double>::quiet_NaN());
+    put(whole_body_tick_ ? (whole_body_searching_[0] ? 1.0 : 0.0) + (whole_body_searching_[1] ? 2.0 : 0.0)
+                         : std::numeric_limits<double>::quiet_NaN());
   }
   (void)tracking_publisher_->try_publish(tracking_row_);
 }

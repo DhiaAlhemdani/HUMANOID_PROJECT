@@ -366,6 +366,22 @@ agg["contact_sync"] = {k: _counter(f"contact_sync/{k}") for k in ("advanced", "h
 # Probe (run 28): deepest lowering of a held foot's target over the run [m] (None for bags without the column).
 probe_depth = sc("contact_sync/probe_depth")
 agg["probe_depth_max"] = round(float(np.nanmax(probe_depth)), 4) if probe_depth is not None and np.isfinite(probe_depth).any() else None
+# Touchdown search (run 29): servo ticks a foot was held out of contact (solver counter), searches and the
+# longest one [s] from the 500 Hz wbc/search column (0 none, 1 left, 2 right).
+search = tc("wbc/search")
+agg["search_ticks"] = _counter("wbc/search_ticks")
+agg["searches"] = agg["search_longest_s"] = None
+if search is not None and jt is not None and np.isfinite(search).any():
+    on = np.nan_to_num(search) > 0
+    edges = np.flatnonzero(np.diff(on.astype(int)))
+    starts = edges[on[edges + 1]] + 1
+    ends = edges[~on[edges + 1]] + 1
+    if on[0]:
+        starts = np.concatenate([[0], starts])
+    if on[-1]:
+        ends = np.concatenate([ends, [len(on) - 1]])
+    agg["searches"] = int(len(starts))
+    agg["search_longest_s"] = round(float(np.max(jt[ends] - jt[starts])), 3) if len(starts) else 0.0
 agg["terrain_steps"] = _counter("terrain/steps")
 cap_all = sc("terrain/cap")
 agg["cap_frac"] = round(float(np.mean(cap_all[np.isfinite(cap_all)] > 0)), 4) if cap_all is not None and np.isfinite(cap_all).any() else None
@@ -379,7 +395,9 @@ print(f"SUITE {TITLE} | survived={agg['survived']} fell_at={agg['fell_at']} | st
       + (" | contact_sync " + " ".join(f"{k} {v}" for k, v in agg["contact_sync"].items() if v is not None)
          + (f" probe_depth_max {agg['probe_depth_max']:.3f}" if agg["probe_depth_max"] is not None else "")
          if agg["contact_sync"]["advanced"] is not None else "")
-      + (f" | terrain steps {agg['terrain_steps']} cap {agg['cap_frac']:.0%} of solves" if agg["cap_frac"] is not None else ""))
+      + (f" | terrain steps {agg['terrain_steps']} cap {agg['cap_frac']:.0%} of solves" if agg["cap_frac"] is not None else "")
+      + (f" | search ticks {agg['search_ticks']} searches {agg['searches']} longest {agg['search_longest_s']} s"
+         if agg["searches"] is not None else ""))
 print("SEG segment                               kind        jerk  acc_hf lat_hf ang_jrk roll_pp pitch_pp  tau_rate  v_err   z_m step_t step_l   ds leg_acc leg_jrk arm_acc arm_pp  hl_leg knee_ms hip_rom knee_sw arm_amp arm_ph  modes")
 for r in rows:
     print(f"SEG {r['label']:36s} {r['kind']:10s} {r['jerk']:6.2f} {r['acc_hf']:6.3f} {r['lat_acc_hf']:6.3f} {r['ang_jerk']:7.2f} "

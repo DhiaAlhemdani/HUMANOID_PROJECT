@@ -117,6 +117,17 @@ humanoid_whole_body_inverse_dynamics_mpc_controller:
           contact-frame x half-extent [m]", validation: {gt: [0.0]}}
       soleHalfWidth: {type: double, default_value: 0.04, description: "Post-solve centre-of-pressure clip,
           contact-frame y half-extent [m]", validation: {gt: [0.0]}}
+      searchWindow: {type: double, default_value: 0.0, description: "Touchdown search (run 29): a foot the plan has
+          just switched to contact whose measured sole still descends faster than searchLandedVelocity is not on the
+          ground; the layer keeps it a swing foot (no wrench, no stance rows, the body on the other foot) and drives it
+          down at searchDescentVelocity at the plan's foothold until it stops, or this long after the switch (then it
+          is loaded where it is). Decided every servo tick on the measured foot; the plan and schedule are untouched,
+          the estimator is told the foot is in the air, the contact-switch fade restarts at the real touchdown and the
+          layer's torque carries the search. 0 = off [s]", validation: {gt_eq: [0.0]}}
+      searchLandedVelocity: {type: double, default_value: 0.05, description: "Touchdown search: a sole descending
+          slower than this has landed [m/s]", validation: {gt: [0.0]}}
+      searchDescentVelocity: {type: double, default_value: 0.15, description: "Touchdown search: the vertical
+          velocity the searching foot is driven at (the swing's own touchdown velocity) [m/s]", validation: {gt: [0.0]}}
   diagnostics:
     statusLogPeriod: {type: double, default_value: 5.0, description: "Period of the MPC timing/utilization status
         log [s]", validation: {gt: [0.0]}}

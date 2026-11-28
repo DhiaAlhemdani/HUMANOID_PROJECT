@@ -26,6 +26,7 @@
 #include <array>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <vector>
 
 namespace legged_robot_mpc_controller::wbc
@@ -90,6 +91,47 @@ struct Solution
   double dynamicsResidual{0.0};              //!< ‖M_b a + h_b − Σ J_bᵀ F‖ of the solved (unclipped) point
   int wrenchClips{0};                        //!< components moved by the cone / CoP / unilateral clip
 };
+
+//! Touchdown search (run 29): a foot the plan has just switched to contact whose measured sole is still
+//! going DOWN faster than `landedVelocity` is not on the ground (a sole on the ground cannot descend);
+//! the layer keeps it a swing foot - no wrench, no stance rows, the body held on the other foot - and
+//! drives it down at `descentVelocity` at the plan's horizontal foothold until it stops (landed, wherever
+//! the ground was) or `window` after the switch (a hole: loaded where it is). Decided every servo tick on
+//! the measured foot; nothing goes through the solver, the plan and its schedule are untouched. The
+//! search ends early if the plan lifts the other foot. window 0 = off.
+struct TouchdownSearchSettings
+{
+  double window{0.0};           //!< [s]
+  double landedVelocity{0.05};  //!< [m/s] a sole descending slower than this has landed
+  double descentVelocity{0.15}; //!< [m/s] the searching foot's downward velocity target
+};
+
+//! The per-foot decision. `contactSince` is the caller's state (NaN = the plan has the foot swinging),
+//! `searching` the previous tick's decision; both are updated in place. Returns the decision.
+inline bool touchdownSearch(const TouchdownSearchSettings& s, double time, bool planContact, bool otherPlanContact,
+                            double soleVelocityZ, double& contactSince, bool& searching)
+{
+  if (!planContact) {
+    contactSince = std::numeric_limits<double>::quiet_NaN();
+    searching = false;
+    return false;
+  }
+  const bool descending = std::isfinite(soleVelocityZ) && soleVelocityZ < -s.landedVelocity;
+  if (!std::isfinite(contactSince) || time < contactSince) {
+    // The plan's switch to contact (or time went back): search only if the sole is still coming down.
+    contactSince = time;
+    searching = s.window > 0.0 && descending;
+  } else if (searching) {
+    // Keep searching while the sole descends inside the window; once it has stopped it is landed (on
+    // whatever it found) and stays landed for the rest of this contact phase.
+    searching = descending && time - contactSince <= s.window;
+  }
+  // The body must have a foot to stand on: the plan lifting the other foot ends the search.
+  if (searching && !otherPlanContact) {
+    searching = false;
+  }
+  return searching;
+}
 
 struct WrenchLimits
 {

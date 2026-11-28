@@ -10,6 +10,7 @@
 #include <pinocchio/spatial/explog.hpp>
 
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 namespace legged_robot_mpc_controller::wbc
@@ -104,31 +105,61 @@ Output WholeBodyFeedback::compute(ocs2::PinocchioInterface& pinocchioInterface, 
                              settings_.jointKd * (in.vPlan.tail(nj) - in.vMeasured.tail(nj));
   }
 
-  // 4. Contact and swing tasks.
+  // 4. Touchdown search: a foot the plan has in contact but whose measured sole still descends is not
+  //    on the ground; the layer keeps it a swing foot (Settings::searchWindow).
+  std::array<Eigen::Vector3d, kContacts> foot, footVel;
+  for (std::size_t c = 0; c < kContacts; ++c) {
+    foot[c] = data.oMf[frameIds_[c]].translation();
+    footVel[c] = pinocchio::getFrameVelocity(model, data, frameIds_[c], pinocchio::LOCAL_WORLD_ALIGNED).linear();
+  }
+  std::array<bool, kContacts> inContact = in.inContact;
+  for (std::size_t c = 0; c < kContacts; ++c) {
+    out.searching[c] = touchdownSearch(settings_.search, in.time, in.inContact[c], in.inContact[1 - c], footVel[c].z(),
+                                       contactSince_[c], searching_[c]);
+  }
+  if (out.searching[0] && out.searching[1]) {
+    // Never both: the foot whose switch came later is loaded where it is, the earlier one keeps searching.
+    const std::size_t drop = contactSince_[1] >= contactSince_[0] ? 1 : 0;
+    searching_[drop] = false;
+    out.searching[drop] = false;
+  }
+  for (std::size_t c = 0; c < kContacts; ++c) {
+    inContact[c] = in.inContact[c] && !out.searching[c];
+  }
+
+  // 5. Contact and swing tasks.
   for (std::size_t c = 0; c < kContacts; ++c) {
     ContactTask& contact = p.contacts[c];
     contact.jacobian.setZero(6, nv);
     pinocchio::getFrameJacobian(model, data, frameIds_[c], pinocchio::LOCAL_WORLD_ALIGNED, contact.jacobian);
     contact.driftAcc =
       pinocchio::getFrameClassicalAcceleration(model, data, frameIds_[c], pinocchio::LOCAL_WORLD_ALIGNED).toVector();
-    contact.inContact = in.inContact[c];
-    contact.wrenchPlan = in.inContact[c] ? in.wrenchPlan[c] : Vector6::Zero();
+    contact.inContact = inContact[c];
+    contact.wrenchPlan = inContact[c] ? in.wrenchPlan[c] : Vector6::Zero();
 
     SwingTask& swing = p.swings[c];
-    swing.active = !in.inContact[c] && settings_.swingWeight > 0.0;
-    if (swing.active) {
-      swing.jacobian = contact.jacobian.topRows(3);
-      swing.driftAcc = contact.driftAcc.head(3);
-      const Eigen::Vector3d foot = data.oMf[frameIds_[c]].translation();
-      const Eigen::Vector3d footVel =
-        pinocchio::getFrameVelocity(model, data, frameIds_[c], pinocchio::LOCAL_WORLD_ALIGNED).linear();
-      const Eigen::Vector3d planAcc = swing.jacobian * in.accPlan + swing.driftAcc;
-      swing.desiredAcc = planAcc + settings_.swingKp.cwiseProduct(footPlan[c] - foot) +
-                         settings_.swingKd.cwiseProduct(footVelPlan[c] - footVel);
+    swing.active = !inContact[c] && settings_.swingWeight > 0.0;
+    if (!swing.active) {
+      continue;
     }
+    swing.jacobian = contact.jacobian.topRows(3);
+    swing.driftAcc = contact.driftAcc.head(3);
+    if (out.searching[c]) {
+      // Searching: hold the plan's foothold horizontally, go down at the search velocity. A velocity
+      // target, not a position below the ground to overshoot into - the swing's own touchdown velocity.
+      Eigen::Vector3d positionError = footPlan[c] - foot[c];
+      positionError.z() = 0.0;
+      Eigen::Vector3d velocityDesired = Eigen::Vector3d::Zero();
+      velocityDesired.z() = -settings_.search.descentVelocity;
+      swing.desiredAcc = settings_.swingKp.cwiseProduct(positionError) + settings_.swingKd.cwiseProduct(velocityDesired - footVel[c]);
+      continue;
+    }
+    const Eigen::Vector3d planAcc = swing.jacobian * in.accPlan + swing.driftAcc;
+    swing.desiredAcc = planAcc + settings_.swingKp.cwiseProduct(footPlan[c] - foot[c]) +
+                       settings_.swingKd.cwiseProduct(footVelPlan[c] - footVel[c]);
   }
 
-  // 5. Link orientation task (world axes, as the LOCAL_WORLD_ALIGNED angular rows).
+  // 6. Link orientation task (world axes, as the LOCAL_WORLD_ALIGNED angular rows).
   if (hasOrientationTask_) {
     LinearTask& task = p.tasks.front();
     Matrix6X J = Matrix6X::Zero(6, nv);

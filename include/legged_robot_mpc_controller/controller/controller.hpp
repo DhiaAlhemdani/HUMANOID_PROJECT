@@ -177,6 +177,9 @@ private:
   std::size_t whole_body_last_mode_{std::numeric_limits<std::size_t>::max()};  //!< plan mode of the previous layer tick
   double whole_body_last_switch_time_{-1.0};        //!< policy time at which that mode last changed
   double whole_body_contact_alpha_{1.0};            //!< 1 = layer torque, 0 = plan torque (contact-switch fade)
+  std::array<bool, legged_robot_mpc_controller::wbc::kContacts> whole_body_searching_{{false, false}};  //!< touchdown search this tick (estimator flags, telemetry)
+  std::array<bool, legged_robot_mpc_controller::wbc::kContacts> whole_body_search_previous_{{false, false}};  //!< the previous layer tick's decision (fade restart edge)
+  std::atomic<std::size_t> whole_body_search_ticks_{0};  //!< servo ticks with a foot in touchdown search (solver telemetry)
   double contact_switch_fade(double policy_time, std::size_t policy_mode);
   //! Select the servo gains for this tick (stand-up override > whole-body residual > jointEffortPd).
   void select_servo_gains(const vector_t*& kp, const vector_t*& kd) const;
