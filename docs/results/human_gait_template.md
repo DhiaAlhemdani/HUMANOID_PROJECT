@@ -2101,3 +2101,37 @@ with `probed` > 0 the flicker has another source and `policy_t0` in the tracking
 the policy age); slope_5 crest-down stays ≈ 5°, the stop segments back to T27S5 (transition jerk ≤
 42, `probe_depth_max` ≈ 0.01-0.03 only mid-run). Order: `suite_mild`, then `slope_5`, then flat and
 slope_10.
+
+**Run 28 B results (humanT28, code `6bc5a6a`) - the probe is parked.** Four runs, four falls, all
+inside a probe: tiles `speeds` at 3.2 s (the very first "ramp → +0.2", `probed 9`, depth 0.032),
+tiles `backward` at 21.5 s (hold −0.8, `probed 11`), slope_5 `speeds` at 29.8 s and `backward` at
+30.1 s - both at the **top** crest of the ramp (z ≈ 1.0-1.25, slope 0.068 → plateau), `probed 4 / 7`,
+depth 0.028 / 0.032, leg_jerk 3800-4500 at the fall. Everything the probe did not touch is T27:
+slope_5 steady 25.4 / 0.427 / 145 vs 27.6 / 0.441 / 147, tiles `backward` down to −0.5 within 10 % of
+humanT27M. The MPC ran at 41-44 Hz (utilisation 230-245 %) in every run, as in the baselines.
+
+Reading. The top crest is the probe's "right" case - the plane says +0.087 and the plateau is lower -
+and T27 walks it at jerk 42 by simply loading the foot at the planned time; with the hold it falls. So
+the mechanism is wrong, not the gate. Two reasons, both the loop's latency: (1) at 42 Hz a solve's
+schedule reaches the whole-body side ≈ 25 ms after its initTime and is used for ≈ 25 ms more, so a
+hold that stays ahead of the policy is ≥ 3 periods = 70 ms (what 28 B sets), i.e. heldBy starts at
+0.07 s and the target is 1 cm below the plane in the first solve and 3 cm by the third; (2) the gate
+"within 1 cm of the plane and still descending at the planned time" is the last 10-90 ms of *every*
+swing (the real foot lags the spline by a few mm), so most probes fire on ordinary landings - the foot
+touches within a few tens of ms, and until the pulled-back event has made it through the pipeline
+(two more periods, ≈ 50 ms) the whole-body side tracks a swing spline 1-3 cm *below the ground* with
+the plan's centre of mass in single support. That is the leg jerk and the fall; the 20 ms push of 28
+A was half-wrong in the other direction (the WBC loaded the foot the plan swung) and half-worked. A
+schedule-level probe cannot be made shorter than two solve periods, and at this solve rate two
+periods are the whole event. Run 28 A's crest-down improvement (22° → 5°) is real but came with that
+flicker, which is not a thing to ship.
+
+Decision: `probeWindow` / `probeDescent` stay in the code and schema (off), `humanT28.yaml` is
+retired, the shipped config remains the run 27 recipe (T25c + `trackingRate 500`). The run 28 B code
+(hold ≥ 3 solve periods, un-slide, stride gate, `Descending`-only) is the correct form of the schedule
+probe if it is ever revisited at a 100 Hz solver. What would address the crest residual without
+touching the schedule: a whole-body-side rule at 500 Hz - a foot the plan has in contact whose
+measured sole is still descending and above the estimated ground gets its wrench zeroed and its swing
+reference continued downwards until contact, with the plan's schedule left alone (the body does not
+pivot on a point in the air; nothing has to travel through the solver). That is a design for a later
+run, not a tuning item.

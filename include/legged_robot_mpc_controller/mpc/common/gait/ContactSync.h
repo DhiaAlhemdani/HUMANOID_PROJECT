@@ -69,7 +69,13 @@ namespace ocs2::humanoid {
  *    at rest and the sole has stopped descending (slower than `descentVelocity`), IS landed (it is
  *    standing on higher ground than the plan assumed).
  *
- * Probe (run 28): the first stride down off a crest reaches its planned touchdown at the plane the
+ * Probe (run 28) - RETIRED, keep off (`probeWindow 0`): four falls in four runs (run 28 B). At a 42 Hz
+ * solver a held event reaches the whole-body side two periods late, by which time an ordinary landing
+ * (the gate fires in the last 10-90 ms of every swing) has touched down and the controller tracks a
+ * swing reference below the ground with the plan in single support. Left in the code as the correct
+ * form of a schedule-level probe should a 100 Hz solver make it worth revisiting; see
+ * docs/results/human_gait_template.md "Run 28 B results". Design as built:
+ * the first stride down off a crest reaches its planned touchdown at the plane the
  * plateau laid, still descending, with the ground 1.5-2.6 cm lower (slope_5: the plan loaded the foot
  * in the air and the body pivoted onto it, pitch 22 deg). With `probeWindow` > 0 the planned touchdown
  * of a foot that is at the plane and still DESCENDING through it faster than `descentVelocity` (the
