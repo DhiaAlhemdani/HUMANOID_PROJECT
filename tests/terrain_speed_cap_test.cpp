@@ -109,8 +109,8 @@ int main() {
     assert(near(cap.update(lastTouchdown + 5.0, both, {0.1, 0.1}, {0.0, 0.0}), 0.3));
     assert(near(cap.update(lastTouchdown + 5.5, leftOnly, {0.1, 0.1}, {0.0, 0.0}), 0.3));
     assert(std::isinf(cap.update(lastTouchdown + 8.6, leftOnly, {0.1, 0.1}, {0.0, 0.0})));
-    // Walking off the ramp onto the flat: the first flat sample breaks the agreement (back to the raw step, which
-    // is zero on the flat), three flat samples make the plane flat again; nothing trips, nothing holds.
+    // Walking off the ramp onto the flat: the first flat sample breaks the agreement, the plane is kept but a
+    // flat step is explained by level ground (no roughness trip); three flat samples make the plane flat again.
     scalar_t tf = lastTouchdown + 9.0;
     for (int stride = 0; stride < 3; ++stride) {
       cap.update(tf, stride % 2 ? leftOnly : rightOnly, {0.2, 0.2}, {dBack + 0.3, dBack});
@@ -130,6 +130,32 @@ int main() {
       cap.update(t + 0.5, both, {0.0, 0.3 * slope}, {0.0, 0.3});
     }
     assert(cap.slopeConsistent() && near(cap.slope(), slope) && near(cap.capValue(), 0.2));
+  }
+  // The plane sticks: once three samples agreed, a noisy sample on a short base (the stop's closing step: 8 cm
+  // apart, 4 mm of sole noise = 0.05 of slope) must not zero the plane - the references and the contact normal
+  // would flip to flat on the incline. Three agreeing ~0 samples (the plateau) do return it to flat.
+  {
+    TerrainSpeedCap cap(d);
+    const scalar_t slope = std::tan(10.0 * M_PI / 180.0);
+    scalar_t t = 0.0;
+    for (int stride = 0; stride < 4; ++stride, t += 0.7) {
+      cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
+      cap.update(t + 0.5, both, {0.0, 0.3 * slope}, {0.0, 0.3});
+    }
+    assert(cap.slopeConsistent() && near(cap.slope(), slope));
+    cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
+    cap.update(t + 0.5, both, {0.0, 0.08 * slope + 0.004}, {0.0, 0.08});  // the noisy short step: sample 0.226
+    t += 0.7;
+    assert(cap.slopeConsistent() && near(cap.slope(), slope));  // the plane is kept, not zeroed
+    cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
+    cap.update(t + 0.5, both, {0.0, 0.08 * slope - 0.004}, {0.0, 0.08});  // and the other way: sample 0.126
+    t += 0.7;
+    assert(cap.slopeConsistent() && near(cap.slope(), slope));
+    for (int stride = 0; stride < 3; ++stride, t += 0.7) {  // onto the plateau: three flat samples
+      cap.update(t, leftOnly, {0.0, 0.0}, {0.0, 0.0});
+      cap.update(t + 0.5, both, {0.0, 0.0}, {0.0, 0.3});
+    }
+    assert(cap.slopeConsistent() && std::abs(cap.slope()) < 1e-9);
   }
   // Tiles: steps of random sign do not agree, so they keep the raw step and the roughness tiers (no incline cap).
   {

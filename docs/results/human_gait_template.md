@@ -1636,3 +1636,48 @@ carries `base ahead of feet`. If `tdref` is ≈ −2.5 cm on the stalled landing
 ones, (1) is confirmed; if `base` at the last landing before each failed stop is beyond ~+8 cm
 (downhill of the feet) and inside ±3 cm for the forward `speeds` stop, (2) is what the stop has to
 undo.
+
+### Run 25 D — found: the plane dropped out at every failed stop; the slope estimate now keeps the last agreed plane
+
+The `v` / `base` / `tdref` columns on the four `slope_10` cases (humanT25c2S10 speeds + backward,
+humanT25c2X about_face + back_slow):
+
+- **`base` clears hypothesis (2).** At the last landing before each stop the base is within
+  −4.6 … +1.7 cm of the feet's midpoint (speeds fwd −4.2, backward +1.7, about_face −4.6, back_slow
+  −2.3 / +0.7); the anatomies show the offset *developing during* the tip (about_face −4.7 → −16 cm,
+  back_slow −2.3 → +7 cm), not before it. The body was over the feet when the gait stopped.
+- **`tdref` = nan is the finding.** `terrain/next_touchdown` is nan only in the flat branch
+  (`slopeNextTouchDownHeight_` is stored nan there), so a blank `tdref` means that solve ran *without*
+  the plane: level swing targets, mean-height stance pull, contact normal (0, 0, 1) - humanT25a. On the
+  one stop that survived (speeds forward) `tdref` is present on every landing from 47.6 s to the stop.
+  On the three that fell it is blank through the stop: backward from 44.0 s (the whole −0.2 return hold
+  and the stop), back_slow on the three closing steps (39.0-40.4 s), about_face from 30.6 s. **All
+  three failed stops ran in the flat branch; T25a, which never has the plane, fell in both stops.**
+  Over the ramps the plane was present on only ~1/3 of landings.
+- Why it drops: one slope sample per double support, `dz / dd`, accepted down to `dd` = 8 cm, and the
+  ramp gait alternates long / short steps (19 / 8 cm along x). On an 8 cm base ±4 mm of sole height is
+  ±0.05 of slope, more than the 0.03 consistency band, so every other triple disagrees - and the code
+  then *zeroed the plane* (`slopeConsistent ? slope : 0`) until three clean samples lined up. The stop's
+  closing steps are short, so a stop almost always landed in the flat branch.
+- `tilt` stays ~0 everywhere (max 0.9 deg backward, 3.6 deg on one about_face landing): the feet sit
+  flat whichever branch runs; it is the references and the normal in stance that tip the robot.
+
+**Change (code, no config):** `TerrainSpeedCap::update` keeps the last plane three samples agreed on
+when a later triple disagrees; the plane changes only when three new samples agree on something else
+(three ~0 samples on the plateau return it to flat). While a kept plane and the current triple
+disagree, a step counts as roughness only if neither level ground nor the plane explains it
+(`min(|dz − slope·dd|, |dz|)`), so the plateau after a ramp does not read as 2.6 cm steps and the
+incline cap lifts as before. Unit test: 10 deg plane, two noisy 8 cm samples (0.226 / 0.126) keep
+0.176, three flat samples return 0; the walk-off-the-ramp case keeps `stepCount == 2`. Contract test
+pins the rule. This also touches humanT24e / T25a (the cap's incline tier now holds through a noisy
+triple instead of lapsing for three strides), which is the intended behaviour there too.
+
+`terrain_strides.py` `tdref` is now the planned *rise* over the stance foot minus the true rise (the
+estimator frame re-references at touchdown, so planned-minus-landed heights carried that shift), and
+the summary prints the share of landings with the plane active - on an incline that number should
+be ~100 % after this change.
+
+Rebuild (no `SKIP_BUILD`) and re-run the four `slope_10` cases with humanT25c (`speeds backward
+slope_about_face slope_back_slow`); then `slope_5` both ways and `suite_mild` as regression. Expect: plane
+active ~100 % on the ramps, all four stops standing. Still open after that: `tdref` on the ramp (the
+footfall rule uses the instantaneous base velocity), humanT25cM.

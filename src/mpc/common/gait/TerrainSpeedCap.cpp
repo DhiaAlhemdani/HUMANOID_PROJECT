@@ -100,6 +100,7 @@ void TerrainSpeedCap::reset() {
   slopeSampleCount_ = 0;
   slope_ = 0.0;
   slopeConsistent_ = false;
+  planeFresh_ = false;
   slopeTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
 }
 
@@ -129,15 +130,26 @@ scalar_t TerrainSpeedCap::update(scalar_t time, const contact_flag_t& contacts, 
       ++slopeSampleCount_;
       if (slopeSampleCount_ >= slopeSamples_.size()) {
         const auto [lo, hi] = std::minmax_element(slopeSamples_.begin(), slopeSamples_.end());
-        slopeConsistent_ = (*hi - *lo) <= settings_.slopeConsistency;
-        slope_ = medianOf3(slopeSamples_);
+        planeFresh_ = *hi - *lo <= settings_.slopeConsistency;
+        if (planeFresh_) {
+          slopeConsistent_ = true;
+          slope_ = medianOf3(slopeSamples_);
+        }
+        // A triple that disagrees keeps the last plane the feet agreed on. One short or noisy double support
+        // (a sample on an 8 cm base carries +-0.05 of sole-height noise) is not evidence of flat ground - flat
+        // ground announces itself with three agreeing ~0 samples - and zeroing the plane mid-incline flipped
+        // the foot references and the contact normal to flat exactly at the stop's short closing steps
+        // (run 25 C, slope_10 stops).
       }
     }
     if (slopeConsistent_) {
       slopeTime_ = time;
     }
-    // Roughness: the step out of the plane the feet agree on (the raw step while they do not).
-    const scalar_t step = std::abs(dz - (slopeConsistent_ ? slope_ * dd : 0.0));
+    // Roughness: the step out of the plane the feet agree on; the raw step while no plane exists. While the
+    // current triple disagrees with a kept plane the ground may be either (the plateau after a ramp, a noisy
+    // stride on the ramp): a step counts only if neither level ground nor the plane explains it.
+    const scalar_t fromPlane = std::abs(dz - slope_ * dd);
+    const scalar_t step = !slopeConsistent_ ? std::abs(dz) : planeFresh_ ? fromPlane : std::min(fromPlane, std::abs(dz));
     if (std::isfinite(step) && step >= settings_.stepKnots.front()) {
       if (!inDoubleSupport_ || !countedThisSupport_) {
         ++stepCount_;

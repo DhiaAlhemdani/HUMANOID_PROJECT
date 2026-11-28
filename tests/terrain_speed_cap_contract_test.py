@@ -22,6 +22,7 @@ REFMGR_CPP = (ROOT / "src/mpc/common/reference_manager/SwitchedModelReferenceMan
 MOTION_CPP = (ROOT / "src/mpc/common/reference_manager/ProceduralMpcMotionManager.cpp").read_text()
 TARGET_CPP = (ROOT / "src/mpc/common/target/WalkingVelocityTarget.cpp").read_text()
 CAP_H = (ROOT / "include/legged_robot_mpc_controller/mpc/common/gait/TerrainSpeedCap.h").read_text()
+CAP_CPP = (ROOT / "src/mpc/common/gait/TerrainSpeedCap.cpp").read_text()
 CONTROLLER_CPP = (ROOT / "src/controller/controller.cpp").read_text()
 CMAKE = (ROOT / "CMakeLists.txt").read_text()
 
@@ -75,6 +76,17 @@ class TerrainSpeedCapContractTest(unittest.TestCase):
         # Applied to the scaled command, i.e. before the filter and slew limiter ramp it.
         scale = TARGET_CPP.index("WalkingVelocityCommand WalkingVelocityTarget::scaleCommand")
         self.assertIn("speedCap_.load()", TARGET_CPP[scale:TARGET_CPP.index("WalkingVelocityTarget::setMinimumWalkSpeed")])
+
+    def test_plane_is_kept_through_a_disagreeing_triple(self):
+        # Run 25 C: zeroing the plane whenever the latest three samples disagreed put the slope_10 stops into
+        # the flat branch (level foot references, level contact normal) and all three fell; the plane must
+        # only change when three new samples agree, and a kept plane must not read the plateau as roughness.
+        update = CAP_CPP[CAP_CPP.index("TerrainSpeedCap::update("):]
+        self.assertIn("planeFresh_ = *hi - *lo <= settings_.slopeConsistency;", update)
+        self.assertIn("if (planeFresh_) {\n          slopeConsistent_ = true;\n          slope_ = medianOf3(slopeSamples_);", update)
+        self.assertNotIn("slopeConsistent_ = (*hi - *lo)", update)
+        self.assertIn("planeFresh_ ? fromPlane : std::min(fromPlane, std::abs(dz))", update)
+        self.assertIn("The plane sticks", (ROOT / "tests/terrain_speed_cap_test.cpp").read_text())
 
     def test_telemetry_and_unit_test(self):
         for name in ("terrain/cap", "terrain/steps", "terrain/last_step", "terrain/slope"):

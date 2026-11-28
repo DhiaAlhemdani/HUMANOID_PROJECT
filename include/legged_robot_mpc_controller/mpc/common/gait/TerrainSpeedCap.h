@@ -61,7 +61,10 @@ namespace ocs2::humanoid {
  * sample; when the last three agree within `slopeConsistency` the ground is a plane, the roughness
  * step becomes the residual from that plane, and the incline gets its own cap: `|slope| >=
  * slopeKnots[i]` holds `slopeSpeedKnots[i]`. Tile fields do not agree stride to stride (random
- * sign), so they keep the raw step and the roughness tiers.
+ * sign), so they keep the raw step and the roughness tiers. Once three samples have agreed the
+ * plane is kept through later triples that do not (a short or noisy double support is noise, not
+ * flat ground); it changes only when three new samples agree on something else - three ~0 samples
+ * on the plateau return it to flat (run 25 C).
  */
 struct TerrainSpeedCapSettings {
   bool enabled = false;
@@ -101,8 +104,8 @@ class TerrainSpeedCap {
   scalar_t lastStep() const { return lastStep_; }          //!< [m] largest step of the last double support that tripped the cap
   scalar_t lastStepTime() const { return lastStepTime_; }  //!< [s] when a step was last seen (NaN = never)
   scalar_t capValue() const { return capValue_; }          //!< [m/s] the cap in force (+inf = none)
-  scalar_t slope() const { return slope_; }                //!< [-] median of the last slope samples along the heading (0 until three agree)
-  bool slopeConsistent() const { return slopeConsistent_; }
+  scalar_t slope() const { return slope_; }                //!< [-] median of the last three slope samples that agreed (0 until some did)
+  bool slopeConsistent() const { return slopeConsistent_; }  //!< three samples have agreed at some point; a later disagreeing triple keeps the plane
   size_t stepCount() const { return stepCount_; }          //!< double supports that tripped the cap so far
   void reset();
 
@@ -119,6 +122,7 @@ class TerrainSpeedCap {
   size_t slopeSampleCount_ = 0;
   scalar_t slope_ = 0.0;
   bool slopeConsistent_ = false;
+  bool planeFresh_ = false;  //!< the latest three samples agree (false: the plane is kept from earlier ones)
   scalar_t slopeTime_ = std::numeric_limits<scalar_t>::quiet_NaN();  //!< [s] last solve with a consistent incline sample
   scalar_t previousTime_ = std::numeric_limits<scalar_t>::quiet_NaN();
   size_t stepCount_ = 0;
